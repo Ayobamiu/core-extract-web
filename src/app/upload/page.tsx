@@ -1,0 +1,163 @@
+"use client";
+
+import React from "react";
+import { useRouter } from "next/navigation";
+import FileUpload from "@/components/dashboard/FileUpload";
+import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
+
+export default function UploadPage() {
+  const router = useRouter();
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => router.push("/")}
+            >
+              ← Back to Dashboard
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Upload Documents
+              </h1>
+              <p className="text-gray-600">
+                Upload PDF files and define extraction schema
+              </p>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="p-6">
+        <div className="max-w-4xl mx-auto">
+          {/* Upload Instructions */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>How to Upload Documents</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="text-center">
+                  <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-3">
+                    <span className="text-blue-600 font-semibold text-lg">
+                      1
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2">
+                    Upload PDF
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Drag and drop or select PDF files to upload
+                  </p>
+                </div>
+
+                <div className="text-center">
+                  <div className="mx-auto w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-3">
+                    <span className="text-green-600 font-semibold text-lg">
+                      2
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2">
+                    Define Schema
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Provide a JSON schema describing the data you want to
+                    extract
+                  </p>
+                </div>
+
+                <div className="text-center">
+                  <div className="mx-auto w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mb-3">
+                    <span className="text-purple-600 font-semibold text-lg">
+                      3
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2">
+                    Get Results
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    View and download structured data from your documents
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Schema Examples */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Schema Examples</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-2">
+                    Invoice Extraction
+                  </h4>
+                  <pre className="bg-gray-100 p-3 rounded-lg text-sm overflow-x-auto">
+                    {`{
+  "type": "object",
+  "properties": {
+    "invoice_number": { "type": "string" },
+    "date": { "type": "string" },
+    "total_amount": { "type": "number" },
+    "vendor": { "type": "string" },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "quantity": { "type": "number" },
+          "price": { "type": "number" }
+        }
+      }
+    }
+  }
+}`}
+                  </pre>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-2">
+                    Contract Extraction
+                  </h4>
+                  <pre className="bg-gray-100 p-3 rounded-lg text-sm overflow-x-auto">
+                    {`{
+  "type": "object",
+  "properties": {
+    "contract_id": { "type": "string" },
+    "parties": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "start_date": { "type": "string" },
+    "end_date": { "type": "string" },
+    "value": { "type": "number" },
+    "terms": { "type": "string" }
+  }
+}`}
+                  </pre>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* File Upload Component */}
+          <FileUpload
+            onUploadSuccess={(jobId) => {
+              router.push(`/jobs/${jobId}`);
+            }}
+          />
+        </div>
+      </main>
+    </div>
+  );
+}

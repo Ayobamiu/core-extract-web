@@ -89,16 +89,17 @@ class ApiClient {
     ): Promise<ApiResponse<T>> {
         const url = `${this.baseURL}${endpoint}`;
 
-        const defaultHeaders = {
-            'Content-Type': 'application/json',
-        };
+        // Don't set default Content-Type for FormData requests
+        const defaultHeaders = options.body instanceof FormData
+            ? {}
+            : { 'Content-Type': 'application/json' };
 
         const config: RequestInit = {
             ...options,
             headers: {
                 ...defaultHeaders,
                 ...options.headers,
-            },
+            } as HeadersInit,
         };
 
         try {
@@ -163,6 +164,23 @@ class ApiClient {
         return this.request(`/files/${fileId}/result`);
     }
 
+    async extract(schemaData: { schema: any; schemaName: string }, file: File): Promise<ApiResponse> {
+        const formData = new FormData();
+
+        // Add schema data
+        formData.append('schema', JSON.stringify(schemaData.schema));
+        formData.append('schemaName', schemaData.schemaName);
+        formData.append('jobName', `Job ${new Date().toISOString()}`);
+
+        // Add single file
+        formData.append('file', file as unknown as Blob);
+
+        return this.request('/extract', {
+            method: 'POST',
+            body: formData,
+        });
+    }
+
     async addFilesToJob(jobId: string, files: FileList): Promise<ApiResponse> {
         const formData = new FormData();
 
@@ -202,14 +220,3 @@ class ApiClient {
 
 // Create singleton instance
 export const apiClient = new ApiClient();
-
-// Export types for use in components
-export type {
-    ApiResponse,
-    QueueStats,
-    QueueAnalytics,
-    Job,
-    File,
-    JobDetails,
-    QueueStatus,
-};

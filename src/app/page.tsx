@@ -1,25 +1,24 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
 import QueueStatsCard from "@/components/dashboard/QueueStatsCard";
-import QueueControls from "@/components/dashboard/QueueControls";
+import JobsList from "@/components/dashboard/JobsList";
 import { apiClient, QueueStats, QueueStatus, QueueAnalytics } from "@/lib/api";
 
 export default function Dashboard() {
+  const router = useRouter();
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [queueAnalytics, setQueueAnalytics] = useState<QueueAnalytics | null>(
     null
   );
-  const [queueStatus, setQueueStatus] = useState<QueueStatus>({
-    paused: false,
-    status: "running",
-  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshJobs, setRefreshJobs] = useState(0);
 
   const fetchData = async () => {
     // try {
@@ -48,10 +47,6 @@ export default function Dashboard() {
 
     return () => clearInterval(interval);
   }, []);
-
-  const handleQueueStatusChange = (newStatus: QueueStatus) => {
-    setQueueStatus(newStatus);
-  };
 
   if (loading) {
     return (
@@ -98,6 +93,13 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center space-x-4">
             <StatusIndicator status="success">Connected</StatusIndicator>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => router.push("/upload")}
+            >
+              Upload Files
+            </Button>
             <Button variant="secondary" size="sm">
               Settings
             </Button>
@@ -107,19 +109,9 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
           {/* Queue Stats */}
-          <div className="lg:col-span-2">
-            {queueStats && <QueueStatsCard stats={queueStats} />}
-          </div>
-
-          {/* Queue Controls */}
-          <div>
-            <QueueControls
-              queueStatus={queueStatus}
-              onStatusChange={handleQueueStatusChange}
-            />
-          </div>
+          <div>{queueStats && <QueueStatsCard stats={queueStats} />}</div>
         </div>
 
         {/* Analytics Section */}
@@ -167,6 +159,11 @@ export default function Dashboard() {
             </Card>
           </div>
         )}
+
+        {/* Jobs List */}
+        <div className="mt-6">
+          <JobsList key={refreshJobs} />
+        </div>
 
         {/* System Status */}
         <div className="mt-6">
