@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
-import { apiClient, JobDetails, File } from "@/lib/api";
-import JsonView from "@uiw/react-json-view";
+import { apiClient, JobDetails } from "@/lib/api";
+import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -21,20 +21,21 @@ export default function JobDetailPage() {
   const [showFileResults, setShowFileResults] = useState<
     Record<string, boolean>
   >({});
-  const [isPolling, setIsPolling] = useState(false);
 
-  const fetchJobDetails = async () => {
+  const fetchJobDetails = useCallback(async () => {
     try {
       setLoading(true);
       const response = await apiClient.getJob(jobId);
       setJob(response.job);
       setError(null);
-    } catch (err: any) {
-      setError(err.message || "Failed to fetch job details");
+    } catch (err: unknown) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to fetch job details";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  };
+  }, [jobId]);
 
   const downloadResults = async () => {
     if (!job) return;
@@ -75,34 +76,10 @@ export default function JobDetailPage() {
     if (jobId) {
       fetchJobDetails();
     }
-  }, [jobId]);
+  }, [jobId, fetchJobDetails]);
 
-  // Poll for updates if job is still processing
-  useEffect(() => {
-    if (!job) return;
-
-    const isJobProcessing =
-      job.status === "processing" ||
-      job.files.some(
-        (file) =>
-          file.extraction_status === "processing" ||
-          file.processing_status === "processing"
-      );
-
-    if (isJobProcessing && !isPolling) {
-      setIsPolling(true);
-      const interval = setInterval(() => {
-        fetchJobDetails();
-      }, 2000); // Poll every 2 seconds
-
-      return () => {
-        clearInterval(interval);
-        setIsPolling(false);
-      };
-    } else if (!isJobProcessing && isPolling) {
-      setIsPolling(false);
-    }
-  }, [job, isPolling]);
+  // TODO: Implement WebSocket connection for real-time updates
+  // This will replace the polling system for live job status updates
 
   const getJobStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -194,12 +171,6 @@ export default function JobDetailPage() {
             <StatusIndicator status={getJobStatusColor(job.status)}>
               {job.status}
             </StatusIndicator>
-            {isPolling && (
-              <div className="flex items-center space-x-2 text-sm text-gray-500">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                <span>Updating...</span>
-              </div>
-            )}
             {job.status === "completed" && (
               <Button variant="primary" onClick={downloadResults}>
                 Download Results
@@ -277,23 +248,15 @@ export default function JobDetailPage() {
             {/* </CardHeader> */}
             {showSchema && (
               <CardContent>
-                <div className="bg-gray-50 rounded-lg p-4 overflow-auto mt-4">
-                  <JsonView
-                    value={
+                <div className="mt-4">
+                  <TabbedDataViewer
+                    data={
                       typeof job.schema_data.schema === "string"
                         ? JSON.parse(job.schema_data.schema)
                         : job.schema_data.schema
                     }
-                    style={{
-                      backgroundColor: "transparent",
-                      fontSize: "14px",
-                      fontFamily:
-                        'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-                    }}
-                    displayDataTypes={false}
-                    displayObjectSize={false}
-                    enableClipboard={true}
-                    collapsed={false}
+                    filename="schema"
+                    schema={job.schema_data.schema}
                   />
                 </div>
               </CardContent>
@@ -311,9 +274,6 @@ export default function JobDetailPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center space-x-2">
-                    <StatusIndicator status="warning">
-                      Processing
-                    </StatusIndicator>
                     <span>
                       Processing Files (
                       {
@@ -377,7 +337,6 @@ export default function JobDetailPage() {
                                   {file.processing_status}
                                 </StatusIndicator>
                               </div>
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600"></div>
                             </div>
                           </div>
                         </motion.div>
@@ -396,7 +355,6 @@ export default function JobDetailPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center space-x-2">
-                    <StatusIndicator status="error">Failed</StatusIndicator>
                     <span>
                       Failed Files (
                       {
@@ -502,9 +460,6 @@ export default function JobDetailPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center space-x-2">
-                    <StatusIndicator status="success">
-                      Completed
-                    </StatusIndicator>
                     <span>
                       Completed Files (
                       {
@@ -594,24 +549,15 @@ export default function JobDetailPage() {
                             file.result &&
                             showFileResults[file.id] && (
                               <div className="mt-3">
-                                <div className="bg-gray-50 rounded-lg p-4 overflow-auto">
-                                  <div className="text-sm font-medium text-gray-700 mb-2">
-                                    Results: {file.filename}
-                                  </div>
-                                  <JsonView
-                                    value={file.result}
-                                    style={{
-                                      backgroundColor: "transparent",
-                                      fontSize: "14px",
-                                      fontFamily:
-                                        'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-                                    }}
-                                    displayDataTypes={false}
-                                    displayObjectSize={false}
-                                    enableClipboard={true}
-                                    collapsed={false}
-                                  />
-                                </div>
+                                <TabbedDataViewer
+                                  data={file.result}
+                                  filename={file.filename}
+                                  schema={
+                                    typeof job.schema_data.schema === "string"
+                                      ? JSON.parse(job.schema_data.schema)
+                                      : job.schema_data.schema
+                                  }
+                                />
                               </div>
                             )}
                         </motion.div>
@@ -630,7 +576,6 @@ export default function JobDetailPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center space-x-2">
-                    <StatusIndicator status="info">Pending</StatusIndicator>
                     <span>
                       Pending Files (
                       {
