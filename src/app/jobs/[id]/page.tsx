@@ -8,6 +8,7 @@ import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
 import { apiClient, JobDetails } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
+import { useSocket } from "@/hooks/useSocket";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -21,6 +22,7 @@ export default function JobDetailPage() {
   const [showFileResults, setShowFileResults] = useState<
     Record<string, boolean>
   >({});
+  const [realtimeMessage, setRealtimeMessage] = useState<string | null>(null);
 
   const fetchJobDetails = useCallback(async () => {
     try {
@@ -36,6 +38,81 @@ export default function JobDetailPage() {
       setLoading(false);
     }
   }, [jobId]);
+
+  // WebSocket event handlers
+  const handleJobStatusUpdate = useCallback(
+    (data: any) => {
+      console.log("📋 Job status update:", data);
+      setRealtimeMessage(data.message);
+
+      // Update job status - use functional update to avoid stale closure
+      setJob((prev) => (prev ? { ...prev, status: data.status } : null));
+
+      // Clear message after 5 seconds
+      setTimeout(() => setRealtimeMessage(null), 5000);
+    },
+    [] // Remove job dependency to avoid stale closure
+  );
+
+  const handleFileStatusUpdate = useCallback(
+    (data: any) => {
+      console.log("📄 File status update:", data);
+      setRealtimeMessage(data.message);
+
+      // Update file status in job data - use functional update to avoid stale closure
+      setJob((prev) => {
+        if (!prev) {
+          console.log("⚠️ No job data available for file update");
+          return null;
+        }
+
+        console.log(
+          "🔄 Updating file:",
+          data.fileId,
+          "with status:",
+          data.extraction_status,
+          data.processing_status
+        );
+
+        const updatedFiles = prev.files.map((file) => {
+          if (file.id === data.fileId) {
+            console.log("✅ Found matching file, updating:", file.filename);
+            return {
+              ...file,
+              extraction_status: data.extraction_status,
+              processing_status: data.processing_status,
+              result: data.result || file.result,
+              extraction_error: data.error || file.extraction_error,
+              processing_error: data.error || file.processing_error,
+            };
+          }
+          return file;
+        });
+
+        console.log(
+          "📊 Updated files:",
+          updatedFiles.map((f) => ({
+            id: f.id,
+            filename: f.filename,
+            extraction_status: f.extraction_status,
+            processing_status: f.processing_status,
+          }))
+        );
+
+        return { ...prev, files: updatedFiles };
+      });
+
+      // Clear message after 5 seconds
+      setTimeout(() => setRealtimeMessage(null), 5000);
+    },
+    [] // Remove job dependency to avoid stale closure
+  );
+
+  // Set up WebSocket connection
+  const { socket, isConnected } = useSocket(jobId, {
+    onJobStatusUpdate: handleJobStatusUpdate,
+    onFileStatusUpdate: handleFileStatusUpdate,
+  });
 
   const downloadResults = async () => {
     if (!job) return;
@@ -78,8 +155,14 @@ export default function JobDetailPage() {
     }
   }, [jobId, fetchJobDetails]);
 
-  // TODO: Implement WebSocket connection for real-time updates
-  // This will replace the polling system for live job status updates
+  // Show connection status
+  useEffect(() => {
+    if (isConnected) {
+      console.log("🔌 WebSocket connected");
+    } else {
+      console.log("🔌 WebSocket disconnected");
+    }
+  }, [isConnected]);
 
   const getJobStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -171,6 +254,19 @@ export default function JobDetailPage() {
             <StatusIndicator status={getJobStatusColor(job.status)}>
               {job.status}
             </StatusIndicator>
+
+            {/* Real-time connection indicator */}
+            <div className="flex items-center space-x-2">
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  isConnected ? "bg-green-500" : "bg-red-500"
+                }`}
+              ></div>
+              <span className="text-xs text-gray-500">
+                {isConnected ? "Live" : "Offline"}
+              </span>
+            </div>
+
             {job.status === "completed" && (
               <Button variant="primary" onClick={downloadResults}>
                 Download Results
@@ -650,6 +746,60 @@ export default function JobDetailPage() {
           </div>
         </div>
       </main>
+
+      {/* Floating Real-time Message */}
+      {realtimeMessage && (
+        <motion.div
+          initial={{ opacity: 0, x: 100, scale: 0.8 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          exit={{ opacity: 0, x: 100, scale: 0.8 }}
+          transition={{
+            type: "spring",
+            stiffness: 300,
+            damping: 30,
+            duration: 0.3,
+          }}
+          className="fixed bottom-6 right-6 z-50 max-w-sm"
+        >
+          <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-4 backdrop-blur-sm bg-white/95 ring-1 ring-gray-100">
+            <div className="flex items-start space-x-3">
+              <div className="flex-shrink-0">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center space-x-2">
+                  <p className="text-sm font-semibold text-gray-900">
+                    Live Update
+                  </p>
+                </div>
+                <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+                  {realtimeMessage}
+                </p>
+              </div>
+              <div className="flex-shrink-0">
+                <button
+                  onClick={() => setRealtimeMessage(null)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }
