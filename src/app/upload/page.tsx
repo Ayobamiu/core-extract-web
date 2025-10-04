@@ -90,66 +90,6 @@ export default function UploadPage() {
             </CardContent>
           </Card>
 
-          {/* Schema Examples */}
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Schema Examples</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2">
-                    Invoice Extraction
-                  </h4>
-                  <pre className="bg-gray-100 p-3 rounded-lg text-sm overflow-x-auto">
-                    {`{
-  "type": "object",
-  "properties": {
-    "invoice_number": { "type": "string" },
-    "date": { "type": "string" },
-    "total_amount": { "type": "number" },
-    "vendor": { "type": "string" },
-    "line_items": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "description": { "type": "string" },
-          "quantity": { "type": "number" },
-          "price": { "type": "number" }
-        }
-      }
-    }
-  }
-}`}
-                  </pre>
-                </div>
-
-                <div>
-                  <h4 className="font-semibold text-gray-900 mb-2">
-                    Contract Extraction
-                  </h4>
-                  <pre className="bg-gray-100 p-3 rounded-lg text-sm overflow-x-auto">
-                    {`{
-  "type": "object",
-  "properties": {
-    "contract_id": { "type": "string" },
-    "parties": {
-      "type": "array",
-      "items": { "type": "string" }
-    },
-    "start_date": { "type": "string" },
-    "end_date": { "type": "string" },
-    "value": { "type": "number" },
-    "terms": { "type": "string" }
-  }
-}`}
-                  </pre>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* File Upload Component */}
           <FileUpload
             onUploadSuccess={(jobId) => {

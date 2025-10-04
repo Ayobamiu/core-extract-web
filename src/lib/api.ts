@@ -172,8 +172,27 @@ class ApiClient {
         formData.append('schemaName', schemaData.schemaName);
         formData.append('jobName', `Job ${new Date().toISOString()}`);
 
-        // Add single file
-        formData.append('file', file as unknown as Blob);
+        // Add single file with "files" field name (backend expects "files" even for single file)
+        formData.append('files', file as unknown as Blob);
+
+        return this.request('/extract', {
+            method: 'POST',
+            body: formData,
+        });
+    }
+
+    async extractMultiple(schemaData: { schema: any; schemaName: string }, files: File[]): Promise<ApiResponse> {
+        const formData = new FormData();
+
+        // Add schema data
+        formData.append('schema', JSON.stringify(schemaData.schema));
+        formData.append('schemaName', schemaData.schemaName);
+        formData.append('jobName', `Job ${new Date().toISOString()}`);
+
+        // Add multiple files
+        files.forEach((file) => {
+            formData.append('files', file as unknown as Blob);
+        });
 
         return this.request('/extract', {
             method: 'POST',

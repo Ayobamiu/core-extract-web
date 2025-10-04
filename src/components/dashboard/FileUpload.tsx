@@ -95,43 +95,30 @@ const FileUpload: React.FC<FileUploadProps> = ({
         throw new Error("Invalid JSON schema format");
       }
 
-      // Process files one by one using the /extract endpoint
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => Math.min(prev + 10, 90));
-      }, 200);
-      console.log({ selectedFiles, parsedSchema, schemaName });
+      // Process all files in a single request
+      console.log(
+        `Processing ${selectedFiles.length} files in a single request`
+      );
 
+      const response = await apiClient.extractMultiple(
+        {
+          schema: parsedSchema,
+          schemaName: schemaName || "data_extraction",
+        },
+        selectedFiles as any[]
+      );
+
+      console.log("API Response:", response);
+
+      // Capture the job ID from the response
       let lastJobId: string | null = null;
-
-      // Process each file individually
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
-        console.log(
-          `Processing file ${i + 1}/${selectedFiles.length}: ${file.name}`
-        );
-
-        const response = await apiClient.extract(
-          {
-            schema: parsedSchema,
-            schemaName: schemaName || "data_extraction",
-          },
-          file as any
-        );
-
-        console.log("API Response:", response);
-
-        // Capture the job ID from the response
-        if (response.metadata?.jobId) {
-          lastJobId = response.metadata.jobId;
-          console.log("Captured jobId:", lastJobId);
-        } else if (response.jobId) {
-          lastJobId = response.jobId;
-          console.log("Captured jobId from error response:", lastJobId);
-        }
+      if (response.metadata?.jobId) {
+        lastJobId = response.metadata.jobId;
+        console.log("Captured jobId:", lastJobId);
+      } else if (response.jobId) {
+        lastJobId = response.jobId;
+        console.log("Captured jobId from error response:", lastJobId);
       }
-
-      clearInterval(progressInterval);
-      setUploadProgress(100);
 
       setUploadStatus("success");
       setSelectedFiles([]);
