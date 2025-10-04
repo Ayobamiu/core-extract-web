@@ -22,7 +22,7 @@ interface TabbedDataViewerProps {
   className?: string;
 }
 
-type TabType = "json" | "csv";
+type TabType = "preview" | "json" | "csv";
 
 const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   data,
@@ -30,9 +30,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   schema,
   className = "",
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>("json");
+  const [activeTab, setActiveTab] = useState<TabType>("preview");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
   // Convert data to CSV format
   const csvData = useMemo(() => {
@@ -169,11 +170,209 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Render preview data in a collapsible tree format
+  const renderPreviewData = (data: unknown): React.ReactNode => {
+    if (!data || typeof data !== "object") {
+      return (
+        <div className="text-center py-8 text-gray-500">
+          <p>No data available for preview</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="font-mono text-sm">
+        {Object.entries(data as Record<string, unknown>).map(([key, value]) => (
+          <div key={key}>{renderTreeItem(key, value, "")}</div>
+        ))}
+      </div>
+    );
+  };
+
+  // Toggle expansion state for a key
+  const toggleExpanded = (key: string) => {
+    setExpandedKeys((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return newSet;
+    });
+  };
+
+  // Render a single tree item
+  const renderTreeItem = (
+    key: string,
+    value: unknown,
+    path: string
+  ): React.ReactNode => {
+    const fullPath = path ? `${path}.${key}` : key;
+    const isExpanded = expandedKeys.has(fullPath);
+
+    if (value === null) {
+      return (
+        <div className="flex items-center py-1">
+          <span className="text-gray-600 font-medium">{key}:</span>
+          <span className="ml-2 text-gray-400">null</span>
+        </div>
+      );
+    }
+
+    if (value === undefined) {
+      return (
+        <div className="flex items-center py-1">
+          <span className="text-gray-600 font-medium">{key}:</span>
+          <span className="ml-2 text-gray-400">undefined</span>
+        </div>
+      );
+    }
+
+    if (typeof value === "string") {
+      return (
+        <div className="flex items-center py-1">
+          <span className="text-gray-600 font-medium">{key}:</span>
+          <span className="ml-2 text-gray-800">&quot;{value}&quot;</span>
+        </div>
+      );
+    }
+
+    if (typeof value === "number") {
+      return (
+        <div className="flex items-center py-1">
+          <span className="text-gray-600 font-medium">{key}:</span>
+          <span className="ml-2 text-blue-600">{value}</span>
+        </div>
+      );
+    }
+
+    if (typeof value === "boolean") {
+      return (
+        <div className="flex items-center py-1">
+          <span className="text-gray-600 font-medium">{key}:</span>
+          <span className={`ml-2 ${value ? "text-green-600" : "text-red-600"}`}>
+            {value ? "true" : "false"}
+          </span>
+        </div>
+      );
+    }
+
+    if (Array.isArray(value)) {
+      const isEmpty = value.length === 0;
+      const canExpand = !isEmpty;
+
+      return (
+        <div>
+          <div
+            className="flex items-center py-1 cursor-pointer hover:bg-gray-50 rounded"
+            onClick={() => canExpand && toggleExpanded(fullPath)}
+          >
+            {canExpand && (
+              <svg
+                className={`w-3 h-3 mr-1 transition-transform ${
+                  isExpanded ? "rotate-90" : ""
+                }`}
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            )}
+            {!canExpand && <div className="w-3 h-3 mr-1" />}
+            <span className="text-gray-600 font-medium">{key}:</span>
+            <span className="ml-2 text-gray-500">
+              [{isEmpty ? "" : value.length}]
+            </span>
+          </div>
+
+          {isExpanded && (
+            <div className="ml-4 border-l border-gray-200 pl-2">
+              {value.map((item, index) => (
+                <div key={index}>
+                  {renderTreeItem(index.toString(), item, fullPath)}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (typeof value === "object") {
+      const obj = value as Record<string, unknown>;
+      const entries = Object.entries(obj);
+      const isEmpty = entries.length === 0;
+      const canExpand = !isEmpty;
+
+      return (
+        <div>
+          <div
+            className="flex items-center py-1 cursor-pointer hover:bg-gray-50 rounded"
+            onClick={() => canExpand && toggleExpanded(fullPath)}
+          >
+            {canExpand && (
+              <svg
+                className={`w-3 h-3 mr-1 transition-transform ${
+                  isExpanded ? "rotate-90" : ""
+                }`}
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            )}
+            {!canExpand && <div className="w-3 h-3 mr-1" />}
+            <span className="text-gray-600 font-medium">{key}:</span>
+            <span className="ml-2 text-gray-500">
+              {isEmpty ? "{}" : `{${entries.length}}`}
+            </span>
+          </div>
+
+          {isExpanded && (
+            <div className="ml-4 border-l border-gray-200 pl-2">
+              {entries.map(([nestedKey, nestedValue]) => (
+                <div key={nestedKey}>
+                  {renderTreeItem(nestedKey, nestedValue, fullPath)}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center py-1">
+        <span className="text-gray-600 font-medium">{key}:</span>
+        <span className="ml-2 text-gray-800">{String(value)}</span>
+      </div>
+    );
+  };
+
   return (
     <div className={`bg-white rounded-lg border border-gray-200 ${className}`}>
       {/* Tab Headers */}
       <div className="flex items-center justify-between border-b border-gray-200">
         <div className="flex space-x-1">
+          <button
+            onClick={() => setActiveTab("preview")}
+            className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
+              activeTab === "preview"
+                ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Preview
+          </button>
           <button
             onClick={() => setActiveTab("json")}
             className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
@@ -221,10 +420,16 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
         >
+          {activeTab === "preview" && (
+            <div className="overflow-auto max-h-96">
+              <div className="space-y-4">{renderPreviewData(data)}</div>
+            </div>
+          )}
+
           {activeTab === "json" && (
             <div className="bg-gray-50 rounded-lg p-4 overflow-auto max-h-96">
               <JsonView
-                value={data}
+                value={data as object}
                 style={{
                   backgroundColor: "transparent",
                   fontSize: "14px",
