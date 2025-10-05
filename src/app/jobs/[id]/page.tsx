@@ -704,21 +704,31 @@ export default function JobDetailPage() {
                                     </div>
                                   </div>
                                   <div className="flex items-center space-x-3">
-                                    <div className="flex space-x-2">
-                                      <StatusIndicator
-                                        status={getFileStatusColor(
-                                          file.extraction_status
-                                        )}
-                                      >
-                                        {file.extraction_status}
-                                      </StatusIndicator>
-                                      <StatusIndicator
-                                        status={getFileStatusColor(
-                                          file.processing_status
-                                        )}
-                                      >
-                                        {file.processing_status}
-                                      </StatusIndicator>
+                                    <div className="flex flex-col space-y-1">
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-xs text-gray-500 font-medium">
+                                          Extraction:
+                                        </span>
+                                        <StatusIndicator
+                                          status={getFileStatusColor(
+                                            file.extraction_status
+                                          )}
+                                        >
+                                          {file.extraction_status}
+                                        </StatusIndicator>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-xs text-gray-500 font-medium">
+                                          Processing:
+                                        </span>
+                                        <StatusIndicator
+                                          status={getFileStatusColor(
+                                            file.processing_status
+                                          )}
+                                        >
+                                          {file.processing_status}
+                                        </StatusIndicator>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -788,21 +798,31 @@ export default function JobDetailPage() {
                                     </div>
                                   </div>
                                   <div className="flex items-center space-x-3">
-                                    <div className="flex space-x-2">
-                                      <StatusIndicator
-                                        status={getFileStatusColor(
-                                          file.extraction_status
-                                        )}
-                                      >
-                                        {file.extraction_status}
-                                      </StatusIndicator>
-                                      <StatusIndicator
-                                        status={getFileStatusColor(
-                                          file.processing_status
-                                        )}
-                                      >
-                                        {file.processing_status}
-                                      </StatusIndicator>
+                                    <div className="flex flex-col space-y-1">
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-xs text-gray-500 font-medium">
+                                          Extraction:
+                                        </span>
+                                        <StatusIndicator
+                                          status={getFileStatusColor(
+                                            file.extraction_status
+                                          )}
+                                        >
+                                          {file.extraction_status}
+                                        </StatusIndicator>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-xs text-gray-500 font-medium">
+                                          Processing:
+                                        </span>
+                                        <StatusIndicator
+                                          status={getFileStatusColor(
+                                            file.processing_status
+                                          )}
+                                        >
+                                          {file.processing_status}
+                                        </StatusIndicator>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -905,21 +925,31 @@ export default function JobDetailPage() {
                                   </div>
 
                                   <div className="flex items-center space-x-3">
-                                    <div className="flex space-x-2">
-                                      <StatusIndicator
-                                        status={getFileStatusColor(
-                                          file.extraction_status
-                                        )}
-                                      >
-                                        {file.extraction_status}
-                                      </StatusIndicator>
-                                      <StatusIndicator
-                                        status={getFileStatusColor(
-                                          file.processing_status
-                                        )}
-                                      >
-                                        {file.processing_status}
-                                      </StatusIndicator>
+                                    <div className="flex flex-col space-y-1">
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-xs text-gray-500 font-medium">
+                                          Extraction:
+                                        </span>
+                                        <StatusIndicator
+                                          status={getFileStatusColor(
+                                            file.extraction_status
+                                          )}
+                                        >
+                                          {file.extraction_status}
+                                        </StatusIndicator>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-xs text-gray-500 font-medium">
+                                          Processing:
+                                        </span>
+                                        <StatusIndicator
+                                          status={getFileStatusColor(
+                                            file.processing_status
+                                          )}
+                                        >
+                                          {file.processing_status}
+                                        </StatusIndicator>
+                                      </div>
                                     </div>
                                     {file.processing_status === "completed" &&
                                       file.result && (
@@ -1024,21 +1054,31 @@ export default function JobDetailPage() {
                                     </div>
                                   </div>
                                   <div className="flex items-center space-x-3">
-                                    <div className="flex space-x-2">
-                                      <StatusIndicator
-                                        status={getFileStatusColor(
-                                          file.extraction_status
-                                        )}
-                                      >
-                                        {file.extraction_status}
-                                      </StatusIndicator>
-                                      <StatusIndicator
-                                        status={getFileStatusColor(
-                                          file.processing_status
-                                        )}
-                                      >
-                                        {file.processing_status}
-                                      </StatusIndicator>
+                                    <div className="flex flex-col space-y-1">
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-xs text-gray-500 font-medium">
+                                          Extraction:
+                                        </span>
+                                        <StatusIndicator
+                                          status={getFileStatusColor(
+                                            file.extraction_status
+                                          )}
+                                        >
+                                          {file.extraction_status}
+                                        </StatusIndicator>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-xs text-gray-500 font-medium">
+                                          Processing:
+                                        </span>
+                                        <StatusIndicator
+                                          status={getFileStatusColor(
+                                            file.processing_status
+                                          )}
+                                        >
+                                          {file.processing_status}
+                                        </StatusIndicator>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
