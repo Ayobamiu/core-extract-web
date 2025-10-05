@@ -6,6 +6,7 @@ import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
 import { apiClient } from "@/lib/api";
+import ExampleSchemaDropdown from "./ExampleSchemaPanel";
 
 interface FileUploadProps {
   onUploadSuccess?: (jobId: string) => void;
@@ -158,6 +159,10 @@ const FileUpload: React.FC<FileUploadProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
+  const handleSelectExampleSchema = (exampleSchema: any) => {
+    setSchema(JSON.stringify(exampleSchema, null, 2));
+  };
+
   return (
     <Card className={className}>
       <CardHeader>
@@ -182,15 +187,20 @@ const FileUpload: React.FC<FileUploadProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                JSON Schema
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  JSON Schema
+                </label>
+                <ExampleSchemaDropdown
+                  onSelectSchema={handleSelectExampleSchema}
+                />
+              </div>
               <textarea
                 value={schema}
                 onChange={(e) => setSchema(e.target.value)}
                 placeholder='{"type": "object", "properties": {...}}'
                 rows={6}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm bg-white text-gray-900 dark:bg-gray-800 dark:text-white dark:border-gray-600"
               />
             </div>
           </div>
