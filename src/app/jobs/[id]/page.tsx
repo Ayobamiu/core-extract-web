@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
@@ -13,6 +13,7 @@ import { useOrganization } from "@/contexts/OrganizationContext";
 import { apiClient, JobDetails } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import { useSocket } from "@/hooks/useSocket";
+import { PlusIcon, DocumentIcon } from "@heroicons/react/24/outline";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -29,6 +30,10 @@ export default function JobDetailPage() {
     Record<string, boolean>
   >({});
   const [realtimeMessage, setRealtimeMessage] = useState<string | null>(null);
+  const [isAddingFiles, setIsAddingFiles] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [fileList, setFileList] = useState<FileList | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchJobDetails = useCallback(async () => {
     try {
@@ -202,6 +207,43 @@ export default function JobDetailPage() {
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setSelectedFiles(files);
+    setFileList(e.target.files);
+  };
+
+  const handleAddFiles = async () => {
+    if (selectedFiles.length === 0 || !fileList) return;
+
+    try {
+      setIsAddingFiles(true);
+
+      await apiClient.addFilesToJob(jobId, fileList);
+
+      // Refresh job details to show new files
+      await fetchJobDetails();
+
+      // Clear selected files
+      setSelectedFiles([]);
+      setFileList(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
+      setRealtimeMessage(
+        `Successfully added ${selectedFiles.length} file(s) to job`
+      );
+      setTimeout(() => setRealtimeMessage(null), 3000);
+    } catch (error) {
+      console.error("Error adding files:", error);
+      setRealtimeMessage("Failed to add files to job");
+      setTimeout(() => setRealtimeMessage(null), 3000);
+    } finally {
+      setIsAddingFiles(false);
+    }
   };
 
   if (loading) {
@@ -407,6 +449,92 @@ export default function JobDetailPage() {
                       </div>
                     </CardContent>
                   )}
+                </Card>
+
+                {/* Add Files Section */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <PlusIcon className="h-5 w-5" />
+                      <span>Add More Files</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="flex items-center space-x-4">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          accept=".pdf,.doc,.docx,.txt"
+                          onChange={handleFileSelect}
+                          className="hidden"
+                        />
+                        <Button
+                          variant="secondary"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex items-center space-x-2"
+                        >
+                          <DocumentIcon className="h-4 w-4" />
+                          <span>Select Files</span>
+                        </Button>
+                        {selectedFiles.length > 0 && (
+                          <span className="text-sm text-gray-600">
+                            {selectedFiles.length} file(s) selected
+                          </span>
+                        )}
+                      </div>
+
+                      {selectedFiles.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="text-sm font-medium text-gray-700">
+                            Selected Files:
+                          </h4>
+                          <div className="space-y-1">
+                            {selectedFiles.map((file, index) => (
+                              <div
+                                key={index}
+                                className="flex items-center space-x-2 text-sm text-gray-600"
+                              >
+                                <DocumentIcon className="h-4 w-4" />
+                                <span>{file.name}</span>
+                                <span className="text-gray-400">
+                                  ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          variant="primary"
+                          onClick={handleAddFiles}
+                          disabled={selectedFiles.length === 0 || isAddingFiles}
+                          loading={isAddingFiles}
+                        >
+                          {isAddingFiles
+                            ? "Adding Files..."
+                            : "Add Files to Job"}
+                        </Button>
+                        {selectedFiles.length > 0 && (
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setSelectedFiles([]);
+                              setFileList(null);
+                              if (fileInputRef.current) {
+                                fileInputRef.current.value = "";
+                              }
+                            }}
+                          >
+                            Clear Selection
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
                 </Card>
 
                 {/* Files List */}

@@ -157,132 +157,101 @@ const JobsList: React.FC<JobsListProps> = ({ className = "" }) => {
             <Button variant="primary">Create New Job</Button>
           </div>
         ) : (
-          <div className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {jobs.map((job, index) => (
+              <motion.div
+                key={job.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.05 }}
+                className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-all duration-200 hover:border-gray-300"
+              >
+                {/* Job Header */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center">
+                    <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mr-3">
+                      <span className="text-lg font-medium text-white">
+                        {job.name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 truncate max-w-48">
+                        {job.name}
+                      </h3>
+                      <p className="text-sm text-gray-500 font-mono">
+                        {job.id.slice(0, 8)}...
+                      </p>
+                    </div>
+                  </div>
+                  <StatusIndicator status={getJobStatusColor(job.status)}>
+                    {job.status}
+                  </StatusIndicator>
+                </div>
+
+                {/* Progress Section */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">
+                      Progress
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {getCompletedFilesCount(job)}/{job.file_count} files
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${
+                          job.file_count === "0"
+                            ? 0
+                            : (getCompletedFilesCount(job) /
+                                parseInt(job.file_count)) *
+                              100
+                        }%`,
+                      }}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* Dates */}
+                <div className="space-y-2 mb-4">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Created:</span>
+                    <span className="text-gray-900">
+                      {formatDate(job.created_at)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Updated:</span>
+                    <span className="text-gray-900">
+                      {formatDate(job.updated_at)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center space-x-2 pt-4 border-t border-gray-100">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => router.push(`/jobs/${job.id}`)}
+                    className="flex-1"
+                  >
+                    View Details
+                  </Button>
+                  {job.status === "completed" && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="text-green-600 hover:text-green-900 border-green-200 hover:border-green-300"
                     >
-                      Job
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      Status
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      Files
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      Created
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      Updated
-                    </th>
-                    <th scope="col" className="relative px-6 py-3">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {jobs.map((job, index) => (
-                    <motion.tr
-                      key={job.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="hover:bg-gray-50 transition-colors duration-150"
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-10 w-10">
-                            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                              <span className="text-sm font-medium text-white">
-                                {job.name.charAt(0).toUpperCase()}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
-                              {job.name}
-                            </div>
-                            <div className="text-sm text-gray-500 font-mono">
-                              {job.id.slice(0, 8)}...
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <StatusIndicator status={getJobStatusColor(job.status)}>
-                          {job.status}
-                        </StatusIndicator>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="text-sm text-gray-900">
-                            {getCompletedFilesCount(job)}/{job.file_count}
-                          </div>
-                          <div className="ml-2 w-16 bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                              style={{
-                                width: `${
-                                  job.file_count === "0"
-                                    ? 0
-                                    : (getCompletedFilesCount(job) /
-                                        parseInt(job.file_count)) *
-                                      100
-                                }%`,
-                              }}
-                            ></div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatDate(job.created_at)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatDate(job.updated_at)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => router.push(`/jobs/${job.id}`)}
-                            className="text-blue-600 hover:text-blue-900"
-                          >
-                            View
-                          </Button>
-                          {job.status === "completed" && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              className="text-green-600 hover:text-green-900"
-                            >
-                              Download
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      Download
+                    </Button>
+                  )}
+                </div>
+              </motion.div>
+            ))}
           </div>
         )}
       </CardContent>
