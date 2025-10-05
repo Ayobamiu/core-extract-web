@@ -11,9 +11,15 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { apiClient, JobDetails } from "@/lib/api";
+import { smartCsvExport } from "@/lib/csvExport";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import { useSocket } from "@/hooks/useSocket";
-import { PlusIcon, DocumentIcon } from "@heroicons/react/24/outline";
+import {
+  PlusIcon,
+  DocumentIcon,
+  ArrowDownTrayIcon,
+  ChevronDownIcon,
+} from "@heroicons/react/24/outline";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -23,6 +29,7 @@ export default function JobDetailPage() {
   const jobId = params.id as string;
 
   const [job, setJob] = useState<JobDetails | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSchema, setShowSchema] = useState(false);
@@ -33,7 +40,9 @@ export default function JobDetailPage() {
   const [isAddingFiles, setIsAddingFiles] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileList, setFileList] = useState<FileList | null>(null);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
 
   const fetchJobDetails = useCallback(async () => {
     try {
@@ -125,18 +134,27 @@ export default function JobDetailPage() {
     onFileStatusUpdate: handleFileStatusUpdate,
   });
 
-  const downloadResults = async () => {
+  const exportResults = async (format: "json" | "csv") => {
     if (!job) return;
 
     try {
-      // Create a downloadable JSON file with all results
+      // Get only completed files
+      const completedFiles = job.files.filter(
+        (file) => file.processing_status === "completed"
+      );
+
+      if (completedFiles.length === 0) {
+        alert("No completed files to export");
+        return;
+      }
+
       const results = {
         jobId: job.id,
         jobName: job.name,
         status: job.status,
         createdAt: job.created_at,
         updatedAt: job.updated_at,
-        files: job.files.map((file) => ({
+        files: completedFiles.map((file) => ({
           id: file.id,
           filename: file.filename,
           status: file.processing_status,
@@ -144,19 +162,54 @@ export default function JobDetailPage() {
         })),
       };
 
-      const blob = new Blob([JSON.stringify(results, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${job.name.replace(/[^a-z0-9]/gi, "_")}_results.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const filename = `${job.name
+        .replace(/[^a-zA-Z0-9\s-]/g, "_")
+        .replace(/\s+/g, "_")}_results`;
+
+      if (format === "json") {
+        const blob = new Blob([JSON.stringify(results, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${filename}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else if (format === "csv") {
+        // Combine all completed files into a single CSV
+        const allResults = completedFiles
+          .filter((file) => file.result)
+          .map((file) => ({
+            ...file.result,
+            _filename: file.filename,
+            _fileId: file.id,
+          }));
+
+        if (allResults.length === 0) {
+          alert("No valid results to export as CSV");
+          return;
+        }
+
+        try {
+          // Debug: Log the data structure
+          console.log("Exporting CSV with data:", allResults);
+          console.log("Schema:", job.schema_data.schema);
+
+          // Use the correct function signature: smartCsvExport(data, filename, schema)
+          smartCsvExport(allResults, `${filename}.csv`, job.schema_data.schema);
+        } catch (error) {
+          console.error("Error exporting CSV:", error);
+          console.error("Data that failed:", allResults);
+          alert("Error exporting CSV. Please check the console for details.");
+        }
+      }
+
+      setShowExportDropdown(false);
     } catch (err) {
-      console.error("Download failed:", err);
+      console.error("Export failed:", err);
     }
   };
 
@@ -165,6 +218,26 @@ export default function JobDetailPage() {
       fetchJobDetails();
     }
   }, [jobId, fetchJobDetails]);
+
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        exportDropdownRef.current &&
+        !exportDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowExportDropdown(false);
+      }
+    };
+
+    if (showExportDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showExportDropdown]);
 
   // Show connection status
   useEffect(() => {
@@ -357,10 +430,44 @@ export default function JobDetailPage() {
                     </span>
                   </div>
 
-                  {job.status === "completed" && (
-                    <Button variant="primary" onClick={downloadResults}>
-                      Download Results
-                    </Button>
+                  {/* Export Dropdown */}
+                  {job.files.some(
+                    (file) => file.processing_status === "completed"
+                  ) && (
+                    <div className="relative" ref={exportDropdownRef}>
+                      <Button
+                        variant="primary"
+                        onClick={() =>
+                          setShowExportDropdown(!showExportDropdown)
+                        }
+                        className="flex items-center gap-2"
+                      >
+                        <ArrowDownTrayIcon className="w-4 h-4" />
+                        Export
+                        <ChevronDownIcon className="w-4 h-4" />
+                      </Button>
+
+                      {showExportDropdown && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50">
+                          <div className="py-1">
+                            <button
+                              onClick={() => exportResults("json")}
+                              className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              <DocumentIcon className="w-4 h-4 mr-2" />
+                              Export as JSON
+                            </button>
+                            <button
+                              onClick={() => exportResults("csv")}
+                              className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                              <DocumentIcon className="w-4 h-4 mr-2" />
+                              Export as CSV
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -784,6 +891,15 @@ export default function JobDetailPage() {
                                       </div>
                                       <div className="text-xs text-gray-500">
                                         {(file.size / 1024).toFixed(1)} KB
+                                        {file.processing_metadata
+                                          ?.processing_time && (
+                                          <span className="ml-2">
+                                            • Processed:{" "}
+                                            {new Date(
+                                              file.processing_metadata.processing_time
+                                            ).toLocaleTimeString()}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                   </div>

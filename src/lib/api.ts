@@ -94,7 +94,7 @@ export interface Job {
     file_count: string;
 }
 
-export interface File {
+export interface JobFile {
     id: string;
     filename: string;
     size: number;
@@ -109,10 +109,14 @@ export interface File {
     processing_error?: string;
     created_at: string;
     processed_at?: string;
+    processing_metadata?: {
+        processing_time?: string;
+        text_length?: number;
+    };
 }
 
 export interface JobDetails extends Job {
-    files: File[];
+    files: JobFile[];
     schema_data: {
         schema: string;
         schemaName: string;
@@ -312,11 +316,11 @@ class ApiClient {
         return this.request(`/jobs/${jobId}`);
     }
 
-    async getFileResult(fileId: string): Promise<ApiResponse<{ file: File }>> {
+    async getFileResult(fileId: string): Promise<ApiResponse<{ file: JobFile }>> {
         return this.request(`/files/${fileId}/result`);
     }
 
-    async extract(schemaData: { schema: any; schemaName: string }, file: File): Promise<ApiResponse> {
+    async extract(schemaData: { schema: any; schemaName: string }, file: JobFile): Promise<ApiResponse> {
         const formData = new FormData();
 
         // Add schema data
@@ -333,7 +337,7 @@ class ApiClient {
         });
     }
 
-    async extractMultiple(schemaData: { schema: any; schemaName: string }, files: File[]): Promise<ApiResponse> {
+    async extractMultiple(schemaData: { schema: any; schemaName: string }, files: JobFile[]): Promise<ApiResponse> {
         const formData = new FormData();
 
         // Add schema data
