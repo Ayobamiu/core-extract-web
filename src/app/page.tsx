@@ -11,20 +11,27 @@ import JobsList from "@/components/dashboard/JobsList";
 import Navigation from "@/components/layout/Navigation";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import { apiClient, QueueStats, QueueStatus, QueueAnalytics } from "@/lib/api";
 
 export default function Dashboard() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
+  const { currentOrganization, isLoadingOrganizations } = useOrganization();
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [queueAnalytics, setQueueAnalytics] = useState<QueueAnalytics | null>(
     null
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [refreshJobs, setRefreshJobs] = useState(0);
 
   const fetchData = async () => {
+    // Only fetch data if user has a current organization
+    if (!currentOrganization) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setError(null);
       const [statsResponse, analyticsResponse, statusResponse] =
@@ -51,9 +58,9 @@ export default function Dashboard() {
 
       return () => clearInterval(interval);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, currentOrganization]); // Add currentOrganization dependency
 
-  if (loading) {
+  if (loading || isLoadingOrganizations) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -85,6 +92,33 @@ export default function Dashboard() {
     );
   }
 
+  // Check if user has no organizations (shouldn't happen with auto-creation)
+  if (isAuthenticated && !isLoadingOrganizations && !currentOrganization) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Card className="max-w-md">
+          <CardContent>
+            <div className="text-center">
+              <div className="text-yellow-600 text-6xl mb-4">🏢</div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                No Organization Found
+              </h2>
+              <p className="text-gray-600 mb-4">
+                You need to be part of an organization to access jobs and files.
+              </p>
+              <Button
+                onClick={() => window.location.reload()}
+                variant="primary"
+              >
+                Refresh Page
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gray-50">
@@ -98,17 +132,23 @@ export default function Dashboard() {
               Welcome back, {user?.name}!
             </h1>
             <p className="text-gray-600">
-              Monitor your document processing jobs
+              {currentOrganization
+                ? `Monitor your document processing jobs for ${currentOrganization.name}`
+                : "Monitor your document processing jobs"}
             </p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
-            {/* Queue Stats */}
-            <div>{queueStats && <QueueStatsCard stats={queueStats} />}</div>
+            {/* Queue Stats - Only show if user has an organization */}
+            {currentOrganization && queueStats && (
+              <div>
+                <QueueStatsCard stats={queueStats} />
+              </div>
+            )}
           </div>
 
-          {/* Analytics Section */}
-          {queueAnalytics && (
+          {/* Analytics Section - Only show if user has an organization */}
+          {currentOrganization && queueAnalytics && (
             <div className="mt-6">
               <Card>
                 <CardHeader>
@@ -153,10 +193,55 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Jobs List */}
-          <div className="mt-6">
-            <JobsList key={refreshJobs} />
-          </div>
+          {/* Jobs List - Only show if user has an organization */}
+          {currentOrganization ? (
+            <div className="mt-6">
+              <JobsList />
+            </div>
+          ) : (
+            <div className="mt-6">
+              <Card className="p-8 text-center">
+                <div className="max-w-md mx-auto">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg
+                      className="w-8 h-8 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                      />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    No Organization Selected
+                  </h3>
+                  <p className="text-gray-600 mb-6">
+                    You need to be part of an organization to access jobs and
+                    files. Create a new organization or ask your administrator
+                    to invite you.
+                  </p>
+                  <div className="space-y-3">
+                    <Button
+                      onClick={() => {
+                        /* This will be handled by the organization selector */
+                      }}
+                      className="w-full"
+                    >
+                      Create Organization
+                    </Button>
+                    <p className="text-sm text-gray-500">
+                      Or select an existing organization from the dropdown above
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
 
           {/* System Status */}
           <div className="mt-6">

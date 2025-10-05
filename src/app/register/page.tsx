@@ -61,6 +61,7 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
+      // Register the user (this will automatically create a default organization)
       await register(formData.email, formData.password, formData.name);
       router.push("/"); // Redirect to dashboard
     } catch (err: unknown) {

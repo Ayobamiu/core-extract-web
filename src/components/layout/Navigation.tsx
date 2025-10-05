@@ -4,11 +4,16 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOrganization } from "@/contexts/OrganizationContext";
 import Button from "@/components/ui/Button";
+import OrganizationSelector from "@/components/organization/OrganizationSelector";
+import CreateOrganizationModal from "@/components/organization/CreateOrganizationModal";
 
 export default function Navigation() {
   const { user, logout, isAuthenticated } = useAuth();
+  const { currentOrganization } = useOrganization();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -62,6 +67,13 @@ export default function Navigation() {
                 >
                   Profile
                 </Link>
+
+                {/* Organization Selector */}
+                <div className="w-64">
+                  <OrganizationSelector
+                    onCreateOrganization={() => setIsCreateOrgModalOpen(true)}
+                  />
+                </div>
 
                 {/* User Menu */}
                 <div className="flex items-center space-x-4">
@@ -204,6 +216,12 @@ export default function Navigation() {
           </div>
         )}
       </div>
+
+      {/* Create Organization Modal */}
+      <CreateOrganizationModal
+        isOpen={isCreateOrgModalOpen}
+        onClose={() => setIsCreateOrgModalOpen(false)}
+      />
     </nav>
   );
 }

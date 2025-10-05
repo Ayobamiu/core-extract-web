@@ -6,7 +6,9 @@ import React, {
   useState,
   useEffect,
   ReactNode,
+  useCallback,
 } from "react";
+import { apiClient } from "@/lib/api";
 
 // Types
 interface User {
@@ -97,74 +99,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTokens(null);
     localStorage.removeItem("auth_tokens");
     localStorage.removeItem("auth_user");
+    // Clear organization data to prevent cross-user contamination
+    localStorage.removeItem("lastSelectedOrganizationId");
   };
 
   // Fetch user data from API
-  const fetchUserData = async (accessToken: string) => {
-    const response = await fetch("http://localhost:3000/auth/me", {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch user data");
-    }
-
-    const data = await response.json();
-    if (data.success) {
-      setUser(data.data.user);
-      localStorage.setItem("auth_user", JSON.stringify(data.data.user));
-    }
-  };
+  const fetchUserData = useCallback(
+    async (accessToken: string) => {
+      try {
+        const response = await apiClient.getCurrentUser();
+        if (response.success && response.data?.user) {
+          setUser(response.data.user);
+          localStorage.setItem("auth_user", JSON.stringify(response.data.user));
+        } else {
+          throw new Error(response.error || "Failed to fetch user data");
+        }
+      } catch (error) {
+        console.error("Failed to fetch user data:", error);
+        clearAuthState();
+        throw error;
+      }
+    },
+    [clearAuthState]
+  );
 
   // Refresh token from storage
-  const refreshTokenFromStorage = async (refreshToken: string) => {
-    const response = await fetch("http://localhost:3000/auth/refresh", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    if (!response.ok) {
-      throw new Error("Token refresh failed");
-    }
-
-    const data = await response.json();
-    if (data.success) {
-      const newTokens = {
-        ...tokens!,
-        accessToken: data.data.accessToken,
-        expiresIn: data.data.expiresIn,
-      };
-      setTokens(newTokens);
-      localStorage.setItem("auth_tokens", JSON.stringify(newTokens));
-    }
-  };
+  const refreshTokenFromStorage = useCallback(
+    async (refreshToken: string) => {
+      try {
+        const response = await apiClient.refreshToken(refreshToken);
+        if (response.success && response.data?.accessToken) {
+          const newTokens = {
+            ...tokens!,
+            accessToken: response.data.accessToken,
+            expiresIn: response.data.expiresIn,
+          };
+          setTokens(newTokens);
+          localStorage.setItem("auth_tokens", JSON.stringify(newTokens));
+          return newTokens.accessToken;
+        } else {
+          throw new Error(response.error || "Token refresh failed");
+        }
+      } catch (error) {
+        console.error("Token refresh error:", error);
+        clearAuthState();
+        throw error;
+      }
+    },
+    [tokens, clearAuthState]
+  );
 
   // Login function
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      const response = await fetch("http://localhost:3000/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      });
+      const response = await apiClient.login(email, password);
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || "Login failed");
+      if (!response.success) {
+        throw new Error(response.error || "Login failed");
       }
 
-      const { user: userData, tokens: tokenData } = data.data;
-
+      const { user: userData, tokens: tokenData } = response.data;
+      console.log("Login successful", userData, tokenData);
       setUser(userData);
       setTokens(tokenData);
       localStorage.setItem("auth_tokens", JSON.stringify(tokenData));
@@ -181,21 +177,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (email: string, password: string, name: string) => {
     setIsLoading(true);
     try {
-      const response = await fetch("http://localhost:3000/auth/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password, name }),
-      });
+      const response = await apiClient.register(email, password, name);
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || "Registration failed");
+      if (!response.success) {
+        throw new Error(response.error || "Registration failed");
       }
 
-      const { user: userData, tokens: tokenData } = data.data;
+      const { user: userData, tokens: tokenData } = response.data;
 
       setUser(userData);
       setTokens(tokenData);
@@ -214,14 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       if (tokens?.refreshToken) {
-        await fetch("http://localhost:3000/auth/logout", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${tokens.accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ refreshToken: tokens.refreshToken }),
-        });
+        await apiClient.logout(tokens.refreshToken);
       }
     } catch (error) {
       console.error("Logout error:", error);

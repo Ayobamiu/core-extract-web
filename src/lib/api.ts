@@ -36,6 +36,54 @@ export interface QueueAnalytics {
     timestamp: number;
 }
 
+export interface Organization {
+    id: string;
+    name: string;
+    slug: string;
+    domain?: string;
+    plan: string;
+    created_at: string;
+    updated_at: string;
+    user_role?: string;
+}
+
+export interface OrganizationMember {
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+    email_verified: boolean;
+    created_at: string;
+    last_login_at?: string;
+    login_count: number;
+    invited_by_name?: string;
+}
+
+export interface OrganizationInvitation {
+    id: string;
+    email: string;
+    role: string;
+    token: string;
+    expires_at: string;
+    accepted_at?: string;
+    created_at: string;
+    invited_by_name?: string;
+}
+
+export interface OrganizationStats {
+    total_members: number;
+    total_jobs: number;
+    total_files: number;
+    owners_count: number;
+    admins_count: number;
+    members_count: number;
+    viewers_count: number;
+    completed_jobs: number;
+    processing_jobs: number;
+    failed_jobs: number;
+    total_storage_bytes: number;
+}
+
 export interface Job {
     id: string;
     name: string;
@@ -338,6 +386,86 @@ class ApiClient {
 
     async getStorageStats(): Promise<ApiResponse> {
         return this.request('/storage-stats');
+    }
+
+    // Organization Management
+    async getOrganizations(): Promise<ApiResponse<{ organizations: Organization[] }>> {
+        return this.request('/organizations');
+    }
+
+    async getOrganization(organizationId: string): Promise<ApiResponse<{ organization: Organization }>> {
+        return this.request(`/organizations/${organizationId}`);
+    }
+
+    async createOrganization(data: { name: string; domain?: string }): Promise<ApiResponse<{ organization: Organization }>> {
+        return this.request('/organizations', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async updateOrganization(organizationId: string, data: Partial<Organization>): Promise<ApiResponse<{ organization: Organization }>> {
+        return this.request(`/organizations/${organizationId}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async deleteOrganization(organizationId: string): Promise<ApiResponse<{ organization: Organization }>> {
+        return this.request(`/organizations/${organizationId}`, {
+            method: 'DELETE',
+        });
+    }
+
+    // Organization Members
+    async getOrganizationMembers(organizationId: string): Promise<ApiResponse<{ members: OrganizationMember[] }>> {
+        return this.request(`/organizations/${organizationId}/members`);
+    }
+
+    async updateMemberRole(organizationId: string, userId: string, role: string): Promise<ApiResponse<{ member: OrganizationMember }>> {
+        return this.request(`/organizations/${organizationId}/members/${userId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ role }),
+        });
+    }
+
+    async removeMember(organizationId: string, userId: string): Promise<ApiResponse<{ member: OrganizationMember }>> {
+        return this.request(`/organizations/${organizationId}/members/${userId}`, {
+            method: 'DELETE',
+        });
+    }
+
+    // Organization Invitations
+    async inviteMember(organizationId: string, email: string, role: string): Promise<ApiResponse<{ invitation: OrganizationInvitation }>> {
+        return this.request(`/organizations/${organizationId}/invite`, {
+            method: 'POST',
+            body: JSON.stringify({ email, role }),
+        });
+    }
+
+    async getOrganizationInvitations(organizationId: string): Promise<ApiResponse<{ invitations: OrganizationInvitation[] }>> {
+        return this.request(`/organizations/${organizationId}/invitations`);
+    }
+
+    async cancelInvitation(organizationId: string, invitationId: string): Promise<ApiResponse<{ invitation: OrganizationInvitation }>> {
+        return this.request(`/organizations/${organizationId}/invitations/${invitationId}`, {
+            method: 'DELETE',
+        });
+    }
+
+    async acceptInvitation(token: string): Promise<ApiResponse<{ organizationId: string; organizationName: string; role: string }>> {
+        return this.request(`/organizations/invitations/${token}/accept`, {
+            method: 'POST',
+        });
+    }
+
+    async getInvitationDetails(token: string): Promise<ApiResponse<{ invitation: OrganizationInvitation }>> {
+        return this.request(`/organizations/invitations/${token}`);
+    }
+
+    // Organization Statistics
+    async getOrganizationStats(organizationId: string): Promise<ApiResponse<{ stats: OrganizationStats }>> {
+        return this.request(`/organizations/${organizationId}/stats`);
     }
 }
 
