@@ -78,9 +78,32 @@ export interface QueueStatus {
 
 class ApiClient {
     private baseURL: string;
+    private accessToken: string | null = null;
 
     constructor(baseURL: string = API_BASE_URL) {
         this.baseURL = baseURL;
+        // Initialize token from localStorage
+        if (typeof window !== 'undefined') {
+            const storedTokens = localStorage.getItem('auth_tokens');
+            if (storedTokens) {
+                try {
+                    const tokens = JSON.parse(storedTokens);
+                    this.accessToken = tokens.accessToken;
+                } catch (error) {
+                    console.error('Failed to parse stored tokens:', error);
+                }
+            }
+        }
+    }
+
+    // Set access token
+    setAccessToken(token: string | null) {
+        this.accessToken = token;
+    }
+
+    // Get access token
+    getAccessToken(): string | null {
+        return this.accessToken;
     }
 
     private async request<T>(
@@ -94,10 +117,16 @@ class ApiClient {
             ? {}
             : { 'Content-Type': 'application/json' };
 
+        // Add authorization header if token is available
+        const authHeaders = this.accessToken
+            ? { 'Authorization': `Bearer ${this.accessToken}` }
+            : {};
+
         const config: RequestInit = {
             ...options,
             headers: {
                 ...defaultHeaders,
+                ...authHeaders,
                 ...options.headers,
             } as HeadersInit,
         };
@@ -107,7 +136,17 @@ class ApiClient {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.message || `HTTP error! status: ${response.status}`);
+                // Handle authentication errors
+                if (response.status === 401) {
+                    // Clear stored tokens and redirect to login
+                    if (typeof window !== 'undefined') {
+                        localStorage.removeItem('auth_tokens');
+                        localStorage.removeItem('auth_user');
+                        this.accessToken = null;
+                        window.location.href = '/login';
+                    }
+                }
+                throw new Error(data.error || data.message || `HTTP error! status: ${response.status}`);
             }
 
             return data;
@@ -120,6 +159,71 @@ class ApiClient {
     // Health Check
     async getHealth(): Promise<ApiResponse> {
         return this.request('/health');
+    }
+
+    // Authentication Methods
+    async login(email: string, password: string): Promise<ApiResponse> {
+        const response = await this.request('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password }),
+        });
+
+        if (response.success && (response.data as any)?.tokens?.accessToken) {
+            this.setAccessToken((response.data as any).tokens.accessToken);
+        }
+
+        return response;
+    }
+
+    async register(email: string, password: string, name: string): Promise<ApiResponse> {
+        const response = await this.request('/auth/register', {
+            method: 'POST',
+            body: JSON.stringify({ email, password, name }),
+        });
+
+        if (response.success && (response.data as any)?.tokens?.accessToken) {
+            this.setAccessToken((response.data as any).tokens.accessToken);
+        }
+
+        return response;
+    }
+
+    async logout(refreshToken?: string): Promise<ApiResponse> {
+        const response = await this.request('/auth/logout', {
+            method: 'POST',
+            body: JSON.stringify({ refreshToken }),
+        });
+
+        this.setAccessToken(null);
+        return response;
+    }
+
+    async refreshToken(refreshToken: string): Promise<ApiResponse> {
+        const response = await this.request('/auth/refresh', {
+            method: 'POST',
+            body: JSON.stringify({ refreshToken }),
+        });
+
+        if (response.success && (response.data as any)?.accessToken) {
+            this.setAccessToken((response.data as any).accessToken);
+        }
+
+        return response;
+    }
+
+    async getCurrentUser(): Promise<ApiResponse> {
+        return this.request('/auth/me');
+    }
+
+    async updateProfile(userData: { name?: string; email?: string }): Promise<ApiResponse> {
+        return this.request('/auth/profile', {
+            method: 'PUT',
+            body: JSON.stringify(userData),
+        });
+    }
+
+    async getUserStats(): Promise<ApiResponse> {
+        return this.request('/auth/stats');
     }
 
     // Queue Management

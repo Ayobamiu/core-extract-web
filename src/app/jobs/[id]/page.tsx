@@ -6,6 +6,8 @@ import { motion } from "framer-motion";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
+import Navigation from "@/components/layout/Navigation";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { apiClient, JobDetails } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import { useSocket } from "@/hooks/useSocket";
@@ -233,573 +235,578 @@ export default function JobDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => router.push("/")}
-            >
-              ← Back
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{job.name}</h1>
-              <p className="text-gray-600 font-mono text-sm">{job.id}</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <StatusIndicator status={getJobStatusColor(job.status)}>
-              {job.status}
-            </StatusIndicator>
-
-            {/* Real-time connection indicator */}
-            <div className="flex items-center space-x-2">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  isConnected ? "bg-green-500" : "bg-red-500"
-                }`}
-              ></div>
-              <span className="text-xs text-gray-500">
-                {isConnected ? "Live" : "Offline"}
-              </span>
-            </div>
-
-            {job.status === "completed" && (
-              <Button variant="primary" onClick={downloadResults}>
-                Download Results
-              </Button>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="p-6">
-        <div className="max-w-6xl mx-auto space-y-6">
-          {/* Job Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-900 mb-1">
-                    {job.files.length}
-                  </div>
-                  <div className="text-sm text-gray-500">Files</div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-center">
-                  <div className="mb-1">
-                    <StatusIndicator status={getJobStatusColor(job.status)}>
-                      {job.status}
-                    </StatusIndicator>
-                  </div>
-                  <div className="text-sm text-gray-500">Status</div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-center">
-                  <div className="text-sm font-medium text-gray-900 mb-1">
-                    {formatDate(job.created_at)}
-                  </div>
-                  <div className="text-sm text-gray-500">Created</div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="text-center">
-                  <div className="text-sm font-medium text-gray-900 mb-1">
-                    {job.schema_data.schemaName}
-                  </div>
-                  <div className="text-sm text-gray-500">Schema Name</div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Extraction Schema */}
-          <Card>
-            {/* <CardHeader> */}
-            <div className="flex items-center justify-between">
-              <CardTitle>Extraction Schema</CardTitle>
+    <ProtectedRoute>
+      <div className="min-h-screen bg-gray-50">
+        <Navigation />
+        {/* Header */}
+        <header className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setShowSchema(!showSchema)}
+                onClick={() => router.push("/")}
               >
-                {showSchema ? "Hide" : "Show"}
+                ← Back
               </Button>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">{job.name}</h1>
+                <p className="text-gray-600 font-mono text-sm">{job.id}</p>
+              </div>
             </div>
-            {/* </CardHeader> */}
-            {showSchema && (
-              <CardContent>
-                <div className="mt-4">
-                  <TabbedDataViewer
-                    data={
-                      typeof job.schema_data.schema === "string"
-                        ? JSON.parse(job.schema_data.schema)
-                        : job.schema_data.schema
-                    }
-                    filename="schema"
-                    schema={job.schema_data.schema}
-                  />
-                </div>
-              </CardContent>
-            )}
-          </Card>
+            <div className="flex items-center space-x-4">
+              <StatusIndicator status={getJobStatusColor(job.status)}>
+                {job.status}
+              </StatusIndicator>
 
-          {/* Files List */}
-          <div className="space-y-6">
-            {/* Processing Files */}
-            {job.files.filter(
-              (file) =>
-                file.extraction_status === "processing" ||
-                file.processing_status === "processing"
-            ).length > 0 && (
+              {/* Real-time connection indicator */}
+              <div className="flex items-center space-x-2">
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    isConnected ? "bg-green-500" : "bg-red-500"
+                  }`}
+                ></div>
+                <span className="text-xs text-gray-500">
+                  {isConnected ? "Live" : "Offline"}
+                </span>
+              </div>
+
+              {job.status === "completed" && (
+                <Button variant="primary" onClick={downloadResults}>
+                  Download Results
+                </Button>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="p-6">
+          <div className="max-w-6xl mx-auto space-y-6">
+            {/* Job Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <span>
-                      Processing Files (
-                      {
-                        job.files.filter(
+                <CardContent className="p-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-gray-900 mb-1">
+                      {job.files.length}
+                    </div>
+                    <div className="text-sm text-gray-500">Files</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-center">
+                    <div className="mb-1">
+                      <StatusIndicator status={getJobStatusColor(job.status)}>
+                        {job.status}
+                      </StatusIndicator>
+                    </div>
+                    <div className="text-sm text-gray-500">Status</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-center">
+                    <div className="text-sm font-medium text-gray-900 mb-1">
+                      {formatDate(job.created_at)}
+                    </div>
+                    <div className="text-sm text-gray-500">Created</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-center">
+                    <div className="text-sm font-medium text-gray-900 mb-1">
+                      {job.schema_data.schemaName}
+                    </div>
+                    <div className="text-sm text-gray-500">Schema Name</div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Extraction Schema */}
+            <Card>
+              {/* <CardHeader> */}
+              <div className="flex items-center justify-between">
+                <CardTitle>Extraction Schema</CardTitle>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowSchema(!showSchema)}
+                >
+                  {showSchema ? "Hide" : "Show"}
+                </Button>
+              </div>
+              {/* </CardHeader> */}
+              {showSchema && (
+                <CardContent>
+                  <div className="mt-4">
+                    <TabbedDataViewer
+                      data={
+                        typeof job.schema_data.schema === "string"
+                          ? JSON.parse(job.schema_data.schema)
+                          : job.schema_data.schema
+                      }
+                      filename="schema"
+                      schema={job.schema_data.schema}
+                    />
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
+            {/* Files List */}
+            <div className="space-y-6">
+              {/* Processing Files */}
+              {job.files.filter(
+                (file) =>
+                  file.extraction_status === "processing" ||
+                  file.processing_status === "processing"
+              ).length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <span>
+                        Processing Files (
+                        {
+                          job.files.filter(
+                            (file) =>
+                              file.extraction_status === "processing" ||
+                              file.processing_status === "processing"
+                          ).length
+                        }
+                        )
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {job.files
+                        .filter(
                           (file) =>
                             file.extraction_status === "processing" ||
                             file.processing_status === "processing"
-                        ).length
-                      }
-                      )
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {job.files
-                      .filter(
-                        (file) =>
-                          file.extraction_status === "processing" ||
-                          file.processing_status === "processing"
-                      )
-                      .map((file) => (
-                        <motion.div
-                          key={file.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
-                              <div className="flex-shrink-0 h-8 w-8">
-                                <div className="h-8 w-8 rounded bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center">
-                                  <span className="text-xs font-medium text-white">
-                                    {file.filename.charAt(0).toUpperCase()}
-                                  </span>
+                        )
+                        .map((file) => (
+                          <motion.div
+                            key={file.id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-3">
+                                <div className="flex-shrink-0 h-8 w-8">
+                                  <div className="h-8 w-8 rounded bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center">
+                                    <span className="text-xs font-medium text-white">
+                                      {file.filename.charAt(0).toUpperCase()}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {file.filename}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {(file.size / 1024).toFixed(1)} KB
+                                  </div>
                                 </div>
                               </div>
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {file.filename}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {(file.size / 1024).toFixed(1)} KB
+                              <div className="flex items-center space-x-3">
+                                <div className="flex space-x-2">
+                                  <StatusIndicator
+                                    status={getFileStatusColor(
+                                      file.extraction_status
+                                    )}
+                                  >
+                                    {file.extraction_status}
+                                  </StatusIndicator>
+                                  <StatusIndicator
+                                    status={getFileStatusColor(
+                                      file.processing_status
+                                    )}
+                                  >
+                                    {file.processing_status}
+                                  </StatusIndicator>
                                 </div>
                               </div>
                             </div>
-                            <div className="flex items-center space-x-3">
-                              <div className="flex space-x-2">
-                                <StatusIndicator
-                                  status={getFileStatusColor(
-                                    file.extraction_status
-                                  )}
-                                >
-                                  {file.extraction_status}
-                                </StatusIndicator>
-                                <StatusIndicator
-                                  status={getFileStatusColor(
-                                    file.processing_status
-                                  )}
-                                >
-                                  {file.processing_status}
-                                </StatusIndicator>
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                          </motion.div>
+                        ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-            {/* Failed Files */}
-            {job.files.filter(
-              (file) =>
-                file.extraction_status === "failed" ||
-                file.processing_status === "failed"
-            ).length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <span>
-                      Failed Files (
-                      {
-                        job.files.filter(
+              {/* Failed Files */}
+              {job.files.filter(
+                (file) =>
+                  file.extraction_status === "failed" ||
+                  file.processing_status === "failed"
+              ).length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <span>
+                        Failed Files (
+                        {
+                          job.files.filter(
+                            (file) =>
+                              file.extraction_status === "failed" ||
+                              file.processing_status === "failed"
+                          ).length
+                        }
+                        )
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {job.files
+                        .filter(
                           (file) =>
                             file.extraction_status === "failed" ||
                             file.processing_status === "failed"
-                        ).length
-                      }
-                      )
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {job.files
-                      .filter(
-                        (file) =>
-                          file.extraction_status === "failed" ||
-                          file.processing_status === "failed"
-                      )
-                      .map((file) => (
-                        <motion.div
-                          key={file.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="space-y-3"
-                        >
-                          {/* File Header */}
-                          <div className="flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-lg">
-                            <div className="flex items-center space-x-3">
-                              <div className="flex-shrink-0 h-8 w-8">
-                                <div className="h-8 w-8 rounded bg-gradient-to-br from-red-500 to-pink-600 flex items-center justify-center">
-                                  <span className="text-xs font-medium text-white">
-                                    {file.filename.charAt(0).toUpperCase()}
-                                  </span>
+                        )
+                        .map((file) => (
+                          <motion.div
+                            key={file.id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="space-y-3"
+                          >
+                            {/* File Header */}
+                            <div className="flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-lg">
+                              <div className="flex items-center space-x-3">
+                                <div className="flex-shrink-0 h-8 w-8">
+                                  <div className="h-8 w-8 rounded bg-gradient-to-br from-red-500 to-pink-600 flex items-center justify-center">
+                                    <span className="text-xs font-medium text-white">
+                                      {file.filename.charAt(0).toUpperCase()}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {file.filename}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {(file.size / 1024).toFixed(1)} KB
+                                  </div>
                                 </div>
                               </div>
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {file.filename}
+                              <div className="flex items-center space-x-3">
+                                <div className="flex space-x-2">
+                                  <StatusIndicator
+                                    status={getFileStatusColor(
+                                      file.extraction_status
+                                    )}
+                                  >
+                                    {file.extraction_status}
+                                  </StatusIndicator>
+                                  <StatusIndicator
+                                    status={getFileStatusColor(
+                                      file.processing_status
+                                    )}
+                                  >
+                                    {file.processing_status}
+                                  </StatusIndicator>
                                 </div>
-                                <div className="text-xs text-gray-500">
-                                  {(file.size / 1024).toFixed(1)} KB
+                              </div>
+                            </div>
+
+                            {/* Error Messages */}
+                            {file.extraction_error && (
+                              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <div className="text-sm font-medium text-red-800 mb-1">
+                                  Extraction Error
+                                </div>
+                                <div className="text-xs text-red-700">
+                                  {file.extraction_error}
                                 </div>
                               </div>
-                            </div>
-                            <div className="flex items-center space-x-3">
-                              <div className="flex space-x-2">
-                                <StatusIndicator
-                                  status={getFileStatusColor(
-                                    file.extraction_status
-                                  )}
-                                >
-                                  {file.extraction_status}
-                                </StatusIndicator>
-                                <StatusIndicator
-                                  status={getFileStatusColor(
-                                    file.processing_status
-                                  )}
-                                >
-                                  {file.processing_status}
-                                </StatusIndicator>
-                              </div>
-                            </div>
-                          </div>
+                            )}
 
-                          {/* Error Messages */}
-                          {file.extraction_error && (
-                            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                              <div className="text-sm font-medium text-red-800 mb-1">
-                                Extraction Error
+                            {file.processing_error && (
+                              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <div className="text-sm font-medium text-red-800 mb-1">
+                                  Processing Error
+                                </div>
+                                <div className="text-xs text-red-700">
+                                  {file.processing_error}
+                                </div>
                               </div>
-                              <div className="text-xs text-red-700">
-                                {file.extraction_error}
-                              </div>
-                            </div>
-                          )}
+                            )}
+                          </motion.div>
+                        ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
-                          {file.processing_error && (
-                            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                              <div className="text-sm font-medium text-red-800 mb-1">
-                                Processing Error
-                              </div>
-                              <div className="text-xs text-red-700">
-                                {file.processing_error}
-                              </div>
-                            </div>
-                          )}
-                        </motion.div>
-                      ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Completed Files */}
-            {job.files.filter(
-              (file) =>
-                file.extraction_status === "completed" &&
-                file.processing_status === "completed"
-            ).length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <span>
-                      Completed Files (
-                      {
-                        job.files.filter(
+              {/* Completed Files */}
+              {job.files.filter(
+                (file) =>
+                  file.extraction_status === "completed" &&
+                  file.processing_status === "completed"
+              ).length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <span>
+                        Completed Files (
+                        {
+                          job.files.filter(
+                            (file) =>
+                              file.extraction_status === "completed" &&
+                              file.processing_status === "completed"
+                          ).length
+                        }
+                        )
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {job.files
+                        .filter(
                           (file) =>
                             file.extraction_status === "completed" &&
                             file.processing_status === "completed"
-                        ).length
-                      }
-                      )
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {job.files
-                      .filter(
-                        (file) =>
-                          file.extraction_status === "completed" &&
-                          file.processing_status === "completed"
-                      )
-                      .map((file) => (
-                        <motion.div
-                          key={file.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="space-y-3"
-                        >
-                          {/* File Header */}
-                          <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
-                            <div className="flex items-center space-x-3">
-                              <div className="flex-shrink-0 h-8 w-8">
-                                <div className="h-8 w-8 rounded bg-gradient-to-br from-green-500 to-blue-600 flex items-center justify-center">
-                                  <span className="text-xs font-medium text-white">
-                                    {file.filename.charAt(0).toUpperCase()}
-                                  </span>
+                        )
+                        .map((file) => (
+                          <motion.div
+                            key={file.id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="space-y-3"
+                          >
+                            {/* File Header */}
+                            <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
+                              <div className="flex items-center space-x-3">
+                                <div className="flex-shrink-0 h-8 w-8">
+                                  <div className="h-8 w-8 rounded bg-gradient-to-br from-green-500 to-blue-600 flex items-center justify-center">
+                                    <span className="text-xs font-medium text-white">
+                                      {file.filename.charAt(0).toUpperCase()}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {file.filename}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {(file.size / 1024).toFixed(1)} KB
+                                  </div>
                                 </div>
                               </div>
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {file.filename}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {(file.size / 1024).toFixed(1)} KB
-                                </div>
-                              </div>
-                            </div>
 
-                            <div className="flex items-center space-x-3">
-                              <div className="flex space-x-2">
-                                <StatusIndicator
-                                  status={getFileStatusColor(
-                                    file.extraction_status
-                                  )}
-                                >
-                                  {file.extraction_status}
-                                </StatusIndicator>
-                                <StatusIndicator
-                                  status={getFileStatusColor(
-                                    file.processing_status
-                                  )}
-                                >
-                                  {file.processing_status}
-                                </StatusIndicator>
-                              </div>
-                              {file.processing_status === "completed" &&
-                                file.result && (
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() =>
-                                      setShowFileResults((prev) => ({
-                                        ...prev,
-                                        [file.id]: !prev[file.id],
-                                      }))
-                                    }
+                              <div className="flex items-center space-x-3">
+                                <div className="flex space-x-2">
+                                  <StatusIndicator
+                                    status={getFileStatusColor(
+                                      file.extraction_status
+                                    )}
                                   >
-                                    {showFileResults[file.id] ? "Hide" : "Show"}{" "}
-                                    Results
-                                  </Button>
-                                )}
-                            </div>
-                          </div>
-
-                          {/* Results Viewer */}
-                          {file.processing_status === "completed" &&
-                            file.result &&
-                            showFileResults[file.id] && (
-                              <div className="mt-3">
-                                <TabbedDataViewer
-                                  data={file.result}
-                                  filename={file.filename}
-                                  schema={
-                                    typeof job.schema_data.schema === "string"
-                                      ? JSON.parse(job.schema_data.schema)
-                                      : job.schema_data.schema
-                                  }
-                                />
+                                    {file.extraction_status}
+                                  </StatusIndicator>
+                                  <StatusIndicator
+                                    status={getFileStatusColor(
+                                      file.processing_status
+                                    )}
+                                  >
+                                    {file.processing_status}
+                                  </StatusIndicator>
+                                </div>
+                                {file.processing_status === "completed" &&
+                                  file.result && (
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() =>
+                                        setShowFileResults((prev) => ({
+                                          ...prev,
+                                          [file.id]: !prev[file.id],
+                                        }))
+                                      }
+                                    >
+                                      {showFileResults[file.id]
+                                        ? "Hide"
+                                        : "Show"}{" "}
+                                      Results
+                                    </Button>
+                                  )}
                               </div>
-                            )}
-                        </motion.div>
-                      ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                            </div>
 
-            {/* Pending Files */}
-            {job.files.filter(
-              (file) =>
-                file.extraction_status === "pending" &&
-                file.processing_status === "pending"
-            ).length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <span>
-                      Pending Files (
-                      {
-                        job.files.filter(
+                            {/* Results Viewer */}
+                            {file.processing_status === "completed" &&
+                              file.result &&
+                              showFileResults[file.id] && (
+                                <div className="mt-3">
+                                  <TabbedDataViewer
+                                    data={file.result}
+                                    filename={file.filename}
+                                    schema={
+                                      typeof job.schema_data.schema === "string"
+                                        ? JSON.parse(job.schema_data.schema)
+                                        : job.schema_data.schema
+                                    }
+                                  />
+                                </div>
+                              )}
+                          </motion.div>
+                        ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Pending Files */}
+              {job.files.filter(
+                (file) =>
+                  file.extraction_status === "pending" &&
+                  file.processing_status === "pending"
+              ).length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <span>
+                        Pending Files (
+                        {
+                          job.files.filter(
+                            (file) =>
+                              file.extraction_status === "pending" &&
+                              file.processing_status === "pending"
+                          ).length
+                        }
+                        )
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {job.files
+                        .filter(
                           (file) =>
                             file.extraction_status === "pending" &&
                             file.processing_status === "pending"
-                        ).length
-                      }
-                      )
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {job.files
-                      .filter(
-                        (file) =>
-                          file.extraction_status === "pending" &&
-                          file.processing_status === "pending"
-                      )
-                      .map((file) => (
-                        <motion.div
-                          key={file.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="p-4 bg-gray-50 border border-gray-200 rounded-lg"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
-                              <div className="flex-shrink-0 h-8 w-8">
-                                <div className="h-8 w-8 rounded bg-gradient-to-br from-gray-500 to-gray-600 flex items-center justify-center">
-                                  <span className="text-xs font-medium text-white">
-                                    {file.filename.charAt(0).toUpperCase()}
-                                  </span>
+                        )
+                        .map((file) => (
+                          <motion.div
+                            key={file.id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="p-4 bg-gray-50 border border-gray-200 rounded-lg"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-3">
+                                <div className="flex-shrink-0 h-8 w-8">
+                                  <div className="h-8 w-8 rounded bg-gradient-to-br from-gray-500 to-gray-600 flex items-center justify-center">
+                                    <span className="text-xs font-medium text-white">
+                                      {file.filename.charAt(0).toUpperCase()}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {file.filename}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {(file.size / 1024).toFixed(1)} KB
+                                  </div>
                                 </div>
                               </div>
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {file.filename}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {(file.size / 1024).toFixed(1)} KB
+                              <div className="flex items-center space-x-3">
+                                <div className="flex space-x-2">
+                                  <StatusIndicator
+                                    status={getFileStatusColor(
+                                      file.extraction_status
+                                    )}
+                                  >
+                                    {file.extraction_status}
+                                  </StatusIndicator>
+                                  <StatusIndicator
+                                    status={getFileStatusColor(
+                                      file.processing_status
+                                    )}
+                                  >
+                                    {file.processing_status}
+                                  </StatusIndicator>
                                 </div>
                               </div>
                             </div>
-                            <div className="flex items-center space-x-3">
-                              <div className="flex space-x-2">
-                                <StatusIndicator
-                                  status={getFileStatusColor(
-                                    file.extraction_status
-                                  )}
-                                >
-                                  {file.extraction_status}
-                                </StatusIndicator>
-                                <StatusIndicator
-                                  status={getFileStatusColor(
-                                    file.processing_status
-                                  )}
-                                >
-                                  {file.processing_status}
-                                </StatusIndicator>
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
-      </main>
-
-      {/* Floating Real-time Message */}
-      {realtimeMessage && (
-        <motion.div
-          initial={{ opacity: 0, x: 100, scale: 0.8 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: 100, scale: 0.8 }}
-          transition={{
-            type: "spring",
-            stiffness: 300,
-            damping: 30,
-            duration: 0.3,
-          }}
-          className="fixed bottom-6 right-6 z-50 max-w-sm"
-        >
-          <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-4 backdrop-blur-sm bg-white/95 ring-1 ring-gray-100">
-            <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center space-x-2">
-                  <p className="text-sm font-semibold text-gray-900">
-                    Live Update
-                  </p>
-                </div>
-                <p className="text-sm text-gray-600 mt-1 leading-relaxed">
-                  {realtimeMessage}
-                </p>
-              </div>
-              <div className="flex-shrink-0">
-                <button
-                  onClick={() => setRealtimeMessage(null)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </div>
+                          </motion.div>
+                        ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
-        </motion.div>
-      )}
-    </div>
+        </main>
+
+        {/* Floating Real-time Message */}
+        {realtimeMessage && (
+          <motion.div
+            initial={{ opacity: 0, x: 100, scale: 0.8 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 100, scale: 0.8 }}
+            transition={{
+              type: "spring",
+              stiffness: 300,
+              damping: 30,
+              duration: 0.3,
+            }}
+            className="fixed bottom-6 right-6 z-50 max-w-sm"
+          >
+            <div className="bg-white border border-gray-200 rounded-xl shadow-xl p-4 backdrop-blur-sm bg-white/95 ring-1 ring-gray-100">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center space-x-2">
+                    <p className="text-sm font-semibold text-gray-900">
+                      Live Update
+                    </p>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+                    {realtimeMessage}
+                  </p>
+                </div>
+                <div className="flex-shrink-0">
+                  <button
+                    onClick={() => setRealtimeMessage(null)}
+                    className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-full hover:bg-gray-100"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </ProtectedRoute>
   );
 }
