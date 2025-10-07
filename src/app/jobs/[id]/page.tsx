@@ -13,6 +13,7 @@ import { useOrganization } from "@/contexts/OrganizationContext";
 import { apiClient, JobDetails } from "@/lib/api";
 import { smartCsvExport } from "@/lib/csvExport";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
+import PreviewSelector from "@/components/preview/PreviewSelector";
 import { useSocket } from "@/hooks/useSocket";
 import {
   PlusIcon,
@@ -41,6 +42,10 @@ export default function JobDetailPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileList, setFileList] = useState<FileList | null>(null);
   const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [showPreviewSelector, setShowPreviewSelector] = useState(false);
+  const [selectedFileForPreview, setSelectedFileForPreview] = useState<
+    string | null
+  >(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -211,6 +216,21 @@ export default function JobDetailPage() {
     } catch (err) {
       console.error("Export failed:", err);
     }
+  };
+
+  const handleAddToPreview = (fileId: string) => {
+    setSelectedFileForPreview(fileId);
+    setShowPreviewSelector(true);
+  };
+
+  const handlePreviewSelectorClose = () => {
+    setShowPreviewSelector(false);
+    setSelectedFileForPreview(null);
+  };
+
+  const handlePreviewSuccess = () => {
+    // Optionally refresh job details or show success message
+    console.log("File added to preview successfully");
   };
 
   useEffect(() => {
@@ -953,21 +973,32 @@ export default function JobDetailPage() {
                                     </div>
                                     {file.processing_status === "completed" &&
                                       file.result && (
-                                        <Button
-                                          variant="secondary"
-                                          size="sm"
-                                          onClick={() =>
-                                            setShowFileResults((prev) => ({
-                                              ...prev,
-                                              [file.id]: !prev[file.id],
-                                            }))
-                                          }
-                                        >
-                                          {showFileResults[file.id]
-                                            ? "Hide"
-                                            : "Show"}{" "}
-                                          Results
-                                        </Button>
+                                        <div className="flex items-center space-x-2">
+                                          <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            onClick={() =>
+                                              setShowFileResults((prev) => ({
+                                                ...prev,
+                                                [file.id]: !prev[file.id],
+                                              }))
+                                            }
+                                          >
+                                            {showFileResults[file.id]
+                                              ? "Hide"
+                                              : "Show"}{" "}
+                                            Results
+                                          </Button>
+                                          <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            onClick={() =>
+                                              handleAddToPreview(file.id)
+                                            }
+                                          >
+                                            Add to Preview
+                                          </Button>
+                                        </div>
                                       )}
                                   </div>
                                 </div>
@@ -1148,6 +1179,15 @@ export default function JobDetailPage() {
           </>
         )}
       </div>
+
+      {/* Preview Selector Modal */}
+      {showPreviewSelector && selectedFileForPreview && (
+        <PreviewSelector
+          fileId={selectedFileForPreview}
+          onClose={handlePreviewSelectorClose}
+          onSuccess={handlePreviewSuccess}
+        />
+      )}
     </ProtectedRoute>
   );
 }

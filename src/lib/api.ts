@@ -128,6 +128,25 @@ export interface QueueStatus {
     status: 'paused' | 'running';
 }
 
+export interface PreviewDataTable {
+    id: string;
+    name: string;
+    schema: any;
+    items_ids: string[];
+    created_at: string;
+    updated_at: string;
+    item_count?: number;
+}
+
+export interface PreviewJobFile {
+    id: string;
+    filename: string;
+    result: any;
+    processing_status: string;
+    created_at: string;
+    job_name: string;
+}
+
 class ApiClient {
     private baseURL: string;
     private accessToken: string | null = null;
@@ -470,6 +489,56 @@ class ApiClient {
     // Organization Statistics
     async getOrganizationStats(organizationId: string): Promise<ApiResponse<{ stats: OrganizationStats }>> {
         return this.request(`/organizations/${organizationId}/stats`);
+    }
+
+    // Preview Data Table Methods
+    async getPreviews(): Promise<ApiResponse<PreviewDataTable[]>> {
+        return this.request('/previews');
+    }
+
+    async getPreview(id: string): Promise<ApiResponse<PreviewDataTable>> {
+        return this.request(`/previews/${id}`);
+    }
+
+    async getPreviewData(id: string): Promise<ApiResponse<{ preview: PreviewDataTable; jobFiles: PreviewJobFile[] }>> {
+        return this.request(`/previews/${id}/data`);
+    }
+
+    async createPreview(name: string, schema: any): Promise<ApiResponse<PreviewDataTable>> {
+        return this.request('/previews', {
+            method: 'POST',
+            body: JSON.stringify({ name, schema }),
+        });
+    }
+
+    async updatePreview(id: string, updates: Partial<PreviewDataTable>): Promise<ApiResponse<PreviewDataTable>> {
+        return this.request(`/previews/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(updates),
+        });
+    }
+
+    async deletePreview(id: string): Promise<ApiResponse<{ id: string; name: string }>> {
+        return this.request(`/previews/${id}`, {
+            method: 'DELETE',
+        });
+    }
+
+    async addItemsToPreview(id: string, itemIds: string[]): Promise<ApiResponse<PreviewDataTable>> {
+        return this.request(`/previews/${id}/items`, {
+            method: 'POST',
+            body: JSON.stringify({ itemIds }),
+        });
+    }
+
+    async removeItemFromPreview(id: string, itemId: string): Promise<ApiResponse<PreviewDataTable>> {
+        return this.request(`/previews/${id}/items/${itemId}`, {
+            method: 'DELETE',
+        });
+    }
+
+    async getAvailableFiles(limit: number = 50): Promise<ApiResponse<PreviewJobFile[]>> {
+        return this.request(`/previews/available-files?limit=${limit}`);
     }
 }
 
