@@ -14,12 +14,14 @@ import { apiClient, JobDetails, JobFile } from "@/lib/api";
 import { smartCsvExport } from "@/lib/csvExport";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import PreviewSelector from "@/components/preview/PreviewSelector";
+import SchemaEditor from "@/components/SchemaEditor";
 import { useSocket } from "@/hooks/useSocket";
 import {
   PlusIcon,
   DocumentIcon,
   ArrowDownTrayIcon,
   ChevronDownIcon,
+  PencilIcon,
 } from "@heroicons/react/24/outline";
 
 export default function JobDetailPage() {
@@ -47,6 +49,7 @@ export default function JobDetailPage() {
     string | null
   >(null);
   const [filePreviews, setFilePreviews] = useState<Record<string, any[]>>({});
+  const [showSchemaEditor, setShowSchemaEditor] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -132,8 +135,12 @@ export default function JobDetailPage() {
             console.log("✅ Found matching file, updating:", file.filename);
             return {
               ...file,
-              extraction_status: data.extraction_status,
-              processing_status: data.processing_status,
+              ...(data.extraction_status !== undefined && {
+                extraction_status: data.extraction_status,
+              }),
+              ...(data.processing_status !== undefined && {
+                processing_status: data.processing_status,
+              }),
               result: data.result || file.result,
               extraction_error: data.error || file.extraction_error,
               processing_error: data.error || file.processing_error,
@@ -229,10 +236,10 @@ export default function JobDetailPage() {
         try {
           // Debug: Log the data structure
           console.log("Exporting CSV with data:", allResults);
-          console.log("Schema:", job.schema_data.schema);
+          console.log("Schema:", job.schema_data);
 
           // Use the correct function signature: smartCsvExport(data, filename, schema)
-          smartCsvExport(allResults, `${filename}.csv`, job.schema_data.schema);
+          smartCsvExport(allResults, `${filename}.csv`, job.schema_data);
         } catch (error) {
           console.error("Error exporting CSV:", error);
           console.error("Data that failed:", allResults);
@@ -478,6 +485,16 @@ export default function JobDetailPage() {
                     </span>
                   </div>
 
+                  {/* Edit Schema Button */}
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowSchemaEditor(true)}
+                    className="flex items-center gap-2"
+                  >
+                    <PencilIcon className="w-4 h-4" />
+                    Edit Schema
+                  </Button>
+
                   {/* Export Dropdown */}
                   {job.files.some(
                     (file) => file.processing_status === "completed"
@@ -567,7 +584,7 @@ export default function JobDetailPage() {
                     <CardContent className="p-4">
                       <div className="text-center">
                         <div className="text-sm font-medium text-gray-900 mb-1">
-                          {job.schema_data.schemaName}
+                          {job.schema_data?.schemaName || "Extraction Schema"}
                         </div>
                         <div className="text-sm text-gray-500">Schema Name</div>
                       </div>
@@ -594,12 +611,12 @@ export default function JobDetailPage() {
                       <div className="mt-4">
                         <TabbedDataViewer
                           data={
-                            typeof job.schema_data.schema === "string"
-                              ? JSON.parse(job.schema_data.schema)
-                              : job.schema_data.schema
+                            typeof job.schema_data === "string"
+                              ? JSON.parse(job.schema_data)
+                              : job.schema_data
                           }
                           filename="schema"
-                          schema={job.schema_data.schema}
+                          schema={job.schema_data}
                         />
                       </div>
                     </CardContent>
@@ -1099,10 +1116,9 @@ export default function JobDetailPage() {
                                         data={file.result}
                                         filename={file.filename}
                                         schema={
-                                          typeof job.schema_data.schema ===
-                                          "string"
-                                            ? JSON.parse(job.schema_data.schema)
-                                            : job.schema_data.schema
+                                          typeof job.schema_data === "string"
+                                            ? JSON.parse(job.schema_data)
+                                            : job.schema_data
                                         }
                                       />
                                     </div>
@@ -1273,6 +1289,30 @@ export default function JobDetailPage() {
           fileId={selectedFileForPreview}
           onClose={handlePreviewSelectorClose}
           onSuccess={handlePreviewSuccess}
+        />
+      )}
+
+      {/* Schema Editor Modal */}
+      {showSchemaEditor && job && (
+        <SchemaEditor
+          jobId={job.id}
+          currentSchema={
+            typeof job.schema_data === "string"
+              ? job.schema_data
+              : job.schema_data?.schema || job.schema_data || {}
+          }
+          onClose={() => setShowSchemaEditor(false)}
+          onSuccess={(updatedSchema) => {
+            setJob((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    schema_data: updatedSchema,
+                  }
+                : null
+            );
+            setShowSchemaEditor(false);
+          }}
         />
       )}
     </ProtectedRoute>

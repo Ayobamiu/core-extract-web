@@ -565,6 +565,13 @@ class ApiClient {
             method: 'POST',
         });
     }
+
+    async updateJobSchema(jobId: string, schema: any): Promise<ApiResponse<{ jobId: string; schema: any }>> {
+        return this.request(`/jobs/${jobId}/schema`, {
+            method: 'PUT',
+            body: JSON.stringify({ schema }),
+        });
+    }
 }
 
 // Create singleton instance
