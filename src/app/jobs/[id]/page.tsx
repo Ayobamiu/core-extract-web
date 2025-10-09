@@ -15,6 +15,7 @@ import { smartCsvExport } from "@/lib/csvExport";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import PreviewSelector from "@/components/preview/PreviewSelector";
 import SchemaEditor from "@/components/SchemaEditor";
+import FileResultsEditor from "@/components/FileResultsEditor";
 import { useSocket } from "@/hooks/useSocket";
 import {
   PlusIcon,
@@ -50,6 +51,9 @@ export default function JobDetailPage() {
   >(null);
   const [filePreviews, setFilePreviews] = useState<Record<string, any[]>>({});
   const [showSchemaEditor, setShowSchemaEditor] = useState(false);
+  const [showFileResultsEditor, setShowFileResultsEditor] = useState(false);
+  const [selectedFileForResultsEdit, setSelectedFileForResultsEdit] =
+    useState<JobFile | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -266,6 +270,33 @@ export default function JobDetailPage() {
   const handlePreviewSuccess = () => {
     // Optionally refresh job details or show success message
     console.log("File added to preview successfully");
+  };
+
+  const handleEditResults = (file: JobFile) => {
+    setSelectedFileForResultsEdit(file);
+    setShowFileResultsEditor(true);
+  };
+
+  const handleResultsEditorClose = () => {
+    setShowFileResultsEditor(false);
+    setSelectedFileForResultsEdit(null);
+  };
+
+  const handleResultsUpdateSuccess = (updatedResults: any) => {
+    // Update the job state with the new results
+    if (selectedFileForResultsEdit && job) {
+      setJob((prev) => {
+        if (!prev) return null;
+
+        const updatedFiles = prev.files.map((f) =>
+          f.id === selectedFileForResultsEdit.id
+            ? { ...f, result: updatedResults }
+            : f
+        );
+
+        return { ...prev, files: updatedFiles };
+      });
+    }
   };
 
   useEffect(() => {
@@ -1031,6 +1062,16 @@ export default function JobDetailPage() {
                                             >
                                               Add to Preview
                                             </Button>
+                                            <Button
+                                              variant="default"
+                                              size="sm"
+                                              className="bg-purple-600 hover:bg-purple-700 text-white shadow-sm"
+                                              onClick={() =>
+                                                handleEditResults(file)
+                                              }
+                                            >
+                                              Edit Results
+                                            </Button>
                                           </div>
                                         )}
                                     </div>
@@ -1313,6 +1354,18 @@ export default function JobDetailPage() {
             );
             setShowSchemaEditor(false);
           }}
+        />
+      )}
+
+      {/* File Results Editor Modal */}
+      {showFileResultsEditor && selectedFileForResultsEdit && (
+        <FileResultsEditor
+          isOpen={showFileResultsEditor}
+          onClose={handleResultsEditorClose}
+          fileId={selectedFileForResultsEdit.id}
+          filename={selectedFileForResultsEdit.filename}
+          initialResults={selectedFileForResultsEdit.result}
+          onSuccess={handleResultsUpdateSuccess}
         />
       )}
     </ProtectedRoute>

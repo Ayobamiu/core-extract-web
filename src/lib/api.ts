@@ -572,6 +572,13 @@ class ApiClient {
             body: JSON.stringify({ schema }),
         });
     }
+
+    async updateFileResults(fileId: string, results: any): Promise<ApiResponse<{ fileId: string; filename: string; results: any }>> {
+        return this.request(`/files/${fileId}/results`, {
+            method: 'PUT',
+            body: JSON.stringify({ results }),
+        });
+    }
 }
 
 // Create singleton instance
