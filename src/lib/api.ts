@@ -217,7 +217,14 @@ class ApiClient {
                         window.location.href = '/login';
                     }
                 }
-                throw new Error(data.error || data.message || `HTTP error! status: ${response.status}`);
+
+                // Return the error response instead of throwing
+                return {
+                    status: 'error',
+                    success: false,
+                    message: data.message || data.error || `HTTP error! status: ${response.status}`,
+                    error: data.error || data.message
+                };
             }
 
             return data;
@@ -551,6 +558,12 @@ class ApiClient {
 
     async getFileSchema(fileId: string): Promise<ApiResponse<{ schema: any; schemaName: string }>> {
         return this.request(`/previews/file/${fileId}/schema`);
+    }
+
+    async enrichFileWithMGSData(fileId: string): Promise<ApiResponse<{ fileId: string; mgsData: any; message: string }>> {
+        return this.request(`/previews/file/${fileId}/enrich-with-mgs`, {
+            method: 'POST',
+        });
     }
 }
 

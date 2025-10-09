@@ -29,6 +29,8 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
   const [fileInPreviews, setFileInPreviews] = useState<Record<string, boolean>>(
     {}
   );
+  const [useMGSData, setUseMGSData] = useState(false);
+  const [mgsError, setMgsError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchPreviews = async () => {
@@ -80,6 +82,19 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
 
     try {
       setAdding(true);
+      setMgsError(null);
+
+      // If MGS data is requested, enrich the file first
+      if (useMGSData) {
+        const mgsResponse = await apiClient.enrichFileWithMGSData(fileId);
+        if (!mgsResponse.success) {
+          setMgsError(
+            mgsResponse.message || "Failed to enrich file with MGS data"
+          );
+          return;
+        }
+      }
+
       const response = await apiClient.addItemsToPreview(selectedPreviewId, [
         fileId,
       ]);
@@ -90,6 +105,12 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
       }
     } catch (error) {
       console.error("Error adding file to preview:", error);
+      // Check if it's an API error with a specific message
+      if (error && typeof error === "object" && "message" in error) {
+        setMgsError(String(error.message));
+      } else {
+        setMgsError("An unexpected error occurred");
+      }
     } finally {
       setAdding(false);
     }
@@ -100,6 +121,18 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
 
     try {
       setCreating(true);
+      setMgsError(null);
+
+      // If MGS data is requested, enrich the file first
+      if (useMGSData) {
+        const mgsResponse = await apiClient.enrichFileWithMGSData(fileId);
+        if (!mgsResponse.success) {
+          setMgsError(
+            mgsResponse.message || "Failed to enrich file with MGS data"
+          );
+          return;
+        }
+      }
 
       // Get the file's schema from its job
       let fileSchema = {
@@ -132,6 +165,12 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
       }
     } catch (error) {
       console.error("Error creating preview:", error);
+      // Check if it's an API error with a specific message
+      if (error && typeof error === "object" && "message" in error) {
+        setMgsError(String(error.message));
+      } else {
+        setMgsError("An unexpected error occurred");
+      }
     } finally {
       setCreating(false);
     }
@@ -173,38 +212,55 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
                   Select existing preview:
                 </h4>
                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {previews.map((preview) => (
-                    <div
-                      key={preview.id}
-                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                        selectedPreviewId === preview.id
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 hover:border-gray-300"
-                      }`}
-                      onClick={() => setSelectedPreviewId(preview.id)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {preview.name}
-                          </p>
-                          <div className="flex items-center space-x-2">
-                            <p className="text-sm text-gray-500">
-                              {preview.item_count || 0} items
+                  {previews.map((preview) => {
+                    const isAlreadyAdded = fileInPreviews[preview.id];
+                    const isDisabled = isAlreadyAdded;
+
+                    return (
+                      <div
+                        key={preview.id}
+                        className={`p-3 border rounded-lg transition-colors ${
+                          isDisabled
+                            ? "border-gray-200 bg-gray-50 cursor-not-allowed opacity-60"
+                            : selectedPreviewId === preview.id
+                            ? "border-blue-500 bg-blue-50 cursor-pointer"
+                            : "border-gray-200 hover:border-gray-300 cursor-pointer"
+                        }`}
+                        onClick={() =>
+                          !isDisabled && setSelectedPreviewId(preview.id)
+                        }
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p
+                              className={`font-medium ${
+                                isDisabled ? "text-gray-500" : "text-gray-900"
+                              }`}
+                            >
+                              {preview.name}
                             </p>
-                            {fileInPreviews[preview.id] && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                Already added
-                              </span>
-                            )}
+                            <div className="flex items-center space-x-2">
+                              <p
+                                className={`text-sm ${
+                                  isDisabled ? "text-gray-400" : "text-gray-500"
+                                }`}
+                              >
+                                {preview.item_count || 0} items
+                              </p>
+                              {isAlreadyAdded && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                  Already added
+                                </span>
+                              )}
+                            </div>
                           </div>
+                          {selectedPreviewId === preview.id && !isDisabled && (
+                            <CheckIcon className="h-5 w-5 text-blue-600" />
+                          )}
                         </div>
-                        {selectedPreviewId === preview.id && (
-                          <CheckIcon className="h-5 w-5 text-blue-600" />
-                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {previews.length === 0 && (
                     <div className="text-center py-8 text-gray-500">
@@ -218,7 +274,11 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
               <div className="flex space-x-3">
                 <Button
                   onClick={handleAddToPreview}
-                  disabled={!selectedPreviewId || adding}
+                  disabled={
+                    !selectedPreviewId ||
+                    adding ||
+                    (!!selectedPreviewId && fileInPreviews[selectedPreviewId])
+                  }
                   className="flex-1"
                 >
                   {adding ? "Adding..." : "Add to Preview"}
@@ -232,6 +292,29 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
                   <PlusIcon className="h-4 w-4" />
                   <span>New</span>
                 </Button>
+              </div>
+
+              {/* MGS Data Checkbox */}
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useMGSData}
+                    onChange={(e) => {
+                      setUseMGSData(e.target.checked);
+                      setMgsError(null); // Clear error when checkbox changes
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Prefill with MGS data?
+                  </span>
+                </label>
+                {mgsError && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                    ⚠ {mgsError}
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -264,6 +347,29 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
                 >
                   Back
                 </Button>
+              </div>
+
+              {/* MGS Data Checkbox */}
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useMGSData}
+                    onChange={(e) => {
+                      setUseMGSData(e.target.checked);
+                      setMgsError(null); // Clear error when checkbox changes
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Prefill with MGS data?
+                  </span>
+                </label>
+                {mgsError && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                    ⚠ {mgsError}
+                  </div>
+                )}
               </div>
             </div>
           )}
