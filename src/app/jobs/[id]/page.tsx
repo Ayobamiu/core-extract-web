@@ -10,7 +10,7 @@ import Navigation from "@/components/layout/Navigation";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
-import { apiClient, JobDetails } from "@/lib/api";
+import { apiClient, JobDetails, JobFile } from "@/lib/api";
 import { smartCsvExport } from "@/lib/csvExport";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import PreviewSelector from "@/components/preview/PreviewSelector";
@@ -46,6 +46,7 @@ export default function JobDetailPage() {
   const [selectedFileForPreview, setSelectedFileForPreview] = useState<
     string | null
   >(null);
+  const [filePreviews, setFilePreviews] = useState<Record<string, any[]>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -55,6 +56,33 @@ export default function JobDetailPage() {
       const response = await apiClient.getJob(jobId);
       setJob(response.job);
       setError(null);
+
+      // Fetch previews for each completed file
+      if (response.job?.files) {
+        const previewPromises = response.job.files
+          .filter((file: JobFile) => file.processing_status === "completed")
+          .map(async (file: JobFile) => {
+            try {
+              const previewResponse = await apiClient.getPreviewsForFile(
+                file.id
+              );
+              return { fileId: file.id, previews: previewResponse.data || [] };
+            } catch (error) {
+              console.error(
+                `Error fetching previews for file ${file.id}:`,
+                error
+              );
+              return { fileId: file.id, previews: [] };
+            }
+          });
+
+        const previewResults = await Promise.all(previewPromises);
+        const previewMap: Record<string, any[]> = {};
+        previewResults.forEach(({ fileId, previews }) => {
+          previewMap[fileId] = previews;
+        });
+        setFilePreviews(previewMap);
+      }
     } catch (err: unknown) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to fetch job details";
@@ -99,7 +127,7 @@ export default function JobDetailPage() {
           data.processing_status
         );
 
-        const updatedFiles = prev.files.map((file) => {
+        const updatedFiles = prev.files.map((file: JobFile) => {
           if (file.id === data.fileId) {
             console.log("✅ Found matching file, updating:", file.filename);
             return {
@@ -914,92 +942,151 @@ export default function JobDetailPage() {
                                 className="space-y-3"
                               >
                                 {/* File Header */}
-                                <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
-                                  <div className="flex items-center space-x-3">
-                                    <div className="flex-shrink-0 h-8 w-8">
-                                      <div className="h-8 w-8 rounded bg-gradient-to-br from-green-500 to-blue-600 flex items-center justify-center">
-                                        <span className="text-xs font-medium text-white">
-                                          {file.filename
-                                            .charAt(0)
-                                            .toUpperCase()}
-                                        </span>
+                                <div className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+                                  {/* Main File Info */}
+                                  <div className="p-4 border-b border-gray-100">
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex items-center space-x-3 flex-1">
+                                        <div className="flex-shrink-0 h-10 w-10">
+                                          <div className="h-10 w-10 rounded-lg bg-red-50 flex items-center justify-center">
+                                            <svg
+                                              className="w-6 h-6 text-red-600"
+                                              fill="currentColor"
+                                              viewBox="0 0 20 20"
+                                              xmlns="http://www.w3.org/2000/svg"
+                                            >
+                                              <path
+                                                fillRule="evenodd"
+                                                d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+                                                clipRule="evenodd"
+                                              />
+                                            </svg>
+                                          </div>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <h3 className="text-sm font-semibold text-gray-900 truncate">
+                                            {file.filename}
+                                          </h3>
+                                          <div className="flex items-center space-x-4 mt-1">
+                                            <span className="text-xs text-gray-500">
+                                              {(file.size / 1024).toFixed(1)} KB
+                                            </span>
+                                            {file.processing_metadata
+                                              ?.processing_time && (
+                                              <span className="text-xs text-gray-500">
+                                                Processed:{" "}
+                                                {new Date(
+                                                  file.processing_metadata.processing_time
+                                                ).toLocaleTimeString()}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
                                       </div>
+
+                                      {/* Action Buttons */}
+                                      {file.processing_status === "completed" &&
+                                        file.result && (
+                                          <div className="flex items-center space-x-2 ml-4">
+                                            <Button
+                                              variant="default"
+                                              size="sm"
+                                              className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                                              onClick={() =>
+                                                setShowFileResults((prev) => ({
+                                                  ...prev,
+                                                  [file.id]: !prev[file.id],
+                                                }))
+                                              }
+                                            >
+                                              {showFileResults[file.id]
+                                                ? "Hide"
+                                                : "Show"}{" "}
+                                              Results
+                                            </Button>
+                                            <Button
+                                              variant="default"
+                                              size="sm"
+                                              className="bg-green-600 hover:bg-green-700 text-white shadow-sm"
+                                              onClick={() =>
+                                                handleAddToPreview(file.id)
+                                              }
+                                            >
+                                              Add to Preview
+                                            </Button>
+                                          </div>
+                                        )}
                                     </div>
-                                    <div>
-                                      <div className="text-sm font-medium text-gray-900">
-                                        {file.filename}
+                                  </div>
+
+                                  {/* Status and Preview Info */}
+                                  <div className="p-4 bg-gray-50">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      {/* Status Section */}
+                                      <div className="space-y-2">
+                                        <div className="flex items-center space-x-2">
+                                          <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                                            Status
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center space-x-4">
+                                          <div className="flex items-center space-x-2">
+                                            <span className="text-xs text-gray-500">
+                                              Extraction:
+                                            </span>
+                                            <StatusIndicator
+                                              status={getFileStatusColor(
+                                                file.extraction_status
+                                              )}
+                                            >
+                                              {file.extraction_status}
+                                            </StatusIndicator>
+                                          </div>
+                                          <div className="flex items-center space-x-2">
+                                            <span className="text-xs text-gray-500">
+                                              Processing:
+                                            </span>
+                                            <StatusIndicator
+                                              status={getFileStatusColor(
+                                                file.processing_status
+                                              )}
+                                            >
+                                              {file.processing_status}
+                                            </StatusIndicator>
+                                          </div>
+                                        </div>
                                       </div>
-                                      <div className="text-xs text-gray-500">
-                                        {(file.size / 1024).toFixed(1)} KB
-                                        {file.processing_metadata
-                                          ?.processing_time && (
-                                          <span className="ml-2">
-                                            • Processed:{" "}
-                                            {new Date(
-                                              file.processing_metadata.processing_time
-                                            ).toLocaleTimeString()}
+
+                                      {/* Preview Section */}
+                                      <div className="space-y-2">
+                                        <div className="flex items-center space-x-2">
+                                          <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                                            Previews
+                                          </span>
+                                        </div>
+                                        {filePreviews[file.id] &&
+                                        filePreviews[file.id].length > 0 ? (
+                                          <div className="flex flex-wrap gap-1">
+                                            {filePreviews[file.id].map(
+                                              (preview) => (
+                                                <a
+                                                  key={preview.id}
+                                                  href={`/preview/${preview.id}`}
+                                                  target="_blank"
+                                                  className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors"
+                                                >
+                                                  {preview.name}
+                                                </a>
+                                              )
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <span className="text-xs text-gray-400 italic">
+                                            Not in any previews
                                           </span>
                                         )}
                                       </div>
                                     </div>
-                                  </div>
-
-                                  <div className="flex items-center space-x-3">
-                                    <div className="flex flex-col space-y-1">
-                                      <div className="flex items-center space-x-2">
-                                        <span className="text-xs text-gray-500 font-medium">
-                                          Extraction:
-                                        </span>
-                                        <StatusIndicator
-                                          status={getFileStatusColor(
-                                            file.extraction_status
-                                          )}
-                                        >
-                                          {file.extraction_status}
-                                        </StatusIndicator>
-                                      </div>
-                                      <div className="flex items-center space-x-2">
-                                        <span className="text-xs text-gray-500 font-medium">
-                                          Processing:
-                                        </span>
-                                        <StatusIndicator
-                                          status={getFileStatusColor(
-                                            file.processing_status
-                                          )}
-                                        >
-                                          {file.processing_status}
-                                        </StatusIndicator>
-                                      </div>
-                                    </div>
-                                    {file.processing_status === "completed" &&
-                                      file.result && (
-                                        <div className="flex items-center space-x-2">
-                                          <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            onClick={() =>
-                                              setShowFileResults((prev) => ({
-                                                ...prev,
-                                                [file.id]: !prev[file.id],
-                                              }))
-                                            }
-                                          >
-                                            {showFileResults[file.id]
-                                              ? "Hide"
-                                              : "Show"}{" "}
-                                            Results
-                                          </Button>
-                                          <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            onClick={() =>
-                                              handleAddToPreview(file.id)
-                                            }
-                                          >
-                                            Add to Preview
-                                          </Button>
-                                        </div>
-                                      )}
                                   </div>
                                 </div>
 

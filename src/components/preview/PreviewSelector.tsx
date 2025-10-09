@@ -26,6 +26,9 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
   const [newPreviewName, setNewPreviewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [fileInPreviews, setFileInPreviews] = useState<Record<string, boolean>>(
+    {}
+  );
 
   useEffect(() => {
     const fetchPreviews = async () => {
@@ -33,6 +36,34 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
         const response = await apiClient.getPreviews();
         if (response.success) {
           setPreviews(response.data || []);
+
+          // Check which previews already contain this file
+          const previewChecks =
+            response.data?.map(async (preview) => {
+              try {
+                const checkResponse = await apiClient.isFileInPreview(
+                  fileId,
+                  preview.id
+                );
+                return {
+                  previewId: preview.id,
+                  exists: checkResponse.data?.exists || false,
+                };
+              } catch (error) {
+                console.error(
+                  `Error checking if file is in preview ${preview.id}:`,
+                  error
+                );
+                return { previewId: preview.id, exists: false };
+              }
+            }) || [];
+
+          const results = await Promise.all(previewChecks);
+          const fileInPreviewsMap: Record<string, boolean> = {};
+          results.forEach(({ previewId, exists }) => {
+            fileInPreviewsMap[previewId] = exists;
+          });
+          setFileInPreviews(fileInPreviewsMap);
         }
       } catch (error) {
         console.error("Error fetching previews:", error);
@@ -42,7 +73,7 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
     };
 
     fetchPreviews();
-  }, []);
+  }, [fileId]);
 
   const handleAddToPreview = async () => {
     if (!selectedPreviewId) return;
@@ -70,8 +101,8 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
     try {
       setCreating(true);
 
-      // Create a basic schema for the new preview
-      const basicSchema = {
+      // Get the file's schema from its job
+      let fileSchema = {
         type: "object",
         properties: {
           filename: { type: "string", title: "Filename" },
@@ -79,12 +110,21 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
         },
       };
 
+      try {
+        const schemaResponse = await apiClient.getFileSchema(fileId);
+        if (schemaResponse.success && schemaResponse.data?.schema) {
+          fileSchema = schemaResponse.data.schema.schema;
+        }
+      } catch (error) {
+        console.warn("Could not fetch file schema, using default:", error);
+      }
+
       const response = await apiClient.createPreview(
         newPreviewName,
-        basicSchema
+        fileSchema
       );
 
-      if (response.success) {
+      if (response.success && response.data) {
         // Add the file to the newly created preview
         await apiClient.addItemsToPreview(response.data.id, [fileId]);
         onSuccess();
@@ -148,9 +188,16 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
                           <p className="font-medium text-gray-900">
                             {preview.name}
                           </p>
-                          <p className="text-sm text-gray-500">
-                            {preview.item_count || 0} items
-                          </p>
+                          <div className="flex items-center space-x-2">
+                            <p className="text-sm text-gray-500">
+                              {preview.item_count || 0} items
+                            </p>
+                            {fileInPreviews[preview.id] && (
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                Already added
+                              </span>
+                            )}
+                          </div>
                         </div>
                         {selectedPreviewId === preview.id && (
                           <CheckIcon className="h-5 w-5 text-blue-600" />

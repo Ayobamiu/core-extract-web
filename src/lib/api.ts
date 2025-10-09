@@ -540,6 +540,18 @@ class ApiClient {
     async getAvailableFiles(limit: number = 50): Promise<ApiResponse<PreviewJobFile[]>> {
         return this.request(`/previews/available-files?limit=${limit}`);
     }
+
+    async getPreviewsForFile(fileId: string): Promise<ApiResponse<PreviewDataTable[]>> {
+        return this.request(`/previews/file/${fileId}`);
+    }
+
+    async isFileInPreview(fileId: string, previewId: string): Promise<ApiResponse<{ exists: boolean }>> {
+        return this.request(`/previews/${previewId}/contains/${fileId}`);
+    }
+
+    async getFileSchema(fileId: string): Promise<ApiResponse<{ schema: any; schemaName: string }>> {
+        return this.request(`/previews/file/${fileId}/schema`);
+    }
 }
 
 // Create singleton instance

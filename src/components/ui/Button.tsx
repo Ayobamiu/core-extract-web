@@ -2,7 +2,13 @@ import React from "react";
 import { motion } from "framer-motion";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "success" | "warning" | "error";
+  variant?:
+    | "primary"
+    | "secondary"
+    | "success"
+    | "warning"
+    | "error"
+    | "default";
   size?: "sm" | "md" | "lg";
   loading?: boolean;
   children: React.ReactNode;
@@ -28,6 +34,7 @@ const Button: React.FC<ButtonProps> = ({
     warning:
       "bg-yellow-600 text-white hover:bg-yellow-700 focus:ring-yellow-500",
     error: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500",
+    default: "bg-blue-200 text-blue-900 hover:bg-blue-300 focus:ring-blue-500",
   };
 
   const sizeClasses = {
