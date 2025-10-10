@@ -162,6 +162,7 @@ const PreviewPage: React.FC = () => {
 
     let data = previewData.jobFiles.map((file) => ({
       _filename: file.filename,
+      _fileId: file.id,
       _jobName: file.job_name,
       _createdAt: file.created_at,
       ...file.result,
@@ -357,6 +358,7 @@ const PreviewPage: React.FC = () => {
 
     const headers = [
       "_filename",
+      "_fileId",
       "_jobName",
       "_createdAt",
       ...columns.map((col) => col.key),
@@ -440,7 +442,7 @@ const PreviewPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="h-screen bg-gray-50 flex flex-col">
       {/* Fixed Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -526,6 +528,9 @@ const PreviewPage: React.FC = () => {
                   File
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                  File ID
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                   Job
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
@@ -554,6 +559,9 @@ const PreviewPage: React.FC = () => {
                 <tr key={index} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
                     {item._filename}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
+                    {item._fileId}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
                     {item._jobName}
