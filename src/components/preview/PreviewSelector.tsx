@@ -29,7 +29,7 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
   const [fileInPreviews, setFileInPreviews] = useState<Record<string, boolean>>(
     {}
   );
-  const [useMGSData, setUseMGSData] = useState(false);
+  const [useMGSData, setUseMGSData] = useState(true);
   const [mgsError, setMgsError] = useState<string | null>(null);
 
   useEffect(() => {
