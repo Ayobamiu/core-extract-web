@@ -103,7 +103,7 @@ const ComplexDataCell: React.FC<{
     const remainingCount = entries.length - maxDisplay;
 
     return (
-      <div className="text-xs">
+      <div className="text-xs truncate">
         {displayEntries.map(([key, val], index) => (
           <span key={index}>
             <span className="font-medium text-gray-600">{key}:</span>{" "}
@@ -122,7 +122,7 @@ const ComplexDataCell: React.FC<{
   }
 
   // Handle primitive values
-  return <span>{String(value)}</span>;
+  return <span className="truncate block">{String(value)}</span>;
 };
 
 const PreviewPage: React.FC = () => {
@@ -522,13 +522,13 @@ const PreviewPage: React.FC = () => {
       <div className="flex-1 overflow-auto">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 sticky top-0 z-20">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                  File
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 sticky left-0 bg-gray-50 z-30">
+                  File ID
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                  File ID
+                  File
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                   Job
@@ -557,13 +557,13 @@ const PreviewPage: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {paginatedData.map((item, index) => (
                 <tr key={index} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
-                    {item._filename}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border-r border-gray-200 sticky left-0 bg-white z-20 hover:bg-gray-50">
                     {item._fileId}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200">
+                  <td className="px-6 py-4 text-sm text-gray-900 border-r border-gray-200 truncate max-w-xs">
+                    {item._filename}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-900 border-r border-gray-200 truncate max-w-xs">
                     {item._jobName}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border-r border-gray-200">
@@ -572,7 +572,7 @@ const PreviewPage: React.FC = () => {
                   {columns.map((column) => (
                     <td
                       key={column.key}
-                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 border-r border-gray-200"
+                      className="px-6 py-4 text-sm text-gray-900 border-r border-gray-200 truncate max-w-xs"
                     >
                       <ComplexDataCell
                         value={item[column.key]}
