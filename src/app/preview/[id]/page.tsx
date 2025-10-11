@@ -1,16 +1,99 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiClient, PreviewDataTable, PreviewJobFile } from "@/lib/api";
 import Button from "@/components/ui/Button";
-import Card from "@/components/ui/Card";
-import {
-  ChevronLeftIcon,
-  ArrowDownTrayIcon,
-  MagnifyingGlassIcon,
-  XMarkIcon,
-} from "@heroicons/react/24/outline";
+import { Table, Input, Modal, Button as AntButton, Dropdown } from "antd";
+import { ChevronLeftIcon } from "@heroicons/react/24/outline";
+import { SearchOutlined, DownloadOutlined } from "@ant-design/icons";
+import type { ColumnsType } from "antd/es/table";
+
+// Styles for truncation and proper spacing
+const tableStyles = `
+  /* Truncation styles - more specific selectors */
+  .ant-table-custom .ant-table-tbody > tr > td {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 0 !important;
+  }
+  
+  .ant-table-custom .ant-table-tbody > tr > td > span,
+  .ant-table-custom .ant-table-tbody > tr > td > div {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    display: block !important;
+    max-width: 100% !important;
+  }
+  
+  .ant-table-custom .ant-table-tbody > tr > td .ant-btn-link {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    padding: 0 !important;
+    height: auto !important;
+    line-height: 1.4 !important;
+  }
+  
+  /* Force truncation on all text content */
+  .ant-table-custom .ant-table-tbody > tr > td * {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  
+  /* Additional truncation rules */
+  .ant-table-custom .ant-table-tbody > tr > td {
+    table-layout: fixed !important;
+  }
+  
+  .ant-table-custom .ant-table {
+    table-layout: fixed !important;
+  }
+  
+  .ant-table-custom .ant-table-tbody > tr > td > span.truncate {
+    display: block !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 100% !important;
+  }
+  
+  /* Target Ant Design's internal table structure */
+  .ant-table-custom .ant-table-content .ant-table-tbody > tr > td {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+  
+  .ant-table-custom .ant-table-content .ant-table-tbody > tr > td > * {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    display: block !important;
+  }
+  
+  /* Ensure proper table spacing without gaps */
+  .ant-table-custom .ant-table-thead > tr > th {
+    border-bottom: 1px solid #f0f0f0 !important;
+  }
+  
+  .ant-table-custom .ant-table-tbody > tr > td {
+    border-bottom: 1px solid #f0f0f0 !important;
+  }
+  
+  /* Remove any extra spacing that might cause gaps */
+  .ant-table-custom .ant-table-thead {
+    margin-bottom: 0 !important;
+  }
+  
+  .ant-table-custom .ant-table-tbody {
+    margin-top: 0 !important;
+  }
+`;
 
 interface PreviewData {
   preview: PreviewDataTable;
@@ -53,7 +136,9 @@ const ComplexDataCell: React.FC<{
     if (isArrayOfObjects) {
       // For arrays of objects, just show the count
       return (
-        <button
+        <AntButton
+          type="link"
+          size="small"
           onClick={() =>
             onArrayClick({
               columnKey,
@@ -61,21 +146,27 @@ const ComplexDataCell: React.FC<{
               title: `${columnKey} (${value.length} items)`,
             })
           }
-          className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+          className="p-0 h-auto text-blue-600 hover:text-blue-800"
         >
           {value.length} items
-        </button>
+        </AntButton>
       );
     }
 
     // For arrays of primitives
     if (value.length === 1) {
-      return <span>{String(value[0])}</span>;
+      return (
+        <span className="truncate block" title={String(value[0])}>
+          {String(value[0])}
+        </span>
+      );
     }
 
     // Multiple primitive items - show first + count
     return (
-      <button
+      <AntButton
+        type="link"
+        size="small"
         onClick={() =>
           onArrayClick({
             columnKey,
@@ -83,10 +174,10 @@ const ComplexDataCell: React.FC<{
             title: `${columnKey} (${value.length} items)`,
           })
         }
-        className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+        className="p-0 h-auto text-blue-600 hover:text-blue-800"
       >
         {String(value[0])} +{value.length - 1} more
-      </button>
+      </AntButton>
     );
   }
 
@@ -103,26 +194,32 @@ const ComplexDataCell: React.FC<{
     const remainingCount = entries.length - maxDisplay;
 
     return (
-      <div className="text-xs truncate">
-        {displayEntries.map(([key, val], index) => (
-          <span key={index}>
-            <span className="font-medium text-gray-600">{key}:</span>{" "}
-            <span className="text-gray-900">"{String(val)}"</span>
-            {index < displayEntries.length - 1 && ", "}
-          </span>
-        ))}
-        {remainingCount > 0 && (
-          <span className="text-blue-600 font-medium">
-            {" "}
-            +{remainingCount} more
-          </span>
-        )}
+      <div className="text-xs truncate block" title={JSON.stringify(value)}>
+        <span className="truncate block">
+          {displayEntries.map(([key, val], index) => (
+            <span key={index}>
+              <span className="font-medium text-gray-600">{key}:</span>{" "}
+              <span className="text-gray-900">"{String(val)}"</span>
+              {index < displayEntries.length - 1 && ", "}
+            </span>
+          ))}
+          {remainingCount > 0 && (
+            <span className="text-blue-600 font-medium">
+              {" "}
+              +{remainingCount} more
+            </span>
+          )}
+        </span>
       </div>
     );
   }
 
   // Handle primitive values
-  return <span className="truncate block">{String(value)}</span>;
+  return (
+    <span className="truncate block" title={String(value)}>
+      {String(value)}
+    </span>
+  );
 };
 
 const PreviewPage: React.FC = () => {
@@ -135,13 +232,9 @@ const PreviewPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
   const [arrayPopup, setArrayPopup] = useState<ArrayPopupData | null>(null);
-  const [showExportDropdown, setShowExportDropdown] = useState(false);
-  const exportDropdownRef = useRef<HTMLDivElement>(null);
 
   // Extract columns from schema
   const columns: TableColumn[] = useMemo(() => {
@@ -155,6 +248,99 @@ const PreviewPage: React.FC = () => {
       })
     );
   }, [previewData?.preview.schema]);
+
+  const handleArrayClick = (data: ArrayPopupData) => {
+    setArrayPopup(data);
+  };
+
+  // Create Ant Design table columns
+  const tableColumns: ColumnsType<any> = useMemo(() => {
+    const baseColumns: ColumnsType<any> = [
+      {
+        title: "File ID",
+        dataIndex: "_fileId",
+        key: "_fileId",
+        width: 120,
+        fixed: "left",
+        ellipsis: true,
+        sorter: (a, b) => a._fileId.localeCompare(b._fileId),
+        render: (text: string) => (
+          <span
+            className="text-gray-500 font-mono text-sm truncate block"
+            title={text}
+          >
+            {text}
+          </span>
+        ),
+      },
+      {
+        title: "File",
+        dataIndex: "_filename",
+        key: "_filename",
+        width: 200,
+        fixed: "left",
+        ellipsis: true,
+        sorter: (a, b) => a._filename.localeCompare(b._filename),
+        render: (text: string) => (
+          <span className="text-gray-900 truncate block" title={text}>
+            {text}
+          </span>
+        ),
+      },
+      {
+        title: "Job",
+        dataIndex: "_jobName",
+        key: "_jobName",
+        width: 150,
+        ellipsis: true,
+        sorter: (a, b) => a._jobName.localeCompare(b._jobName),
+        render: (text: string) => (
+          <span className="text-gray-900 truncate block" title={text}>
+            {text}
+          </span>
+        ),
+      },
+      {
+        title: "Created",
+        dataIndex: "_createdAt",
+        key: "_createdAt",
+        width: 120,
+        ellipsis: true,
+        sorter: (a, b) =>
+          new Date(a._createdAt).getTime() - new Date(b._createdAt).getTime(),
+        render: (text: string) => (
+          <span className="text-gray-500 text-sm truncate block" title={text}>
+            {new Date(text).toLocaleDateString()}
+          </span>
+        ),
+      },
+    ];
+
+    // Add dynamic columns from schema
+    const dynamicColumns = columns.map((column) => ({
+      title: column.label,
+      dataIndex: column.key,
+      key: column.key,
+      width: 200,
+      ellipsis: true,
+      sorter: (a: any, b: any) => {
+        const aVal = a[column.key];
+        const bVal = b[column.key];
+        if (aVal === null || aVal === undefined) return 1;
+        if (bVal === null || bVal === undefined) return -1;
+        return String(aVal).localeCompare(String(bVal));
+      },
+      render: (value: any) => (
+        <ComplexDataCell
+          value={value}
+          columnKey={column.key}
+          onArrayClick={handleArrayClick}
+        />
+      ),
+    }));
+
+    return [...baseColumns, ...dynamicColumns];
+  }, [columns, handleArrayClick]);
 
   // Process and filter data
   const processedData = useMemo(() => {
@@ -177,30 +363,8 @@ const PreviewPage: React.FC = () => {
       );
     }
 
-    // Apply sorting
-    if (sortColumn) {
-      data.sort((a, b) => {
-        const aVal = a[sortColumn];
-        const bVal = b[sortColumn];
-
-        if (aVal === null || aVal === undefined) return 1;
-        if (bVal === null || bVal === undefined) return -1;
-
-        const comparison = String(aVal).localeCompare(String(bVal));
-        return sortDirection === "asc" ? comparison : -comparison;
-      });
-    }
-
     return data;
-  }, [previewData?.jobFiles, searchTerm, sortColumn, sortDirection]);
-
-  // Pagination
-  const totalPages = Math.ceil(processedData.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedData = processedData.slice(
-    startIndex,
-    startIndex + itemsPerPage
-  );
+  }, [previewData?.jobFiles, searchTerm]);
 
   useEffect(() => {
     const fetchPreviewData = async () => {
@@ -225,40 +389,6 @@ const PreviewPage: React.FC = () => {
       fetchPreviewData();
     }
   }, [previewId]);
-
-  // Close export dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        exportDropdownRef.current &&
-        !exportDropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowExportDropdown(false);
-      }
-    };
-
-    if (showExportDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showExportDropdown]);
-
-  const handleSort = (columnKey: string) => {
-    if (sortColumn === columnKey) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      setSortColumn(columnKey);
-      setSortDirection("asc");
-    }
-    setCurrentPage(1);
-  };
-
-  const handleArrayClick = (data: ArrayPopupData) => {
-    setArrayPopup(data);
-  };
 
   const closeArrayPopup = () => {
     setArrayPopup(null);
@@ -443,6 +573,7 @@ const PreviewPage: React.FC = () => {
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
+      <style dangerouslySetInnerHTML={{ __html: tableStyles }} />
       {/* Fixed Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -471,224 +602,114 @@ const PreviewPage: React.FC = () => {
 
           <div className="flex items-center space-x-4">
             {/* Search Bar */}
-            <div className="relative">
-              <MagnifyingGlassIcon className="h-5 w-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search data..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-80 pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
+            <Input
+              placeholder="Search data..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              prefix={<SearchOutlined />}
+              style={{ width: 320 }}
+              allowClear
+            />
 
-            <div className="relative" ref={exportDropdownRef}>
-              {/* <Button
-                onClick={() => setShowExportDropdown(!showExportDropdown)}
-                disabled={!processedData.length}
-              >
-                <ArrowDownTrayIcon className="h-4 w-4 mr-2" />
-                Export
-              </Button> */}
-
-              {showExportDropdown && (
-                <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-10">
-                  <button
-                    onClick={() => {
-                      handleExport("csv");
-                      setShowExportDropdown(false);
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 first:rounded-t-md last:rounded-b-md"
-                  >
-                    Export as CSV
-                  </button>
-                  <button
-                    onClick={() => {
-                      handleExport("json");
-                      setShowExportDropdown(false);
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 first:rounded-t-md last:rounded-b-md"
-                  >
-                    Export as JSON
-                  </button>
-                </div>
-              )}
-            </div>
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: "csv",
+                    label: "Export as CSV",
+                    icon: <DownloadOutlined />,
+                    onClick: () => handleExport("csv"),
+                  },
+                  {
+                    key: "json",
+                    label: "Export as JSON",
+                    icon: <DownloadOutlined />,
+                    onClick: () => handleExport("json"),
+                  },
+                ],
+              }}
+              trigger={["click"]}
+              disabled={!processedData.length}
+            >
+              <AntButton icon={<DownloadOutlined />}>Export</AntButton>
+            </Dropdown>
           </div>
         </div>
       </div>
 
       {/* Scrollable Content */}
-      <div className="flex-1 overflow-auto">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50 sticky top-0 z-20">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 sticky left-0 bg-gray-50 z-30">
-                  File ID
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                  File
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                  Job
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                  Created
-                </th>
-                {columns.map((column) => (
-                  <th
-                    key={column.key}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort(column.key)}
-                  >
-                    <div className="flex items-center space-x-1">
-                      <span>{column.label}</span>
-                      {sortColumn === column.key && (
-                        <span className="text-blue-600">
-                          {sortDirection === "asc" ? "↑" : "↓"}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {paginatedData.map((item, index) => (
-                <tr key={index} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border-r border-gray-200 sticky left-0 bg-white z-20 hover:bg-gray-50">
-                    {item._fileId}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 border-r border-gray-200 truncate max-w-xs">
-                    {item._filename}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 border-r border-gray-200 truncate max-w-xs">
-                    {item._jobName}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 border-r border-gray-200">
-                    {new Date(item._createdAt).toLocaleDateString()}
-                  </td>
-                  {columns.map((column) => (
-                    <td
-                      key={column.key}
-                      className="px-6 py-4 text-sm text-gray-900 border-r border-gray-200 truncate max-w-xs"
-                    >
-                      <ComplexDataCell
-                        value={item[column.key]}
-                        columnKey={column.key}
-                        onArrayClick={handleArrayClick}
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {paginatedData.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-gray-500">No data found</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Fixed Footer */}
-      <div className="bg-white border-t border-gray-200 px-6 py-4 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-700">
-            Showing {startIndex + 1} to{" "}
-            {Math.min(startIndex + itemsPerPage, processedData.length)} of{" "}
-            {processedData.length} items
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="secondary"
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </Button>
-
-            <span className="text-sm text-gray-700">
-              Page {currentPage} of {totalPages}
-            </span>
-
-            <Button
-              variant="secondary"
-              onClick={() =>
-                setCurrentPage(Math.min(totalPages, currentPage + 1))
-              }
-              disabled={currentPage === totalPages}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+      <div className="flex-1 overflow-hidden">
+        <Table
+          columns={tableColumns}
+          dataSource={processedData}
+          rowKey={(record) => `${record._fileId}-${record._filename}`}
+          scroll={{ x: "max-content", y: "calc(100vh - 200px)" }}
+          pagination={{
+            current: currentPage,
+            pageSize: itemsPerPage,
+            total: processedData.length,
+            showSizeChanger: false,
+            showQuickJumper: true,
+            showTotal: (total, range) =>
+              `${range[0]}-${range[1]} of ${total} items`,
+            onChange: (page) => setCurrentPage(page),
+            size: "small",
+            hideOnSinglePage: true,
+            position: ["bottomCenter"],
+          }}
+          size="small"
+          className="ant-table-custom h-full"
+        />
       </div>
 
       {/* Array Items Popup */}
-      {arrayPopup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {arrayPopup.title}
-              </h3>
-              <button
-                onClick={closeArrayPopup}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <XMarkIcon className="h-6 w-6" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="overflow-y-auto max-h-[60vh]">
-              <div className="divide-y divide-gray-200">
-                {arrayPopup.items.map((item, index) => (
-                  <div key={index} className="px-6 py-4 hover:bg-gray-50">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-medium text-gray-500 uppercase tracking-wider">
-                        Item {index + 1}
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-900">
-                      {typeof item === "object" && item !== null ? (
-                        <div className="space-y-2">
-                          {Object.entries(item).map(([key, val]) => (
-                            <div
-                              key={key}
-                              className="flex border-b border-gray-100 pb-1 last:border-b-0"
-                            >
-                              <span className="font-medium text-gray-600 flex-shrink-0 mr-3 w-24">
-                                {key}:
-                              </span>
-                              <span className="text-gray-900 break-words">
-                                {String(val)}
-                              </span>
-                            </div>
-                          ))}
+      <Modal
+        title={arrayPopup?.title}
+        open={!!arrayPopup}
+        onCancel={closeArrayPopup}
+        footer={[
+          <AntButton key="close" onClick={closeArrayPopup}>
+            Close
+          </AntButton>,
+        ]}
+        width="80%"
+        style={{ top: 20 }}
+      >
+        <div className="max-h-[60vh] overflow-y-auto">
+          <div className="divide-y divide-gray-200">
+            {arrayPopup?.items.map((item, index) => (
+              <div key={index} className="px-4 py-3 hover:bg-gray-50">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium text-gray-500 uppercase tracking-wider">
+                    Item {index + 1}
+                  </span>
+                </div>
+                <div className="text-sm text-gray-900">
+                  {typeof item === "object" && item !== null ? (
+                    <div className="space-y-2">
+                      {Object.entries(item).map(([key, val]) => (
+                        <div
+                          key={key}
+                          className="flex border-b border-gray-100 pb-1 last:border-b-0"
+                        >
+                          <span className="font-medium text-gray-600 flex-shrink-0 mr-3 w-24">
+                            {key}:
+                          </span>
+                          <span className="text-gray-900 break-words">
+                            {String(val)}
+                          </span>
                         </div>
-                      ) : (
-                        <span className="break-words">{String(item)}</span>
-                      )}
+                      ))}
                     </div>
-                  </div>
-                ))}
+                  ) : (
+                    <span className="break-words">{String(item)}</span>
+                  )}
+                </div>
               </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex justify-end px-6 py-4 border-t border-gray-200 bg-gray-50">
-              <Button onClick={closeArrayPopup}>Close</Button>
-            </div>
+            ))}
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };
