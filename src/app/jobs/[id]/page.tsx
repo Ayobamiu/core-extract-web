@@ -61,6 +61,45 @@ export default function JobDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
+  const refreshJobData = useCallback(async () => {
+    try {
+      const response = await apiClient.getJob(jobId);
+      setJob(response.job);
+      setError(null);
+
+      // Fetch previews for each completed file
+      if (response.job?.files) {
+        const previewPromises = response.job.files
+          .filter((file: JobFile) => file.processing_status === "completed")
+          .map(async (file: JobFile) => {
+            try {
+              const previewResponse = await apiClient.getPreviewsForFile(
+                file.id
+              );
+              return { fileId: file.id, previews: previewResponse.data || [] };
+            } catch (error) {
+              console.error(
+                `Error fetching previews for file ${file.id}:`,
+                error
+              );
+              return { fileId: file.id, previews: [] };
+            }
+          });
+
+        const previewResults = await Promise.all(previewPromises);
+        const previewMap: Record<string, any[]> = {};
+        previewResults.forEach(({ fileId, previews }) => {
+          previewMap[fileId] = previews;
+        });
+        setFilePreviews(previewMap);
+      }
+    } catch (err: unknown) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to fetch job details";
+      setError(errorMessage);
+    }
+  }, [jobId]);
+
   const fetchJobDetails = useCallback(async () => {
     try {
       setLoading(true);
@@ -767,6 +806,7 @@ export default function JobDetailPage() {
                   onAddToPreview={handleAddToPreview}
                   onEditResults={handleEditResults}
                   onBulkAddToPreview={handleBulkAddToPreview}
+                  onDataUpdate={refreshJobData}
                   showFileResults={showFileResults}
                 />
               </div>
@@ -886,7 +926,7 @@ export default function JobDetailPage() {
           setShowBulkPreviewDrawer(false);
           setSelectedFileIds([]);
           // Optionally refresh job details
-          fetchJobDetails();
+          refreshJobData();
         }}
       />
     </ProtectedRoute>

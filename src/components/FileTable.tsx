@@ -36,6 +36,7 @@ interface FileTableProps {
   onAddToPreview: (fileId: string) => void;
   onEditResults: (file: JobFile) => void;
   onBulkAddToPreview: (fileIds: string[]) => void;
+  onDataUpdate?: () => void;
   showFileResults: Record<string, boolean>;
 }
 
@@ -52,6 +53,7 @@ const FileTable: React.FC<FileTableProps> = ({
   onAddToPreview,
   onEditResults,
   onBulkAddToPreview,
+  onDataUpdate,
   showFileResults,
 }) => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -349,6 +351,29 @@ const FileTable: React.FC<FileTableProps> = ({
           data={record.result}
           filename={record.filename}
           schema={jobSchema}
+          editable={true}
+          onUpdate={async (updatedData) => {
+            try {
+              // Import apiClient dynamically to avoid circular imports
+              const { apiClient } = await import("@/lib/api");
+              await apiClient.updateFileResults(record.id, updatedData);
+
+              // Show success message
+              message.success("File results updated successfully");
+
+              // Refresh the data in the parent component
+              if (onDataUpdate) {
+                await onDataUpdate();
+              }
+            } catch (error) {
+              console.error("Error updating file results:", error);
+              message.error(
+                `Failed to update file results: ${
+                  (error as Error).message || "Unknown error"
+                }`
+              );
+            }
+          }}
         />
       </div>
     );

@@ -20,20 +20,69 @@ interface TabbedDataViewerProps {
   filename: string;
   schema?: unknown;
   className?: string;
+  onUpdate?: (updatedData: unknown) => void;
+  editable?: boolean;
 }
 
-type TabType = "preview" | "json" | "csv";
+type TabType = "preview" | "json" | "csv" | "edit";
 
 const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   data,
   filename,
   schema,
   className = "",
+  onUpdate,
+  editable = false,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>("preview");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const [editableJson, setEditableJson] = useState<string>("");
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Initialize editable JSON when data changes
+  React.useEffect(() => {
+    if (data) {
+      setEditableJson(JSON.stringify(data, null, 2));
+      setJsonError(null);
+    }
+  }, [data]);
+
+  // Handle JSON editing
+  const handleJsonChange = (value: string) => {
+    setEditableJson(value);
+    setJsonError(null);
+
+    // Validate JSON in real-time
+    try {
+      JSON.parse(value);
+    } catch (error) {
+      setJsonError(error instanceof Error ? error.message : "Invalid JSON");
+    }
+  };
+
+  // Save changes
+  const handleSave = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    if (!onUpdate) return;
+
+    try {
+      setIsSaving(true);
+      const parsedData = JSON.parse(editableJson);
+      await onUpdate(parsedData);
+      setJsonError(null);
+    } catch (error) {
+      setJsonError(error instanceof Error ? error.message : "Failed to save");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Convert data to CSV format
   const csvData = useMemo(() => {
@@ -393,6 +442,18 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           >
             CSV
           </button>
+          {editable && (
+            <button
+              onClick={() => setActiveTab("edit")}
+              className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
+                activeTab === "edit"
+                  ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Edit
+            </button>
+          )}
         </div>
 
         {/* Export Buttons */}
@@ -525,6 +586,94 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   <p>No data available for CSV view</p>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === "edit" && editable && (
+            <div className="space-y-4">
+              {/* Error Display */}
+              {jsonError && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div className="flex items-center">
+                    <svg
+                      className="w-4 h-4 text-red-500 mr-2"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    <span className="text-red-700 text-sm font-medium">
+                      JSON Error:
+                    </span>
+                  </div>
+                  <p className="text-red-600 text-sm mt-1">{jsonError}</p>
+                </div>
+              )}
+
+              {/* JSON Editor */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <textarea
+                  value={editableJson}
+                  onChange={(e) => handleJsonChange(e.target.value)}
+                  className="w-full h-96 p-4 font-mono text-sm bg-gray-50 border-0 resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  placeholder="Edit JSON data..."
+                  spellCheck={false}
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-500">
+                  Edit the JSON data above. Changes will be saved when you click
+                  "Update".
+                </div>
+                <div
+                  className="flex space-x-2"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditableJson(JSON.stringify(data, null, 2));
+                      return false;
+                    }}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors duration-200"
+                    disabled={isSaving}
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSave();
+                      return false;
+                    }}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    disabled={!!jsonError || isSaving || !onUpdate}
+                    className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded transition-colors duration-200"
+                  >
+                    {isSaving ? "Saving..." : "Update"}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </motion.div>
