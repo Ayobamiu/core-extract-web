@@ -352,7 +352,11 @@ const FileTable: React.FC<FileTableProps> = ({
       <div className="flex items-center space-x-2">
         {icons[status as keyof typeof icons]}
         <span className="capitalize">{status} Files</span>
-        <Badge count={count} style={{ backgroundColor: "#52c41a" }} />
+        <Badge
+          overflowCount={999}
+          count={count}
+          style={{ backgroundColor: "#52c41a" }}
+        />
       </div>
     );
   };
@@ -361,7 +365,14 @@ const FileTable: React.FC<FileTableProps> = ({
     <Table
       columns={columns}
       dataSource={files}
-      pagination={false}
+      pagination={{
+        pageSize: 10,
+        showSizeChanger: false,
+        showQuickJumper: true,
+        showTotal: (total, range) =>
+          `${range[0]}-${range[1]} of ${total} files`,
+        size: "small",
+      }}
       size="small"
       expandable={{
         expandedRowRender,
