@@ -14,6 +14,7 @@ import { apiClient, JobDetails, JobFile } from "@/lib/api";
 import { smartCsvExport } from "@/lib/csvExport";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import PreviewSelector from "@/components/preview/PreviewSelector";
+import PreviewDrawer from "@/components/preview/PreviewDrawer";
 import SchemaEditor from "@/components/SchemaEditor";
 import FileResultsEditor from "@/components/FileResultsEditor";
 import FileTable from "@/components/FileTable";
@@ -55,6 +56,8 @@ export default function JobDetailPage() {
   const [showFileResultsEditor, setShowFileResultsEditor] = useState(false);
   const [selectedFileForResultsEdit, setSelectedFileForResultsEdit] =
     useState<JobFile | null>(null);
+  const [showBulkPreviewDrawer, setShowBulkPreviewDrawer] = useState(false);
+  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -271,6 +274,11 @@ export default function JobDetailPage() {
   const handlePreviewSuccess = () => {
     // Optionally refresh job details or show success message
     console.log("File added to preview successfully");
+  };
+
+  const handleBulkAddToPreview = (fileIds: string[]) => {
+    setSelectedFileIds(fileIds);
+    setShowBulkPreviewDrawer(true);
   };
 
   const handleEditResults = (file: JobFile) => {
@@ -758,6 +766,7 @@ export default function JobDetailPage() {
                   }
                   onAddToPreview={handleAddToPreview}
                   onEditResults={handleEditResults}
+                  onBulkAddToPreview={handleBulkAddToPreview}
                   showFileResults={showFileResults}
                 />
               </div>
@@ -864,6 +873,22 @@ export default function JobDetailPage() {
           onSuccess={handleResultsUpdateSuccess}
         />
       )}
+
+      {/* Bulk Preview Drawer */}
+      <PreviewDrawer
+        fileIds={selectedFileIds}
+        open={showBulkPreviewDrawer}
+        onClose={() => {
+          setShowBulkPreviewDrawer(false);
+          setSelectedFileIds([]);
+        }}
+        onSuccess={() => {
+          setShowBulkPreviewDrawer(false);
+          setSelectedFileIds([]);
+          // Optionally refresh job details
+          fetchJobDetails();
+        }}
+      />
     </ProtectedRoute>
   );
 }

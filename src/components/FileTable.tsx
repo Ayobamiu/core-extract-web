@@ -35,6 +35,7 @@ interface FileTableProps {
   onShowResults: (fileId: string) => void;
   onAddToPreview: (fileId: string) => void;
   onEditResults: (file: JobFile) => void;
+  onBulkAddToPreview: (fileIds: string[]) => void;
   showFileResults: Record<string, boolean>;
 }
 
@@ -50,8 +51,10 @@ const FileTable: React.FC<FileTableProps> = ({
   onShowResults,
   onAddToPreview,
   onEditResults,
+  onBulkAddToPreview,
   showFileResults,
 }) => {
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
 
   // Group files by status
@@ -115,6 +118,17 @@ const FileTable: React.FC<FileTableProps> = ({
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  };
+
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (newSelectedRowKeys: React.Key[]) => {
+      setSelectedRowKeys(newSelectedRowKeys);
+    },
+    getCheckboxProps: (record: FileTableData) => ({
+      // Only allow selection of completed files
+      disabled: record.processing_status !== "completed",
+    }),
   };
 
   const copyToClipboard = (text: string) => {
@@ -365,6 +379,7 @@ const FileTable: React.FC<FileTableProps> = ({
     <Table
       columns={columns}
       dataSource={files}
+      rowSelection={rowSelection}
       pagination={{
         pageSize: 10,
         showSizeChanger: false,
@@ -404,6 +419,39 @@ const FileTable: React.FC<FileTableProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* Bulk Actions */}
+      {selectedRowKeys.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Text strong className="text-blue-900">
+                {selectedRowKeys.length} file(s) selected
+              </Text>
+              <Text type="secondary" className="text-sm">
+                Only completed files can be selected
+              </Text>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => {
+                  onBulkAddToPreview(selectedRowKeys as string[]);
+                  setSelectedRowKeys([]); // Clear selection after clicking
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
+              >
+                Add to Preview
+              </button>
+              <button
+                onClick={() => setSelectedRowKeys([])}
+                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors text-sm font-medium"
+              >
+                Clear Selection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* File Groups */}
       <Collapse
         defaultActiveKey={["completed", "processing", "pending", "failed"]}

@@ -579,6 +579,29 @@ class ApiClient {
             body: JSON.stringify({ results }),
         });
     }
+
+    async bulkEnrichFilesWithMGSData(fileIds: string[]): Promise<ApiResponse<{
+        results: Array<{
+            fileId: string;
+            filename?: string;
+            success: boolean;
+            skipped?: boolean;
+            reason?: string;
+            mgsData?: any;
+            error?: string;
+        }>;
+        summary: {
+            total: number;
+            successful: number;
+            failed: number;
+            skipped: number;
+        };
+    }>> {
+        return this.request('/previews/files/bulk/enrich-with-mgs', {
+            method: 'POST',
+            body: JSON.stringify({ fileIds }),
+        });
+    }
 }
 
 // Create singleton instance
