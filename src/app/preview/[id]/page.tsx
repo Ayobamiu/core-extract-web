@@ -233,7 +233,6 @@ const PreviewPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(50);
   const [arrayPopup, setArrayPopup] = useState<ArrayPopupData | null>(null);
 
   // Extract columns from schema
@@ -641,21 +640,22 @@ const PreviewPage: React.FC = () => {
       <div className="flex-1 overflow-hidden">
         <Table
           columns={tableColumns}
+          bordered
           dataSource={processedData}
           rowKey={(record) => `${record._fileId}-${record._filename}`}
           scroll={{ x: "max-content", y: "calc(100vh - 200px)" }}
           pagination={{
             current: currentPage,
-            pageSize: itemsPerPage,
             total: processedData.length,
-            showSizeChanger: false,
-            showQuickJumper: true,
+            showSizeChanger: true,
+            showQuickJumper: false,
             showTotal: (total, range) =>
               `${range[0]}-${range[1]} of ${total} items`,
             onChange: (page) => setCurrentPage(page),
             size: "small",
             hideOnSinglePage: true,
             position: ["bottomCenter"],
+            defaultPageSize: 20,
           }}
           size="small"
           className="ant-table-custom h-full"

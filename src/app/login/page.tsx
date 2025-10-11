@@ -30,22 +30,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleDemoLogin = async () => {
-    setEmail("admin@coreextract.com");
-    setPassword("admin123");
-    setError("");
-    setIsLoading(true);
-
-    try {
-      await login("admin@coreextract.com", "admin123");
-      router.push("/");
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Demo login failed");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -111,49 +95,15 @@ export default function LoginPage() {
             <Button type="submit" disabled={isLoading} className="w-full">
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
-
-            {/* Demo Login Button */}
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleDemoLogin}
-              disabled={isLoading}
-              className="w-full"
-            >
-              {isLoading ? "Signing in..." : "Demo Login (Admin)"}
-            </Button>
           </form>
 
           {/* Footer Links */}
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
-              Don&apos;t have an account?{" "}
-              <a
-                href="/register"
-                className="font-medium text-blue-600 hover:text-blue-500"
-              >
-                Sign up
-              </a>
+              Contact your administrator for account access
             </p>
           </div>
         </Card>
-
-        {/* Additional Info */}
-        <div className="mt-8 text-center">
-          <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-            <h3 className="text-sm font-medium text-blue-800 mb-2">
-              Demo Credentials
-            </h3>
-            <div className="text-xs text-blue-700 space-y-1">
-              <p>
-                <strong>Email:</strong> admin@coreextract.com
-              </p>
-              <p>
-                <strong>Password:</strong> admin123
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
