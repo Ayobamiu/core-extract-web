@@ -724,6 +724,25 @@ const PreviewPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Core Extract Footer Signature */}
+      <div className="border-t border-gray-100 px-6 py-3 flex-shrink-0">
+        <div className="flex items-center justify-center space-x-2 text-gray-400">
+          <span className="text-sm">
+            Powered by{" "}
+            <a
+              href="#"
+              className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
+              onClick={(e) => {
+                e.preventDefault();
+                window.open("https://coreextract.app", "_blank");
+              }}
+            >
+              Core Extract
+            </a>
+          </span>
+        </div>
+      </div>
     </div>
   );
 };
