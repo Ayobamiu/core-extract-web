@@ -180,7 +180,8 @@ const PreviewDrawer: React.FC<PreviewDrawerProps> = ({
           type: "object",
           properties: {},
           required: [],
-        }
+        },
+        ""
       );
 
       // Add files to the new preview

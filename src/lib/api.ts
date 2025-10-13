@@ -132,6 +132,7 @@ export interface PreviewDataTable {
     id: string;
     name: string;
     schema: any;
+    logo?: string;
     items_ids: string[];
     created_at: string;
     updated_at: string;
@@ -511,10 +512,10 @@ class ApiClient {
         return this.request(`/previews/${id}/data`);
     }
 
-    async createPreview(name: string, schema: any): Promise<ApiResponse<PreviewDataTable>> {
+    async createPreview(name: string, schema: any, logo?: string): Promise<ApiResponse<PreviewDataTable>> {
         return this.request('/previews', {
             method: 'POST',
-            body: JSON.stringify({ name, schema }),
+            body: JSON.stringify({ name, schema, logo }),
         });
     }
 

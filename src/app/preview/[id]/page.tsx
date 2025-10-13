@@ -577,22 +577,36 @@ const PreviewPage: React.FC = () => {
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            {/* Core Extract Logo */}
-            <div className="flex items-center space-x-2">
-              <div className="h-8 w-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">CE</span>
+            {/* Logo and Title */}
+            <div className="flex items-center space-x-3">
+              <div className="h-8 w-8 flex items-center justify-center">
+                {previewData.preview.logo ? (
+                  <img
+                    src={previewData.preview.logo}
+                    alt={`${previewData.preview.name} Logo`}
+                    className="h-8 w-8 object-contain"
+                    onError={(e) => {
+                      // Fallback to Core Extract logo if custom logo fails to load
+                      e.currentTarget.src = "/core-extract-logo.svg";
+                      e.currentTarget.alt = "Core Extract Logo";
+                    }}
+                  />
+                ) : (
+                  <img
+                    src="/globe.svg"
+                    alt="Core Extract Logo"
+                    className="h-8 w-8"
+                  />
+                )}
               </div>
               <span className="text-lg font-semibold text-gray-900">
-                Core Extract
+                {previewData.preview.name}
               </span>
             </div>
 
             <div className="h-6 w-px bg-gray-300"></div>
 
             <div>
-              <h1 className="text-xl font-semibold text-gray-900">
-                {previewData.preview.name}
-              </h1>
               <p className="text-sm text-gray-500">
                 {processedData.length} items • {columns.length} columns
               </p>
