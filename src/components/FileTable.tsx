@@ -406,9 +406,9 @@ const FileTable: React.FC<FileTableProps> = ({
       dataSource={files}
       rowSelection={rowSelection}
       pagination={{
-        pageSize: 10,
-        showSizeChanger: false,
-        showQuickJumper: true,
+        defaultPageSize: 10,
+        showSizeChanger: true,
+        showQuickJumper: false,
         showTotal: (total, range) =>
           `${range[0]}-${range[1]} of ${total} files`,
         size: "small",
