@@ -10,6 +10,9 @@ import {
   Dropdown,
   Popover,
   message,
+  Modal,
+  Upload,
+  Button,
 } from "antd";
 import {
   FilePdfOutlined,
@@ -24,6 +27,7 @@ import {
 } from "@ant-design/icons";
 import { JobFile } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
+import { apiClient } from "@/lib/api";
 import styles from "./FileTable.module.css";
 
 const { Text } = Typography;
@@ -58,6 +62,10 @@ const FileTable: React.FC<FileTableProps> = ({
 }) => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
+  const [retryModalVisible, setRetryModalVisible] = useState(false);
+  const [retryFileId, setRetryFileId] = useState<string | null>(null);
+  const [retryFile, setRetryFile] = useState<File | null>(null);
+  const [retryLoading, setRetryLoading] = useState(false);
 
   // Group files by status
   const groupedFiles = files.reduce(
@@ -98,7 +106,7 @@ const FileTable: React.FC<FileTableProps> = ({
       failed: [] as FileTableData[],
     }
   );
-
+  console.log({ groupedFiles });
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
       case "completed":
@@ -111,6 +119,21 @@ const FileTable: React.FC<FileTableProps> = ({
         return <ClockCircleOutlined style={{ color: "#d9d9d9" }} />;
       default:
         return <ExclamationCircleOutlined style={{ color: "#d9d9d9" }} />;
+    }
+  };
+
+  const getUploadStatusIcon = (uploadStatus?: string) => {
+    switch (uploadStatus?.toLowerCase()) {
+      case "success":
+        return <CheckCircleOutlined style={{ color: "#52c41a" }} />;
+      case "failed":
+        return <ExclamationCircleOutlined style={{ color: "#ff4d4f" }} />;
+      case "retrying":
+        return <ClockCircleOutlined style={{ color: "#faad14" }} />;
+      case "pending":
+        return <ClockCircleOutlined style={{ color: "#d9d9d9" }} />;
+      default:
+        return null;
     }
   };
 
@@ -137,6 +160,45 @@ const FileTable: React.FC<FileTableProps> = ({
     navigator.clipboard.writeText(text).then(() => {
       message.success("ID copied to clipboard");
     });
+  };
+
+  const handleRetryUpload = async () => {
+    if (!retryFileId) return;
+
+    try {
+      setRetryLoading(true);
+      const response = await apiClient.retryFileUpload(
+        retryFileId,
+        retryFile || undefined
+      );
+
+      if (response.status === "success") {
+        message.success(
+          response.message || "File upload retry initiated successfully"
+        );
+        setRetryModalVisible(false);
+        setRetryFileId(null);
+        setRetryFile(null);
+
+        // Refresh data
+        if (onDataUpdate) {
+          await onDataUpdate();
+        }
+      } else {
+        message.error(response.message || "Failed to retry upload");
+      }
+    } catch (error) {
+      console.error("Error retrying upload:", error);
+      message.error("Failed to retry upload");
+    } finally {
+      setRetryLoading(false);
+    }
+  };
+
+  const openRetryModal = (fileId: string) => {
+    setRetryFileId(fileId);
+    setRetryModalVisible(true);
+    setRetryFile(null);
   };
 
   const formatDate = (dateString: string) => {
@@ -268,17 +330,24 @@ const FileTable: React.FC<FileTableProps> = ({
     {
       title: "Status",
       key: "status",
-      width: 80,
+      width: 100,
       render: (_: any, record: FileTableData) => (
         <Tooltip
           title={
             <div>
+              <div>Upload: {record.upload_status || "unknown"}</div>
               <div>Extraction: {record.extraction_status}</div>
               <div>Processing: {record.processing_status}</div>
+              {record.upload_error && (
+                <div style={{ color: "#ff4d4f" }}>
+                  Error: {record.upload_error}
+                </div>
+              )}
             </div>
           }
         >
           <div className="flex items-center space-x-1">
+            {getUploadStatusIcon(record.upload_status)}
             {getStatusIcon(record.extraction_status)}
             {getStatusIcon(record.processing_status)}
           </div>
@@ -290,38 +359,54 @@ const FileTable: React.FC<FileTableProps> = ({
       key: "actions",
       width: 60,
       render: (_: any, record: FileTableData) => {
-        if (record.processing_status !== "completed" || !record.result) {
-          return null;
+        const menuItems = [];
+
+        // Show retry upload option for failed uploads
+        if (record.upload_status === "failed") {
+          menuItems.push({
+            key: "retry",
+            label: (
+              <a onClick={() => openRetryModal(record.id)}>🔄 Retry Upload</a>
+            ),
+          });
         }
 
-        const menuItems = [
-          {
-            key: "show",
-            label: (
-              <a
-                onClick={() => {
-                  onShowResults(record.id);
-                  // Also expand the row if it's not already expanded
-                  if (!expandedRows.includes(record.key)) {
-                    setExpandedRows([...expandedRows, record.key]);
-                  }
-                }}
-              >
-                {showFileResults[record.id] ? "Hide Results" : "Show Results"}
-              </a>
-            ),
-          },
-          {
-            key: "preview",
-            label: (
-              <a onClick={() => onAddToPreview(record.id)}>Add to Preview</a>
-            ),
-          },
-          {
-            key: "edit",
-            label: <a onClick={() => onEditResults(record)}>Edit Results</a>,
-          },
-        ];
+        // Show other actions only for completed files
+        if (record.processing_status === "completed" && record.result) {
+          menuItems.push(
+            {
+              key: "show",
+              label: (
+                <a
+                  onClick={() => {
+                    onShowResults(record.id);
+                    // Also expand the row if it's not already expanded
+                    if (!expandedRows.includes(record.key)) {
+                      setExpandedRows([...expandedRows, record.key]);
+                    }
+                  }}
+                >
+                  {showFileResults[record.id] ? "Hide Results" : "Show Results"}
+                </a>
+              ),
+            },
+            {
+              key: "preview",
+              label: (
+                <a onClick={() => onAddToPreview(record.id)}>Add to Preview</a>
+              ),
+            },
+            {
+              key: "edit",
+              label: <a onClick={() => onEditResults(record)}>Edit Results</a>,
+            }
+          );
+        }
+
+        // Don't show dropdown if no actions available
+        if (menuItems.length === 0) {
+          return null;
+        }
 
         return (
           <Dropdown
@@ -539,6 +624,73 @@ const FileTable: React.FC<FileTableProps> = ({
             : []),
         ]}
       />
+
+      {/* Retry Upload Modal */}
+      <Modal
+        title="Retry File Upload"
+        open={retryModalVisible}
+        onCancel={() => {
+          setRetryModalVisible(false);
+          setRetryFileId(null);
+          setRetryFile(null);
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => {
+              setRetryModalVisible(false);
+              setRetryFileId(null);
+              setRetryFile(null);
+            }}
+          >
+            Cancel
+          </Button>,
+          <Button
+            key="retry"
+            type="primary"
+            loading={retryLoading}
+            onClick={handleRetryUpload}
+          >
+            {retryFile ? "Upload New File" : "Retry Upload"}
+          </Button>,
+        ]}
+      >
+        <div className="space-y-4">
+          <p>This file failed to upload to S3. You can either:</p>
+          <ul className="list-disc list-inside space-y-2 text-sm text-gray-600">
+            <li>
+              <strong>Retry with original file:</strong> Attempt to upload the
+              original file again
+            </li>
+            <li>
+              <strong>Upload a new file:</strong> Replace with a different file
+            </li>
+          </ul>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Optional: Upload a new file to replace the original
+            </label>
+            <Upload
+              beforeUpload={(file) => {
+                setRetryFile(file);
+                return false; // Prevent auto upload
+              }}
+              onRemove={() => setRetryFile(null)}
+              maxCount={1}
+              accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+            >
+              <Button>Select File</Button>
+            </Upload>
+            {retryFile && (
+              <p className="text-sm text-green-600 mt-2">
+                Selected: {retryFile.name} (
+                {(retryFile.size / 1024 / 1024).toFixed(2)} MB)
+              </p>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

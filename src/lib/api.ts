@@ -102,6 +102,10 @@ export interface JobFile {
     file_hash?: string;
     extraction_status: 'pending' | 'processing' | 'completed' | 'failed';
     processing_status: 'pending' | 'processing' | 'completed' | 'failed';
+    upload_status?: 'pending' | 'success' | 'failed' | 'retrying';
+    upload_error?: string;
+    storage_type?: 's3' | 'local';
+    retry_count?: number;
     extracted_text?: string;
     extracted_tables?: any;
     result?: any;
@@ -578,6 +582,26 @@ class ApiClient {
         return this.request(`/files/${fileId}/results`, {
             method: 'PUT',
             body: JSON.stringify({ results }),
+        });
+    }
+
+    async retryFileUpload(fileId: string, file?: File): Promise<ApiResponse<{
+        fileId: string;
+        retryCount: number;
+        newFile?: {
+            originalName: string;
+            size: number;
+            s3Key?: string;
+        };
+    }>> {
+        const formData = new FormData();
+        if (file) {
+            formData.append('file', file);
+        }
+
+        return this.request(`/files/${fileId}/retry-upload`, {
+            method: 'POST',
+            body: formData,
         });
     }
 
