@@ -66,6 +66,12 @@ const FileTable: React.FC<FileTableProps> = ({
   const [retryFileId, setRetryFileId] = useState<string | null>(null);
   const [retryFile, setRetryFile] = useState<File | null>(null);
   const [retryLoading, setRetryLoading] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleteFileId, setDeleteFileId] = useState<string | null>(null);
+  const [deleteFileName, setDeleteFileName] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [bulkDeleteModalVisible, setBulkDeleteModalVisible] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   // Group files by status
   const groupedFiles = files.reduce(
@@ -199,6 +205,81 @@ const FileTable: React.FC<FileTableProps> = ({
     setRetryFileId(fileId);
     setRetryModalVisible(true);
     setRetryFile(null);
+  };
+
+  const handleDeleteFile = (fileId: string, filename: string) => {
+    setDeleteFileId(fileId);
+    setDeleteFileName(filename);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDeleteFile = async () => {
+    if (!deleteFileId) return;
+
+    try {
+      setDeleteLoading(true);
+      const response = await apiClient.deleteFile(deleteFileId);
+
+      if (response.status === "success") {
+        message.success(`File "${deleteFileName}" deleted successfully`);
+        setDeleteModalVisible(false);
+        setDeleteFileId(null);
+        setDeleteFileName(null);
+
+        // Refresh data
+        if (onDataUpdate) {
+          await onDataUpdate();
+        }
+      } else {
+        message.error(response.message || "Failed to delete file");
+      }
+    } catch (error) {
+      console.error("Error deleting file:", error);
+      message.error("Failed to delete file");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning("Please select files to delete");
+      return;
+    }
+    setBulkDeleteModalVisible(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    try {
+      setBulkDeleteLoading(true);
+      const fileIds = selectedRowKeys.map((key) => key.toString());
+      const response = await apiClient.deleteFiles(fileIds);
+
+      if (response.status === "success") {
+        const deletedCount = response.data?.deletedFiles?.length || 0;
+        message.success(`${deletedCount} files deleted successfully`);
+
+        if (response.data?.errors && response.data.errors.length > 0) {
+          message.warning(
+            `${response.data.errors.length} files could not be deleted`
+          );
+        }
+
+        // Clear selection and refresh data
+        setSelectedRowKeys([]);
+        setBulkDeleteModalVisible(false);
+        if (onDataUpdate) {
+          await onDataUpdate();
+        }
+      } else {
+        message.error(response.message || "Failed to delete files");
+      }
+    } catch (error) {
+      console.error("Error deleting files:", error);
+      message.error("Failed to delete files");
+    } finally {
+      setBulkDeleteLoading(false);
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -403,6 +484,24 @@ const FileTable: React.FC<FileTableProps> = ({
           );
         }
 
+        // Add delete option for all files (except those currently processing)
+        if (
+          record.processing_status !== "processing" &&
+          record.extraction_status !== "processing"
+        ) {
+          menuItems.push({
+            key: "delete",
+            label: (
+              <a
+                onClick={() => handleDeleteFile(record.id, record.filename)}
+                style={{ color: "#ff4d4f" }}
+              >
+                🗑️ Delete File
+              </a>
+            ),
+          });
+        }
+
         // Don't show dropdown if no actions available
         if (menuItems.length === 0) {
           return null;
@@ -552,6 +651,12 @@ const FileTable: React.FC<FileTableProps> = ({
                 Add to Preview
               </button>
               <button
+                onClick={handleBulkDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
+              >
+                🗑️ Delete Selected
+              </button>
+              <button
                 onClick={() => setSelectedRowKeys([])}
                 className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors text-sm font-medium"
               >
@@ -688,6 +793,103 @@ const FileTable: React.FC<FileTableProps> = ({
                 {(retryFile.size / 1024 / 1024).toFixed(2)} MB)
               </p>
             )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        title="Delete File"
+        open={deleteModalVisible}
+        onCancel={() => {
+          setDeleteModalVisible(false);
+          setDeleteFileId(null);
+          setDeleteFileName(null);
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => {
+              setDeleteModalVisible(false);
+              setDeleteFileId(null);
+              setDeleteFileName(null);
+            }}
+          >
+            Cancel
+          </Button>,
+          <Button
+            key="delete"
+            type="primary"
+            danger
+            loading={deleteLoading}
+            onClick={confirmDeleteFile}
+          >
+            Delete File
+          </Button>,
+        ]}
+      >
+        <div className="space-y-4">
+          <div className="flex items-center space-x-3">
+            <div className="text-red-500 text-2xl">⚠️</div>
+            <div>
+              <p className="text-lg font-medium text-gray-900">
+                Are you sure you want to delete this file?
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                <strong>File:</strong> {deleteFileName}
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-sm text-red-800">
+              <strong>Warning:</strong> This action cannot be undone. The file
+              and all its extracted data will be permanently deleted.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Bulk Delete Confirmation Modal */}
+      <Modal
+        title="Delete Multiple Files"
+        open={bulkDeleteModalVisible}
+        onCancel={() => setBulkDeleteModalVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setBulkDeleteModalVisible(false)}>
+            Cancel
+          </Button>,
+          <Button
+            key="delete"
+            type="primary"
+            danger
+            loading={bulkDeleteLoading}
+            onClick={confirmBulkDelete}
+          >
+            Delete {selectedRowKeys.length} Files
+          </Button>,
+        ]}
+      >
+        <div className="space-y-4">
+          <div className="flex items-center space-x-3">
+            <div className="text-red-500 text-2xl">⚠️</div>
+            <div>
+              <p className="text-lg font-medium text-gray-900">
+                Are you sure you want to delete {selectedRowKeys.length} files?
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                This action will permanently delete all selected files and their
+                extracted data.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-sm text-red-800">
+              <strong>Warning:</strong> This action cannot be undone. All
+              selected files and their extracted data will be permanently
+              deleted.
+            </p>
           </div>
         </div>
       </Modal>

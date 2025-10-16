@@ -589,6 +589,33 @@ class ApiClient {
         });
     }
 
+    async deleteFile(fileId: string): Promise<ApiResponse<{
+        fileId: string;
+        filename: string;
+        jobId: string;
+    }>> {
+        return this.request(`/files/${fileId}`, {
+            method: 'DELETE',
+        });
+    }
+
+    async deleteFiles(fileIds: string[]): Promise<ApiResponse<{
+        deletedFiles: Array<{
+            fileId: string;
+            filename: string;
+            jobId: string;
+        }>;
+        errors?: Array<{
+            fileId: string;
+            error: string;
+        }>;
+    }>> {
+        return this.request('/files', {
+            method: 'DELETE',
+            body: JSON.stringify({ fileIds }),
+        });
+    }
+
     async retryFileUpload(fileId: string, file?: File): Promise<ApiResponse<{
         fileId: string;
         retryCount: number;
