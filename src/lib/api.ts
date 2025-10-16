@@ -89,6 +89,7 @@ export interface Job {
     name: string;
     status: 'pending' | 'processing' | 'completed' | 'failed';
     summary?: any;
+    extraction_mode?: 'full_extraction' | 'text_only';
     created_at: string;
     updated_at: string;
     file_count: string;
@@ -368,13 +369,16 @@ class ApiClient {
         });
     }
 
-    async extractMultiple(schemaData: { schema: any; schemaName: string }, files: JobFile[]): Promise<ApiResponse> {
+    async extractMultiple(schemaData: { schema: any; schemaName: string; extractionMode?: string }, files: JobFile[]): Promise<ApiResponse> {
         const formData = new FormData();
 
         // Add schema data
         formData.append('schema', JSON.stringify(schemaData.schema));
         formData.append('schemaName', schemaData.schemaName);
         formData.append('jobName', `Job ${new Date().toISOString()}`);
+
+        // Add extraction mode (default to full_extraction if not provided)
+        formData.append('extractionMode', schemaData.extractionMode || 'full_extraction');
 
         // Add multiple files
         files.forEach((file) => {

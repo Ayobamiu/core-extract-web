@@ -545,6 +545,21 @@ export default function JobDetailPage() {
                         Organization: {currentOrganization.name}
                       </p>
                     )}
+                    {job.extraction_mode && (
+                      <div className="mt-2">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            job.extraction_mode === "text_only"
+                              ? "bg-yellow-100 text-yellow-800"
+                              : "bg-blue-100 text-blue-800"
+                          }`}
+                        >
+                          {job.extraction_mode === "text_only"
+                            ? "📝 Text Only"
+                            : "🤖 Full Extraction"}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center space-x-4">

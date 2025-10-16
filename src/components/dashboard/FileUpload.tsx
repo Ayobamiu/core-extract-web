@@ -27,6 +27,9 @@ const FileUpload: React.FC<FileUploadProps> = ({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [schema, setSchema] = useState("");
   const [schemaName, setSchemaName] = useState("");
+  const [extractionMode, setExtractionMode] = useState<
+    "full_extraction" | "text_only"
+  >("full_extraction");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -105,6 +108,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         {
           schema: parsedSchema,
           schemaName: schemaName || "data_extraction",
+          extractionMode: extractionMode,
         },
         selectedFiles as any[]
       );
@@ -202,6 +206,61 @@ const FileUpload: React.FC<FileUploadProps> = ({
                 rows={6}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm bg-white text-gray-900 dark:bg-gray-800 dark:text-white dark:border-gray-600"
               />
+            </div>
+          </div>
+
+          {/* Extraction Mode */}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Extraction Mode
+              </label>
+              <div className="space-y-2">
+                <label className="flex items-center space-x-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="extractionMode"
+                    value="full_extraction"
+                    checked={extractionMode === "full_extraction"}
+                    onChange={(e) =>
+                      setExtractionMode(
+                        e.target.value as "full_extraction" | "text_only"
+                      )
+                    }
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">
+                      Full Extraction
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Extract text and process with AI for structured data
+                    </div>
+                  </div>
+                </label>
+                <label className="flex items-center space-x-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="extractionMode"
+                    value="text_only"
+                    checked={extractionMode === "text_only"}
+                    onChange={(e) =>
+                      setExtractionMode(
+                        e.target.value as "full_extraction" | "text_only"
+                      )
+                    }
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">
+                      Text Extraction Only
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Extract text only, skip AI processing (faster, lower cost)
+                    </div>
+                  </div>
+                </label>
+              </div>
             </div>
           </div>
 
