@@ -28,6 +28,11 @@ import {
 import { JobFile } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import { apiClient } from "@/lib/api";
+import {
+  checkPermitNumberMatch,
+  getViolationSeverityColor,
+  getViolationSeverityIcon,
+} from "@/lib/constraintUtils";
 import styles from "./FileTable.module.css";
 
 const { Text } = Typography;
@@ -434,6 +439,72 @@ const FileTable: React.FC<FileTableProps> = ({
           </div>
         </Tooltip>
       ),
+    },
+    {
+      title: "Constraints",
+      key: "constraints",
+      width: 120,
+      render: (_: any, record: FileTableData) => {
+        // Only check for permit number mismatch using client-side logic
+        const permitCheck = checkPermitNumberMatch(record);
+
+        // Show violation flag if there's a permit number mismatch
+        if (permitCheck.hasViolation) {
+          return (
+            <Tooltip
+              title={
+                <div>
+                  <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                    Permit Number Mismatch:
+                  </div>
+                  <div>Filename: {permitCheck.filenamePermit || "N/A"}</div>
+                  <div>Data: {permitCheck.dataPermit || "N/A"}</div>
+                  <div
+                    style={{
+                      marginTop: "8px",
+                      fontSize: "12px",
+                      color: "#666",
+                    }}
+                  >
+                    {permitCheck.message}
+                  </div>
+                </div>
+              }
+            >
+              <div className="flex items-center space-x-1">
+                <span style={{ fontSize: "16px" }}>
+                  {getViolationSeverityIcon("warning")}
+                </span>
+                <Badge
+                  count={1}
+                  style={{
+                    backgroundColor: getViolationSeverityColor("warning"),
+                    fontSize: "10px",
+                    minWidth: "16px",
+                    height: "16px",
+                    lineHeight: "16px",
+                  }}
+                />
+              </div>
+            </Tooltip>
+          );
+        }
+
+        // Show checkmark for files with no permit number violations
+        if (record.processing_status === "completed" && record.result) {
+          return (
+            <Tooltip title="Permit numbers match">
+              <div className="flex items-center justify-center">
+                <CheckCircleOutlined
+                  style={{ color: "#52c41a", fontSize: "16px" }}
+                />
+              </div>
+            </Tooltip>
+          );
+        }
+
+        return null;
+      },
     },
     {
       title: "Actions",
