@@ -79,6 +79,8 @@ const FileTable: React.FC<FileTableProps> = ({
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [reprocessModalVisible, setReprocessModalVisible] = useState(false);
   const [reprocessLoading, setReprocessLoading] = useState(false);
+  const [showProcessingConfigInReprocess, setShowProcessingConfigInReprocess] =
+    useState(false);
 
   // Group files by status
   const groupedFiles = files.reduce(
@@ -1028,9 +1030,18 @@ const FileTable: React.FC<FileTableProps> = ({
       <Modal
         title="Reprocess Files"
         open={reprocessModalVisible}
-        onCancel={() => setReprocessModalVisible(false)}
+        onCancel={() => {
+          setReprocessModalVisible(false);
+          setShowProcessingConfigInReprocess(false);
+        }}
         footer={[
-          <Button key="cancel" onClick={() => setReprocessModalVisible(false)}>
+          <Button
+            key="cancel"
+            onClick={() => {
+              setReprocessModalVisible(false);
+              setShowProcessingConfigInReprocess(false);
+            }}
+          >
             Cancel
           </Button>,
           <Button
@@ -1042,6 +1053,7 @@ const FileTable: React.FC<FileTableProps> = ({
             Reprocess {selectedRowKeys.length} Files
           </Button>,
         ]}
+        width={showProcessingConfigInReprocess ? 700 : 520}
       >
         <div className="space-y-4">
           <div className="flex items-center space-x-3">
@@ -1076,6 +1088,33 @@ const FileTable: React.FC<FileTableProps> = ({
               <strong>Note:</strong> Current processing results will be replaced
               with new results.
             </p>
+          </div>
+
+          <div className="border-t border-gray-200 pt-4">
+            <button
+              onClick={() =>
+                setShowProcessingConfigInReprocess(
+                  !showProcessingConfigInReprocess
+                )
+              }
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center space-x-1"
+            >
+              <span>{showProcessingConfigInReprocess ? "▼" : "▶"}</span>
+              <span>
+                {showProcessingConfigInReprocess ? "Hide" : "Show"} Processing
+                Options (Advanced)
+              </span>
+            </button>
+
+            {showProcessingConfigInReprocess && (
+              <div className="mt-4 text-sm text-gray-600">
+                <p className="mb-2">
+                  Note: Reprocessing will use the current job's processing
+                  configuration. Processing method changes are not currently
+                  supported for reprocessing.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </Modal>

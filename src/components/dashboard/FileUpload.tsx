@@ -5,8 +5,9 @@ import { motion } from "framer-motion";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
-import { apiClient } from "@/lib/api";
+import { apiClient, ProcessingConfig } from "@/lib/api";
 import ExampleSchemaDropdown from "./ExampleSchemaPanel";
+import ProcessingConfigSelector from "../ProcessingConfigSelector";
 
 interface FileUploadProps {
   onUploadSuccess?: (jobId: string) => void;
@@ -30,6 +31,11 @@ const FileUpload: React.FC<FileUploadProps> = ({
   const [extractionMode, setExtractionMode] = useState<
     "full_extraction" | "text_only"
   >("full_extraction");
+
+  const [processingConfig, setProcessingConfig] = useState<ProcessingConfig>({
+    extraction: { method: "mineru", options: {} },
+    processing: { method: "openai", model: "gpt-4o", options: {} },
+  });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -110,7 +116,8 @@ const FileUpload: React.FC<FileUploadProps> = ({
           schemaName: schemaName || "data_extraction",
           extractionMode: extractionMode,
         },
-        selectedFiles as any[]
+        selectedFiles as any[],
+        processingConfig
       );
 
       console.log("API Response:", response);
@@ -208,6 +215,13 @@ const FileUpload: React.FC<FileUploadProps> = ({
               />
             </div>
           </div>
+
+          {/* Processing Configuration */}
+          <ProcessingConfigSelector
+            config={processingConfig}
+            onChange={setProcessingConfig}
+            disabled={uploading}
+          />
 
           {/* Extraction Mode */}
           <div className="space-y-4">

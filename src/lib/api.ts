@@ -120,12 +120,25 @@ export interface JobFile {
     };
 }
 
+export interface ProcessingConfig {
+    extraction: {
+        method: 'mineru' | 'documentai';
+        options: Record<string, any>;
+    };
+    processing: {
+        method: 'openai';
+        model: 'gpt-4o' | 'gpt-4' | 'gpt-3.5-turbo';
+        options: Record<string, any>;
+    };
+}
+
 export interface JobDetails extends Job {
     files: JobFile[];
     schema_data: {
         schema: string;
         schemaName: string;
     };
+    processing_config?: ProcessingConfig;
 }
 
 export interface QueueStatus {
@@ -369,7 +382,7 @@ class ApiClient {
         });
     }
 
-    async extractMultiple(schemaData: { schema: any; schemaName: string; extractionMode?: string }, files: JobFile[]): Promise<ApiResponse> {
+    async extractMultiple(schemaData: { schema: any; schemaName: string; extractionMode?: string }, files: JobFile[], processingConfig?: ProcessingConfig): Promise<ApiResponse> {
         const formData = new FormData();
 
         // Add schema data
@@ -379,6 +392,13 @@ class ApiClient {
 
         // Add extraction mode (default to full_extraction if not provided)
         formData.append('extractionMode', schemaData.extractionMode || 'full_extraction');
+
+        // Add processing config if provided
+        if (processingConfig) {
+            formData.append('processingConfig', JSON.stringify(processingConfig));
+            // Also add extraction_method for Flask service compatibility
+            formData.append('extraction_method', processingConfig.extraction.method);
+        }
 
         // Add multiple files
         files.forEach((file) => {
@@ -659,7 +679,7 @@ class ApiClient {
         });
     }
 
-    async reprocessFiles(fileIds: string[], priority: number = 0): Promise<ApiResponse<{
+    async reprocessFiles(fileIds: string[], priority: number = 0, processingConfig?: ProcessingConfig): Promise<ApiResponse<{
         queuedFiles: Array<{
             fileId: string;
             filename: string;
@@ -676,7 +696,7 @@ class ApiClient {
     }>> {
         return this.request('/files/reprocess', {
             method: 'POST',
-            body: JSON.stringify({ fileIds, priority }),
+            body: JSON.stringify({ fileIds, priority, processingConfig }),
         });
     }
 }
