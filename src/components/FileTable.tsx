@@ -77,6 +77,8 @@ const FileTable: React.FC<FileTableProps> = ({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [bulkDeleteModalVisible, setBulkDeleteModalVisible] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [reprocessModalVisible, setReprocessModalVisible] = useState(false);
+  const [reprocessLoading, setReprocessLoading] = useState(false);
 
   // Group files by status
   const groupedFiles = files.reduce(
@@ -284,6 +286,57 @@ const FileTable: React.FC<FileTableProps> = ({
       message.error("Failed to delete files");
     } finally {
       setBulkDeleteLoading(false);
+    }
+  };
+
+  const handleBulkReprocess = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning("Please select files to reprocess");
+      return;
+    }
+    setReprocessModalVisible(true);
+  };
+
+  const confirmBulkReprocess = async () => {
+    try {
+      setReprocessLoading(true);
+      const fileIds = selectedRowKeys.map((key) => key.toString());
+      const response = await apiClient.reprocessFiles(fileIds);
+
+      if (response.status === "success") {
+        const queuedCount = response.data?.queuedFiles?.length || 0;
+        message.success(`${queuedCount} files queued for reprocessing`);
+
+        if (
+          response.data?.skippedFiles &&
+          response.data.skippedFiles.length > 0
+        ) {
+          const skippedReasons = response.data.skippedFiles
+            .map((f) => f.reason)
+            .join(", ");
+          message.warning(
+            `${response.data.skippedFiles.length} files were skipped: ${skippedReasons}`
+          );
+        }
+
+        if (response.data?.errors && response.data.errors.length > 0) {
+          message.error(`${response.data.errors.length} files failed to queue`);
+        }
+
+        // Clear selection and refresh data
+        setSelectedRowKeys([]);
+        setReprocessModalVisible(false);
+        if (onDataUpdate) {
+          await onDataUpdate();
+        }
+      } else {
+        message.error(response.message || "Failed to reprocess files");
+      }
+    } catch (error) {
+      console.error("Error reprocessing files:", error);
+      message.error("Failed to reprocess files");
+    } finally {
+      setReprocessLoading(false);
     }
   };
 
@@ -722,6 +775,12 @@ const FileTable: React.FC<FileTableProps> = ({
                 Add to Preview
               </button>
               <button
+                onClick={handleBulkReprocess}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+              >
+                🔄 Reprocess Selected
+              </button>
+              <button
                 onClick={handleBulkDelete}
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
               >
@@ -960,6 +1019,62 @@ const FileTable: React.FC<FileTableProps> = ({
               <strong>Warning:</strong> This action cannot be undone. All
               selected files and their extracted data will be permanently
               deleted.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reprocess Confirmation Modal */}
+      <Modal
+        title="Reprocess Files"
+        open={reprocessModalVisible}
+        onCancel={() => setReprocessModalVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setReprocessModalVisible(false)}>
+            Cancel
+          </Button>,
+          <Button
+            key="reprocess"
+            type="primary"
+            loading={reprocessLoading}
+            onClick={confirmBulkReprocess}
+          >
+            Reprocess {selectedRowKeys.length} Files
+          </Button>,
+        ]}
+      >
+        <div className="space-y-4">
+          <div className="flex items-center space-x-3">
+            <div className="text-blue-500 text-2xl">🔄</div>
+            <div>
+              <p className="text-lg font-medium text-gray-900">
+                Reprocess {selectedRowKeys.length} files?
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                This will re-run AI processing on the existing extracted text
+                without re-extracting from PDFs.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800">
+              <strong>What happens:</strong>
+            </p>
+            <ul className="text-sm text-blue-800 mt-2 list-disc list-inside space-y-1">
+              <li>
+                Uses existing extracted text/markdown (no PDF re-processing)
+              </li>
+              <li>Re-runs AI processing with current job schema</li>
+              <li>Overwrites existing processing results</li>
+              <li>Files will show as "processing" until complete</li>
+            </ul>
+          </div>
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <p className="text-sm text-yellow-800">
+              <strong>Note:</strong> Current processing results will be replaced
+              with new results.
             </p>
           </div>
         </div>

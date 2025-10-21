@@ -658,6 +658,27 @@ class ApiClient {
             body: JSON.stringify({ fileIds }),
         });
     }
+
+    async reprocessFiles(fileIds: string[], priority: number = 0): Promise<ApiResponse<{
+        queuedFiles: Array<{
+            fileId: string;
+            filename: string;
+            jobId: string;
+        }>;
+        skippedFiles?: Array<{
+            fileId: string;
+            reason: string;
+        }>;
+        errors?: Array<{
+            fileId: string;
+            error: string;
+        }>;
+    }>> {
+        return this.request('/files/reprocess', {
+            method: 'POST',
+            body: JSON.stringify({ fileIds, priority }),
+        });
+    }
 }
 
 // Create singleton instance
