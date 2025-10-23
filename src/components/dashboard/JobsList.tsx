@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
-import StatusIndicator from "@/components/ui/StatusIndicator";
+import { CheckCircle, Clock, Loader, XCircle } from "lucide-react";
 import { apiClient } from "@/lib/api";
 
 interface Job {
@@ -46,36 +46,6 @@ const JobsList: React.FC<JobsListProps> = ({ className = "" }) => {
     fetchJobs();
   }, []);
 
-  const getJobStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "completed":
-        return "success";
-      case "processing":
-        return "warning";
-      case "failed":
-        return "error";
-      case "pending":
-        return "info";
-      default:
-        return "neutral";
-    }
-  };
-
-  const getFileStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "completed":
-        return "success";
-      case "processing":
-        return "warning";
-      case "failed":
-        return "error";
-      case "pending":
-        return "info";
-      default:
-        return "neutral";
-    }
-  };
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
   };
@@ -83,6 +53,38 @@ const JobsList: React.FC<JobsListProps> = ({ className = "" }) => {
   const getCompletedFilesCount = (job: Job) => {
     // For now, assume all files are completed if job status is completed
     return job.status === "completed" ? parseInt(job.file_count) : 0;
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "completed":
+        return <CheckCircle className="w-4 h-4 text-green-500" />;
+      case "processing":
+        return <Loader className="w-4 h-4 animate-spin text-blue-500" />;
+      case "failed":
+        return <XCircle className="w-4 h-4 text-red-500" />;
+      case "pending":
+      case "queued":
+        return <Clock className="w-4 h-4 text-gray-500" />;
+      default:
+        return <Clock className="w-4 h-4 text-gray-500" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "completed":
+        return "text-green-600 bg-green-50";
+      case "processing":
+        return "text-blue-600 bg-blue-50";
+      case "failed":
+        return "text-red-600 bg-red-50";
+      case "pending":
+      case "queued":
+        return "text-gray-600 bg-gray-50";
+      default:
+        return "text-gray-600 bg-gray-50";
+    }
   };
 
   if (loading) {
@@ -157,50 +159,49 @@ const JobsList: React.FC<JobsListProps> = ({ className = "" }) => {
             <Button variant="primary">Create New Job</Button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {jobs.map((job, index) => (
               <motion.div
                 key={job.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-all duration-200 hover:border-gray-300"
+                onClick={() => router.push(`/jobs/${job.id}`)}
+                className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all duration-200 hover:border-gray-300 cursor-pointer"
               >
                 {/* Job Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center">
-                    <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mr-3">
-                      <span className="text-lg font-medium text-white">
-                        {job.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 truncate max-w-48">
-                        {job.name}
-                      </h3>
-                      <p className="text-sm text-gray-500 font-mono">
-                        {job.id.slice(0, 8)}...
-                      </p>
-                    </div>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-base font-semibold text-gray-900 truncate">
+                      {job.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 font-mono">
+                      {job.id.slice(0, 8)}...
+                    </p>
                   </div>
-                  <StatusIndicator status={getJobStatusColor(job.status)}>
-                    {job.status}
-                  </StatusIndicator>
+                  <div
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                      job.status
+                    )}`}
+                  >
+                    {getStatusIcon(job.status)}
+                    <span className="capitalize">{job.status}</span>
+                  </div>
                 </div>
 
                 {/* Progress Section */}
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700">
+                <div className="mb-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-gray-700">
                       Progress
                     </span>
-                    <span className="text-sm text-gray-500">
+                    <span className="text-xs text-gray-500">
                       {getCompletedFilesCount(job)}/{job.file_count} files
                     </span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
                     <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
                       style={{
                         width: `${
                           job.file_count === "0"
@@ -214,41 +215,9 @@ const JobsList: React.FC<JobsListProps> = ({ className = "" }) => {
                   </div>
                 </div>
 
-                {/* Dates */}
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Created:</span>
-                    <span className="text-gray-900">
-                      {formatDate(job.created_at)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Updated:</span>
-                    <span className="text-gray-900">
-                      {formatDate(job.updated_at)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center space-x-2 pt-4 border-t border-gray-100">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => router.push(`/jobs/${job.id}`)}
-                    className="flex-1"
-                  >
-                    View Details
-                  </Button>
-                  {job.status === "completed" && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="text-green-600 hover:text-green-900 border-green-200 hover:border-green-300"
-                    >
-                      Download
-                    </Button>
-                  )}
+                {/* Date */}
+                <div className="text-xs text-gray-500">
+                  Created: {new Date(job.created_at).toLocaleDateString()}
                 </div>
               </motion.div>
             ))}

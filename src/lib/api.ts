@@ -13,8 +13,10 @@ export interface ApiResponse<T = any> {
 export interface QueueStats {
     queueSize: number;
     processingCount: number;
+    processingFiles: number;
+    completedJobs: number;
+    failedJobs: number;
     nextFiles: any[];
-    processingFiles: any[];
     maxRetries: number;
     retryDelay: number;
     metrics: {
@@ -93,6 +95,7 @@ export interface Job {
     created_at: string;
     updated_at: string;
     file_count: string;
+    files?: JobFile[];
 }
 
 export interface JobFile {
@@ -114,6 +117,8 @@ export interface JobFile {
     processing_error?: string;
     created_at: string;
     processed_at?: string;
+    extraction_time_seconds?: number;
+    ai_processing_time_seconds?: number;
     processing_metadata?: {
         processing_time?: string;
         text_length?: number;
@@ -575,6 +580,23 @@ class ApiClient {
 
     async getAvailableFiles(limit: number = 50): Promise<ApiResponse<PreviewJobFile[]>> {
         return this.request(`/previews/available-files?limit=${limit}`);
+    }
+
+    async getAllFiles(limit: number = 50, offset: number = 0, status?: string, jobId?: string): Promise<ApiResponse<{
+        files: JobFile[];
+        total: number;
+        limit: number;
+        offset: number;
+    }>> {
+        const params = new URLSearchParams({
+            limit: limit.toString(),
+            offset: offset.toString(),
+        });
+
+        if (status) params.append('status', status);
+        if (jobId) params.append('jobId', jobId);
+
+        return this.request(`/files?${params.toString()}`);
     }
 
     async getPreviewsForFile(fileId: string): Promise<ApiResponse<PreviewDataTable[]>> {

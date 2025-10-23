@@ -2,22 +2,45 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import Button from "@/components/ui/Button";
-import StatusIndicator from "@/components/ui/StatusIndicator";
+
+import {
+  Card,
+  Row,
+  Col,
+  Statistic,
+  Typography,
+  Button,
+  Spin,
+  Empty,
+  Progress,
+  Badge,
+} from "antd";
+import {
+  FileText,
+  Briefcase,
+  Clock,
+  CheckCircle,
+  Loader,
+  BarChart3,
+  TrendingUp,
+  Activity,
+  Zap,
+} from "lucide-react";
 import QueueStatsCard from "@/components/dashboard/QueueStatsCard";
 import JobsList from "@/components/dashboard/JobsList";
-import Navigation from "@/components/layout/Navigation";
+import SidebarLayout from "@/components/layout/SidebarLayout";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { apiClient, QueueStats, QueueStatus, QueueAnalytics } from "@/lib/api";
 
+const { Title, Text } = Typography;
+
 export default function Dashboard() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
   const { currentOrganization, isLoadingOrganizations } = useOrganization();
+  const organizationName = (currentOrganization as any).name;
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [queueAnalytics, setQueueAnalytics] = useState<QueueAnalytics | null>(
     null
@@ -62,219 +85,301 @@ export default function Dashboard() {
 
   if (loading || isLoadingOrganizations) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading dashboard...</p>
-        </div>
-      </div>
+      <ProtectedRoute>
+        <SidebarLayout
+          pageTitle={`Welcome back, ${user?.name}!`}
+          pageDescription={
+            organizationName
+              ? `Monitor your document processing jobs for ${organizationName}`
+              : "Monitor your document processing jobs"
+          }
+        >
+          <div className="flex items-center justify-center h-64">
+            <Spin size="large" />
+          </div>
+        </SidebarLayout>
+      </ProtectedRoute>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card className="max-w-md">
-          <CardContent>
-            <div className="text-center">
-              <div className="text-red-600 text-6xl mb-4">⚠️</div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                Connection Error
-              </h2>
-              <p className="text-gray-600 mb-4">{error}</p>
-              <Button onClick={fetchData} variant="primary">
+      <ProtectedRoute>
+        <SidebarLayout
+          pageTitle={`Welcome back, ${user?.name}!`}
+          pageDescription={
+            organizationName
+              ? `Monitor your document processing jobs for ${organizationName}`
+              : "Monitor your document processing jobs"
+          }
+        >
+          <Card>
+            <Empty description={error} image={Empty.PRESENTED_IMAGE_SIMPLE}>
+              <Button type="primary" onClick={fetchData}>
                 Retry Connection
               </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </Empty>
+          </Card>
+        </SidebarLayout>
+      </ProtectedRoute>
     );
   }
 
   // Check if user has no organizations (shouldn't happen with auto-creation)
   if (isAuthenticated && !isLoadingOrganizations && !currentOrganization) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card className="max-w-md">
-          <CardContent>
-            <div className="text-center">
-              <div className="text-yellow-600 text-6xl mb-4">🏢</div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                No Organization Found
-              </h2>
-              <p className="text-gray-600 mb-4">
-                You need to be part of an organization to access jobs and files.
-              </p>
-              <Button
-                onClick={() => window.location.reload()}
-                variant="primary"
-              >
-                Refresh Page
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <ProtectedRoute>
+        <SidebarLayout
+          pageTitle={`Welcome back, ${user?.name}!`}
+          pageDescription={
+            organizationName
+              ? `Monitor your document processing jobs for ${organizationName}`
+              : "Monitor your document processing jobs"
+          }
+        >
+          <Card>
+            <Empty
+              description="No Organization Found"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            >
+              <div className="text-center">
+                <p className="text-gray-600 mb-4">
+                  You need to be part of an organization to access jobs and
+                  files.
+                </p>
+                <Button type="primary" onClick={() => window.location.reload()}>
+                  Refresh Page
+                </Button>
+              </div>
+            </Empty>
+          </Card>
+        </SidebarLayout>
+      </ProtectedRoute>
     );
   }
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50">
-        <Navigation />
-
-        {/* Main Content */}
-        <main className="p-6">
-          {/* Welcome Header */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">
-              Welcome back, {user?.name}!
-            </h1>
-            <p className="text-gray-600">
-              {currentOrganization
-                ? `Monitor your document processing jobs for ${currentOrganization.name}`
-                : "Monitor your document processing jobs"}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
-            {/* Queue Stats - Only show if user has an organization */}
-            {currentOrganization && queueStats && (
-              <div>
-                <QueueStatsCard stats={queueStats} />
-              </div>
-            )}
-          </div>
-
-          {/* Analytics Section - Only show if user has an organization */}
-          {currentOrganization && queueAnalytics && (
-            <div className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Processing Analytics</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-blue-600">
-                        {queueAnalytics.queueSize}
-                      </div>
-                      <div className="text-sm text-gray-500">Queue Size</div>
-                    </div>
-
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-green-600">
-                        {queueAnalytics.processingFiles}
-                      </div>
-                      <div className="text-sm text-gray-500">Processing</div>
-                    </div>
-
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-yellow-600">
-                        {queueAnalytics.avgProcessingTimeMs.toFixed(0)}ms
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        Avg Processing Time
-                      </div>
-                    </div>
-
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-purple-600">
-                        {queueAnalytics.queueUtilization.toFixed(1)}%
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        Queue Utilization
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+      <SidebarLayout
+        pageTitle={`Welcome back, ${user?.name}!`}
+        pageDescription={
+          organizationName
+            ? `Monitor your document processing jobs for ${organizationName}`
+            : "Monitor your document processing jobs"
+        }
+      >
+        <div className="space-y-6">
+          {/* Key Metrics */}
+          {currentOrganization && queueStats && (
+            <Row gutter={[16, 16]}>
+              <Col xs={24} sm={12} md={6}>
+                <Card>
+                  <Statistic
+                    title="Queue Size"
+                    value={queueStats.queueSize}
+                    prefix={<Clock className="w-4 h-4" />}
+                    valueStyle={{ color: "#1890ff" }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Card>
+                  <Statistic
+                    title="Processing Files"
+                    value={queueStats.processingCount}
+                    prefix={<Loader className="w-4 h-4" />}
+                    valueStyle={{ color: "#52c41a" }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Card>
+                  <Statistic
+                    title="Completed Jobs"
+                    value={queueStats.completedJobs}
+                    prefix={<CheckCircle className="w-4 h-4" />}
+                    valueStyle={{ color: "#52c41a" }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} sm={12} md={6}>
+                <Card>
+                  <Statistic
+                    title="Failed Jobs"
+                    value={queueStats.failedJobs}
+                    prefix={<Activity className="w-4 h-4" />}
+                    valueStyle={{ color: "#ff4d4f" }}
+                  />
+                </Card>
+              </Col>
+            </Row>
           )}
 
-          {/* Jobs List - Only show if user has an organization */}
+          {/* Analytics Section */}
+          {currentOrganization && queueAnalytics && (
+            <Card>
+              <div className="mb-4">
+                <Title level={4} className="!mb-2">
+                  Processing Analytics
+                </Title>
+                <Text type="secondary">
+                  Real-time performance metrics and system utilization
+                </Text>
+              </div>
+              <Row gutter={[16, 16]}>
+                <Col xs={24} sm={12} md={6}>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-blue-600 mb-1">
+                      {queueAnalytics.queueSize}
+                    </div>
+                    <div className="text-sm text-gray-500">Queue Size</div>
+                  </div>
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-green-600 mb-1">
+                      {queueAnalytics.processingFiles}
+                    </div>
+                    <div className="text-sm text-gray-500">Processing</div>
+                  </div>
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-yellow-600 mb-1">
+                      {queueAnalytics.avgProcessingTimeMs.toFixed(0)}ms
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      Avg Processing Time
+                    </div>
+                  </div>
+                </Col>
+                <Col xs={24} sm={12} md={6}>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-purple-600 mb-1">
+                      {queueAnalytics.queueUtilization.toFixed(1)}%
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      Queue Utilization
+                    </div>
+                  </div>
+                </Col>
+              </Row>
+            </Card>
+          )}
+
+          {/* Quick Actions */}
+          <Card>
+            <div className="mb-4">
+              <Title level={4} className="!mb-2">
+                Quick Actions
+              </Title>
+              <Text type="secondary">Get started with common tasks</Text>
+            </div>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} sm={12} md={8}>
+                <Button
+                  type="primary"
+                  size="large"
+                  block
+                  onClick={() => router.push("/upload")}
+                  icon={<FileText className="w-4 h-4" />}
+                >
+                  Upload New Files
+                </Button>
+              </Col>
+              <Col xs={24} sm={12} md={8}>
+                <Button
+                  size="large"
+                  block
+                  onClick={() => router.push("/jobs")}
+                  icon={<Briefcase className="w-4 h-4" />}
+                >
+                  View All Jobs
+                </Button>
+              </Col>
+              <Col xs={24} sm={12} md={8}>
+                <Button
+                  size="large"
+                  block
+                  onClick={() => router.push("/files")}
+                  icon={<BarChart3 className="w-4 h-4" />}
+                >
+                  File Analytics
+                </Button>
+              </Col>
+            </Row>
+          </Card>
+
+          {/* Recent Jobs */}
           {currentOrganization ? (
-            <div className="mt-6">
+            <Card>
+              <div className="mb-4">
+                <Title level={4} className="!mb-2">
+                  Recent Jobs
+                </Title>
+                <Text type="secondary">Latest processing activity</Text>
+              </div>
               <JobsList />
-            </div>
+            </Card>
           ) : (
-            <div className="mt-6">
-              <Card className="p-8 text-center">
-                <div className="max-w-md mx-auto">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg
-                      className="w-8 h-8 text-gray-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                      />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    No Organization Selected
-                  </h3>
-                  <p className="text-gray-600 mb-6">
+            <Card>
+              <Empty
+                description="No Organization Selected"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              >
+                <div className="text-center">
+                  <p className="text-gray-600 mb-4">
                     You need to be part of an organization to access jobs and
-                    files. Create a new organization or ask your administrator
-                    to invite you.
+                    files.
                   </p>
-                  <div className="space-y-3">
-                    <Button
-                      onClick={() => {
-                        /* This will be handled by the organization selector */
-                      }}
-                      className="w-full"
-                    >
-                      Create Organization
-                    </Button>
-                    <p className="text-sm text-gray-500">
-                      Or select an existing organization from the dropdown above
-                    </p>
-                  </div>
+                  <Button type="primary">Create Organization</Button>
                 </div>
-              </Card>
-            </div>
+              </Empty>
+            </Card>
           )}
 
           {/* System Status */}
-          <div className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>System Status</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="flex items-center space-x-3">
-                    <StatusIndicator status="success">Healthy</StatusIndicator>
-                    <span className="text-sm text-gray-600">API Server</span>
-                  </div>
-
-                  <div className="flex items-center space-x-3">
-                    <StatusIndicator status="success">
-                      Connected
-                    </StatusIndicator>
-                    <span className="text-sm text-gray-600">Redis Queue</span>
-                  </div>
-
-                  <div className="flex items-center space-x-3">
-                    <StatusIndicator status="success">Active</StatusIndicator>
-                    <span className="text-sm text-gray-600">
-                      Worker Process
-                    </span>
+          <Card>
+            <div className="mb-4">
+              <Title level={4} className="!mb-2">
+                System Status
+              </Title>
+              <Text type="secondary">
+                Current system health and connectivity
+              </Text>
+            </div>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} sm={8}>
+                <div className="flex items-center space-x-3">
+                  <Badge status="success" />
+                  <div>
+                    <div className="font-medium">API Server</div>
+                    <div className="text-sm text-gray-500">Healthy</div>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        </main>
-      </div>
+              </Col>
+              <Col xs={24} sm={8}>
+                <div className="flex items-center space-x-3">
+                  <Badge status="success" />
+                  <div>
+                    <div className="font-medium">Redis Queue</div>
+                    <div className="text-sm text-gray-500">Connected</div>
+                  </div>
+                </div>
+              </Col>
+              <Col xs={24} sm={8}>
+                <div className="flex items-center space-x-3">
+                  <Badge status="success" />
+                  <div>
+                    <div className="font-medium">Worker Process</div>
+                    <div className="text-sm text-gray-500">Active</div>
+                  </div>
+                </div>
+              </Col>
+            </Row>
+          </Card>
+        </div>
+      </SidebarLayout>
     </ProtectedRoute>
   );
 }

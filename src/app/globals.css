@@ -24,3 +24,30 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Ensure sidebar is visible on desktop */
+@media (min-width: 1024px) {
+  .sidebar-desktop {
+    transform: translateX(0) !important;
+    position: relative !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+}
+
+/* Ensure full height layout */
+.layout-container {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Allow main content to scroll */
+.main-content {
+  overflow-y: auto;
+  height: 100vh;
+}
+
+/* Prevent sidebar from scrolling */
+.sidebar-desktop {
+  overflow: hidden !important;
+}

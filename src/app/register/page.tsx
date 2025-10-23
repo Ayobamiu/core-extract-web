@@ -2,9 +2,10 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import Button from "@/components/ui/Button";
-import Card from "@/components/ui/Card";
-import { ChevronLeftIcon } from "@heroicons/react/24/outline";
+import { Card, Button, Typography } from "antd";
+import { ArrowLeft } from "lucide-react";
+
+const { Title, Text } = Typography;
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -14,39 +15,40 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         {/* Logo/Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <Title level={1} className="!mb-2">
             Core Extract
-          </h1>
-          <p className="text-gray-600">Registration Unavailable</p>
+          </Title>
+          <Text type="secondary">Registration Unavailable</Text>
         </div>
 
         {/* Deactivated Message */}
-        <Card className="p-8">
+        <Card>
           <div className="text-center">
             <div className="text-yellow-600 text-6xl mb-4">⚠️</div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            <Title level={3} className="!mb-4">
               Registration Disabled
-            </h2>
-            <p className="text-gray-600 mb-6">
+            </Title>
+            <Text className="mb-6 block">
               User registration is currently disabled. Please contact your
               administrator to request access to the system.
-            </p>
+            </Text>
 
             <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6">
-              <h3 className="text-sm font-medium text-blue-800 mb-2">
+              <Title level={5} className="!mb-2 text-blue-800">
                 Need Access?
-              </h3>
-              <p className="text-xs text-blue-700">
+              </Title>
+              <Text className="text-xs text-blue-700">
                 Contact your system administrator to create an account for you.
-              </p>
+              </Text>
             </div>
 
             <Button
+              type="primary"
+              size="large"
+              block
               onClick={() => router.push("/login")}
-              variant="primary"
-              className="w-full"
+              icon={<ArrowLeft className="w-4 h-4" />}
             >
-              <ChevronLeftIcon className="h-4 w-4 mr-2" />
               Back to Login
             </Button>
           </div>
