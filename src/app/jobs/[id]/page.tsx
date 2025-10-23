@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Drawer, Tabs } from "antd";
+import { Drawer, Tabs, Dropdown } from "antd";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
@@ -26,6 +26,7 @@ import {
   ArrowDownTrayIcon,
   ChevronDownIcon,
   PencilIcon,
+  EllipsisVerticalIcon,
 } from "@heroicons/react/24/outline";
 
 export default function JobDetailPage() {
@@ -343,6 +344,30 @@ export default function JobDetailPage() {
     }
   };
 
+  const getFileStats = () => {
+    if (!job?.files) return { processed: 0, processing: 0, pending: 0 };
+
+    const processed = job.files.filter(
+      (file) =>
+        file.processing_status === "completed" &&
+        file.extraction_status === "completed"
+    ).length;
+
+    const processing = job.files.filter(
+      (file) =>
+        file.processing_status === "processing" ||
+        file.extraction_status === "processing"
+    ).length;
+
+    const pending = job.files.filter(
+      (file) =>
+        file.processing_status === "pending" &&
+        file.extraction_status === "pending"
+    ).length;
+
+    return { processed, processing, pending };
+  };
+
   const getFileStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case "completed":
@@ -474,96 +499,94 @@ export default function JobDetailPage() {
             <header className="bg-white border-b border-gray-200 px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => router.push("/")}
-                  >
-                    ← Back
-                  </Button>
                   <div>
                     <h1 className="text-2xl font-bold text-gray-900">
                       {job.name}
                     </h1>
-                    <p className="text-gray-600 font-mono text-sm">{job.id}</p>
-                    {currentOrganization && (
-                      <p className="text-sm text-blue-600 mt-1">
-                        Organization: {currentOrganization.name}
-                      </p>
-                    )}
-                    {job.extraction_mode && (
-                      <div className="mt-2">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            job.extraction_mode === "text_only"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : "bg-blue-100 text-blue-800"
+                    <div className="flex items-center space-x-4 mt-2">
+                      <StatusIndicator status={getJobStatusColor(job.status)}>
+                        {job.status}
+                      </StatusIndicator>
+                      <div className="flex items-center space-x-2">
+                        <div
+                          className={`w-2 h-2 rounded-full ${
+                            isConnected ? "bg-green-500" : "bg-red-500"
                           }`}
-                        >
-                          {job.extraction_mode === "text_only"
-                            ? "📝 Text Only"
-                            : "🤖 Full Extraction"}
+                        ></div>
+                        <span className="text-xs text-gray-500">
+                          {isConnected ? "Live" : "Offline"}
                         </span>
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center space-x-4">
-                  <StatusIndicator status={getJobStatusColor(job.status)}>
-                    {job.status}
-                  </StatusIndicator>
 
-                  {/* Real-time connection indicator */}
-                  <div className="flex items-center space-x-2">
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        isConnected ? "bg-green-500" : "bg-red-500"
-                      }`}
-                    ></div>
-                    <span className="text-xs text-gray-500">
-                      {isConnected ? "Live" : "Offline"}
-                    </span>
-                  </div>
-
-                  {/* Export Dropdown */}
-                  {job.files.some(
-                    (file) => file.processing_status === "completed"
-                  ) && (
-                    <div className="relative" ref={exportDropdownRef}>
-                      <Button
-                        variant="primary"
-                        onClick={() =>
-                          setShowExportDropdown(!showExportDropdown)
-                        }
-                        className="flex items-center gap-2"
-                      >
-                        <ArrowDownTrayIcon className="w-4 h-4" />
-                        Export
-                        <ChevronDownIcon className="w-4 h-4" />
-                      </Button>
-
-                      {showExportDropdown && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50">
-                          <div className="py-1">
-                            <button
-                              onClick={() => exportResults("json")}
-                              className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                            >
-                              <DocumentIcon className="w-4 h-4 mr-2" />
-                              Export as JSON
-                            </button>
-                            <button
-                              onClick={() => exportResults("csv")}
-                              className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                            >
-                              <DocumentIcon className="w-4 h-4 mr-2" />
-                              Export as CSV
-                            </button>
+                {/* File Stats */}
+                <div className="flex items-center space-x-6">
+                  {(() => {
+                    const stats = getFileStats();
+                    return (
+                      <>
+                        <div className="text-center">
+                          <div className="text-lg font-semibold text-green-600">
+                            {stats.processed}
+                          </div>
+                          <div className="text-xs text-gray-500">Processed</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-semibold text-blue-600">
+                            {stats.processing}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Processing
                           </div>
                         </div>
-                      )}
-                    </div>
-                  )}
+                        <div className="text-center">
+                          <div className="text-lg font-semibold text-gray-600">
+                            {stats.pending}
+                          </div>
+                          <div className="text-xs text-gray-500">Pending</div>
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  {/* Actions Dropdown */}
+                  <Dropdown
+                    menu={{
+                      items: [
+                        {
+                          key: "schema",
+                          label: "Show Schema",
+                          icon: <DocumentIcon className="w-4 h-4" />,
+                          onClick: () => setShowSchemaDrawer(true),
+                        },
+                        {
+                          key: "export-json",
+                          label: "Export as JSON",
+                          icon: <ArrowDownTrayIcon className="w-4 h-4" />,
+                          onClick: () => exportResults("json"),
+                          disabled: !job.files.some(
+                            (file) => file.processing_status === "completed"
+                          ),
+                        },
+                        {
+                          key: "export-csv",
+                          label: "Export as CSV",
+                          icon: <ArrowDownTrayIcon className="w-4 h-4" />,
+                          onClick: () => exportResults("csv"),
+                          disabled: !job.files.some(
+                            (file) => file.processing_status === "completed"
+                          ),
+                        },
+                      ],
+                    }}
+                    trigger={["click"]}
+                  >
+                    <Button variant="secondary" size="sm">
+                      <EllipsisVerticalIcon className="w-4 h-4" />
+                    </Button>
+                  </Dropdown>
                 </div>
               </div>
             </header>
@@ -571,82 +594,11 @@ export default function JobDetailPage() {
             {/* Main Content */}
             <main className="p-6">
               <div className="max-w-6xl mx-auto space-y-6">
-                {/* Job Overview */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-gray-900 mb-1">
-                          {job.files.length}
-                        </div>
-                        <div className="text-sm text-gray-500">Files</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="text-center">
-                        <div className="mb-1">
-                          <StatusIndicator
-                            status={getJobStatusColor(job.status)}
-                          >
-                            {job.status}
-                          </StatusIndicator>
-                        </div>
-                        <div className="text-sm text-gray-500">Status</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="text-center">
-                        <div className="text-sm font-medium text-gray-900 mb-1">
-                          {formatDate(job.created_at)}
-                        </div>
-                        <div className="text-sm text-gray-500">Created</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardContent className="p-4">
-                      <div className="text-center">
-                        <div className="text-sm font-medium text-gray-900 mb-1">
-                          {job.schema_data?.schemaName || "Extraction Schema"}
-                        </div>
-                        <div className="text-sm text-gray-500">Schema Name</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Extraction Schema */}
-                <Card>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>Extraction Schema</CardTitle>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setShowSchemaDrawer(true)}
-                    >
-                      Show Schema
-                    </Button>
-                  </div>
-                </Card>
-
                 {/* Add Files Section */}
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <PlusIcon className="h-5 w-5" />
-                      <span>Add More Files</span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div className="flex items-center space-x-4">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
                         <input
                           ref={fileInputRef}
                           type="file"
@@ -660,8 +612,8 @@ export default function JobDetailPage() {
                           onClick={() => fileInputRef.current?.click()}
                           className="flex items-center space-x-2"
                         >
-                          <DocumentIcon className="h-4 w-4" />
-                          <span>Select Files</span>
+                          <PlusIcon className="h-4 w-4" />
+                          <span>Add Files</span>
                         </Button>
                         {selectedFiles.length > 0 && (
                           <span className="text-sm text-gray-600">
@@ -671,53 +623,25 @@ export default function JobDetailPage() {
                       </div>
 
                       {selectedFiles.length > 0 && (
-                        <div className="space-y-2">
-                          <h4 className="text-sm font-medium text-gray-700">
-                            Selected Files:
-                          </h4>
-                          <div className="space-y-1">
-                            {selectedFiles.map((file, index) => (
-                              <div
-                                key={index}
-                                className="flex items-center space-x-2 text-sm text-gray-600"
-                              >
-                                <DocumentIcon className="h-4 w-4" />
-                                <span>{file.name}</span>
-                                <span className="text-gray-400">
-                                  ({(file.size / 1024 / 1024).toFixed(2)} MB)
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex items-center space-x-2">
                         <Button
                           variant="primary"
                           onClick={handleAddFiles}
-                          disabled={selectedFiles.length === 0 || isAddingFiles}
-                          loading={isAddingFiles}
+                          disabled={isAddingFiles}
+                          className="flex items-center space-x-2"
                         >
-                          {isAddingFiles
-                            ? "Adding Files..."
-                            : "Add Files to Job"}
+                          {isAddingFiles ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                              <span>Adding...</span>
+                            </>
+                          ) : (
+                            <>
+                              <PlusIcon className="h-4 w-4" />
+                              <span>Add to Job</span>
+                            </>
+                          )}
                         </Button>
-                        {selectedFiles.length > 0 && (
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              setSelectedFiles([]);
-                              setFileList(null);
-                              if (fileInputRef.current) {
-                                fileInputRef.current.value = "";
-                              }
-                            }}
-                          >
-                            Clear Selection
-                          </Button>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
