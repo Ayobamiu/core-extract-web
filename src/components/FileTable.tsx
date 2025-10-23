@@ -54,6 +54,7 @@ interface FileTableProps {
   onBulkAddToPreview: (fileIds: string[]) => void;
   onDataUpdate?: () => void;
   showFileResults: Record<string, boolean>;
+  refreshTrigger?: number;
 }
 
 interface TableParams {
@@ -74,6 +75,7 @@ const FileTable: React.FC<FileTableProps> = ({
   onBulkAddToPreview,
   onDataUpdate,
   showFileResults,
+  refreshTrigger,
 }) => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -184,6 +186,7 @@ const FileTable: React.FC<FileTableProps> = ({
     tableParams?.sortOrder,
     tableParams?.sortField,
     JSON.stringify(tableParams.filters),
+    refreshTrigger,
   ]);
 
   // Refresh data when onDataUpdate changes

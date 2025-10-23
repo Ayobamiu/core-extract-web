@@ -68,6 +68,7 @@ export default function JobDetailPage() {
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const [showFilePreviewModal, setShowFilePreviewModal] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
+  const [fileTableRefreshTrigger, setFileTableRefreshTrigger] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -128,6 +129,9 @@ export default function JobDetailPage() {
 
       return { ...prev, files: updatedFiles };
     });
+
+    // Trigger FileTable refresh
+    setFileTableRefreshTrigger((prev) => prev + 1);
 
     // Clear message after 5 seconds
     setTimeout(() => {
@@ -677,6 +681,7 @@ export default function JobDetailPage() {
               }}
               onDataUpdate={refreshJobData}
               showFileResults={showFileResults}
+              refreshTrigger={fileTableRefreshTrigger}
             />
 
             {/* Floating Real-time Message */}
