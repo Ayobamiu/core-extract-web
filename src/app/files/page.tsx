@@ -74,21 +74,61 @@ export default function FilesPage() {
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
   const [files, setFiles] = useState<FileWithJob[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<any>(null);
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
+  const [fileStats, setFileStats] = useState<{
+    total: number;
+    completed: number;
+    processing: number;
+    failed: number;
+    pending: number;
+  } | null>(null);
 
-  console.log({ files });
+  // Table params for pagination, sorting, and filtering
+  const [tableParams, setTableParams] = useState({
+    pagination: {
+      current: 1,
+      pageSize: 50,
+      total: 0,
+      showSizeChanger: true,
+      showQuickJumper: true,
+      showTotal: (total: number, range: [number, number]) =>
+        `${range[0]}-${range[1]} of ${total} files`,
+      pageSizeOptions: ["20", "50", "100", "200"],
+      defaultPageSize: 50,
+    },
+    sortField: undefined as string | undefined,
+    sortOrder: undefined as "ascend" | "descend" | undefined,
+    filters: {} as Record<string, any>,
+  });
+
   const fetchFiles = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.getAllFiles(100);
-      console.log({ response });
-      setFiles(response.files || []);
       setError(null);
+
+      const { pagination } = tableParams;
+      const offset = (pagination.current - 1) * pagination.pageSize;
+
+      const response = await apiClient.getAllFiles(
+        pagination.pageSize,
+        offset,
+        statusFilter !== "all" ? statusFilter : undefined
+      );
+
+      setFiles(response.files || []);
+      setFileStats(response.stats || null);
+      setTableParams((prev) => ({
+        ...prev,
+        pagination: {
+          ...prev.pagination,
+          total: response.total || 0,
+        },
+      }));
     } catch (err: any) {
       setError(err.message || "Failed to fetch files");
       setFiles([]);
@@ -108,6 +148,16 @@ export default function FilesPage() {
 
   useEffect(() => {
     fetchFiles();
+  }, [
+    tableParams.pagination?.current,
+    tableParams.pagination?.pageSize,
+    tableParams?.sortOrder,
+    tableParams?.sortField,
+    JSON.stringify(tableParams.filters),
+    statusFilter, // Refetch when status filter changes
+  ]);
+
+  useEffect(() => {
     fetchQueueStats();
   }, []);
 
@@ -302,28 +352,24 @@ export default function FilesPage() {
     },
   ];
 
+  // Client-side filtering only for search and date (server handles status)
   const filteredFiles = files.filter((file) => {
     const matchesSearch =
       file.filename.toLowerCase().includes(searchText.toLowerCase()) ||
       file.job_name?.toLowerCase().includes(searchText.toLowerCase());
-    const matchesStatus =
-      statusFilter === "all" ||
-      file.extraction_status === statusFilter ||
-      file.processing_status === statusFilter;
     const matchesDate =
       !dateRange ||
       (new Date(file.created_at) >= dateRange[0].startOf("day") &&
         new Date(file.created_at) <= dateRange[1].endOf("day"));
 
-    return matchesSearch && matchesStatus && matchesDate;
+    return matchesSearch && matchesDate;
   });
 
   const stats = {
-    total: files.length,
-    completed: files.filter((f) => f.processing_status === "completed").length,
-    processing: files.filter((f) => f.processing_status === "processing")
-      .length,
-    failed: files.filter((f) => f.processing_status === "failed").length,
+    total: fileStats?.total || tableParams.pagination.total,
+    completed: fileStats?.completed || 0,
+    processing: fileStats?.processing || 0,
+    failed: fileStats?.failed || 0,
     avgProcessingTime:
       files.reduce((acc, file) => {
         const extractionTime = file.extraction_time_seconds || 0;
@@ -332,17 +378,32 @@ export default function FilesPage() {
       }, 0) / files.length,
   };
 
-  if (loading) {
-    return (
-      <ProtectedRoute>
-        <SidebarLayout>
-          <div className="flex items-center justify-center h-64">
-            <Spin size="large" />
-          </div>
-        </SidebarLayout>
-      </ProtectedRoute>
-    );
-  }
+  // Table change handler following Ant Design pattern
+  const handleTableChange = (pagination: any, filters: any, sorter: any) => {
+    setTableParams({
+      pagination,
+      filters,
+      sortOrder: Array.isArray(sorter) ? undefined : sorter.order,
+      sortField: Array.isArray(sorter) ? undefined : sorter.field,
+    });
+
+    // Clear data when page size changes for better UX
+    if (pagination.pageSize !== tableParams.pagination?.pageSize) {
+      setFiles([]);
+    }
+  };
+
+  // if (loading) {
+  //   return (
+  //     <ProtectedRoute>
+  //       <SidebarLayout>
+  //         <div className="flex items-center justify-center h-64">
+  //           <Spin size="large" />
+  //         </div>
+  //       </SidebarLayout>
+  //     </ProtectedRoute>
+  //   );
+  // }
 
   if (error) {
     return (
@@ -460,13 +521,9 @@ export default function FilesPage() {
               dataSource={filteredFiles}
               rowKey="id"
               size="small"
-              pagination={{
-                defaultPageSize: 10,
-                showSizeChanger: true,
-                showQuickJumper: true,
-                showTotal: (total, range) =>
-                  `${range[0]}-${range[1]} of ${total} files`,
-              }}
+              loading={loading}
+              pagination={tableParams.pagination}
+              onChange={handleTableChange}
               scroll={{ x: 300, y: "calc(100vh - 380px)" }}
             />
           </div>

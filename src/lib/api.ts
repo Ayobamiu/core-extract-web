@@ -585,8 +585,21 @@ class ApiClient {
     async getAllFiles(limit: number = 50, offset: number = 0, status?: string, jobId?: string): Promise<ApiResponse<{
         files: JobFile[];
         total: number;
+        stats: {
+            total: number;
+            completed: number;
+            processing: number;
+            failed: number;
+            pending: number;
+        };
         limit: number;
         offset: number;
+        pagination: {
+            current: number;
+            pageSize: number;
+            total: number;
+            totalPages: number;
+        };
     }>> {
         const params = new URLSearchParams({
             limit: limit.toString(),

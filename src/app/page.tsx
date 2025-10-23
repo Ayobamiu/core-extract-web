@@ -40,7 +40,7 @@ export default function Dashboard() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
   const { currentOrganization, isLoadingOrganizations } = useOrganization();
-  const organizationName = (currentOrganization as any).name;
+  const organizationName = currentOrganization?.name;
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [queueAnalytics, setQueueAnalytics] = useState<QueueAnalytics | null>(
     null
