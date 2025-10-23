@@ -181,7 +181,7 @@ const SchemaEditor: React.FC<SchemaEditorProps> = ({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={!isValid || saving || success}
+            disabled={!isValid || saving || !!success}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             {saving ? "Saving..." : success ? "Saved!" : "Save Schema"}
