@@ -14,6 +14,7 @@ import {
   Modal,
   Upload,
   Button,
+  Drawer,
 } from "antd";
 import {
   FilePdfOutlined,
@@ -75,7 +76,8 @@ const FileTable: React.FC<FileTableProps> = ({
   showFileResults,
 }) => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [expandedRows, setExpandedRows] = useState<string[]>([]);
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<JobFile | null>(null);
   const [retryModalVisible, setRetryModalVisible] = useState(false);
   const [retryFileId, setRetryFileId] = useState<string | null>(null);
   const [retryFile, setRetryFile] = useState<File | null>(null);
@@ -159,6 +161,17 @@ const FileTable: React.FC<FileTableProps> = ({
     if (pagination.pageSize !== tableParams.pagination?.pageSize) {
       setData([]);
     }
+  };
+
+  // Handle drawer functions
+  const handleOpenDrawer = (record: JobFile) => {
+    setSelectedFile(record);
+    setDrawerVisible(true);
+  };
+
+  const handleCloseDrawer = () => {
+    setDrawerVisible(false);
+    setSelectedFile(null);
   };
 
   // Fetch data when dependencies change
@@ -413,9 +426,18 @@ const FileTable: React.FC<FileTableProps> = ({
       title: "File ID",
       dataIndex: "id",
       key: "id",
-      width: 120,
-      render: (id: string) => (
+      width: 150,
+      render: (id: string, record: JobFile) => (
         <div className="flex items-center space-x-1">
+          {record.processing_status === "completed" && record.result && (
+            <ArrowsAltOutlined
+              style={{ cursor: "pointer", fontSize: "14px" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleOpenDrawer(record);
+              }}
+            />
+          )}
           <CopyOutlined
             style={{ color: "#1890ff", cursor: "pointer", fontSize: "12px" }}
             onClick={() => copyToClipboard(id)}
@@ -649,13 +671,10 @@ const FileTable: React.FC<FileTableProps> = ({
                 <a
                   onClick={() => {
                     onShowResults(record.id);
-                    // Also expand the row if it's not already expanded
-                    if (!expandedRows.includes(record.id)) {
-                      setExpandedRows([...expandedRows, record.id]);
-                    }
+                    handleOpenDrawer(record);
                   }}
                 >
-                  {showFileResults[record.id] ? "Hide Results" : "Show Results"}
+                  Show Results
                 </a>
               ),
             },
@@ -708,49 +727,6 @@ const FileTable: React.FC<FileTableProps> = ({
     },
   ];
 
-  const expandedRowRender = (record: JobFile) => {
-    if (record.processing_status !== "completed" || !record.result) {
-      return (
-        <div style={{ padding: "16px", backgroundColor: "#fafafa" }}>
-          <Text type="secondary">No results available for this file.</Text>
-        </div>
-      );
-    }
-
-    return (
-      <div style={{ padding: "16px", backgroundColor: "#fafafa" }}>
-        <TabbedDataViewer
-          data={record.result}
-          filename={record.filename}
-          schema={jobSchema}
-          editable={true}
-          onUpdate={async (updatedData) => {
-            try {
-              // Import apiClient dynamically to avoid circular imports
-              const { apiClient } = await import("@/lib/api");
-              await apiClient.updateFileResults(record.id, updatedData);
-
-              // Show success message
-              message.success("File results updated successfully");
-
-              // Refresh the data in the parent component
-              if (onDataUpdate) {
-                await onDataUpdate();
-              }
-            } catch (error) {
-              console.error("Error updating file results:", error);
-              message.error(
-                `Failed to update file results: ${
-                  (error as Error).message || "Unknown error"
-                }`
-              );
-            }
-          }}
-        />
-      </div>
-    );
-  };
-
   const createTableComponent = () => (
     <Table<JobFile>
       columns={columns}
@@ -761,30 +737,24 @@ const FileTable: React.FC<FileTableProps> = ({
       loading={loading}
       onChange={handleTableChange}
       size="small"
-      expandable={{
-        expandedRowRender,
-        expandedRowKeys: expandedRows,
-        onExpandedRowsChange: (expandedKeys) =>
-          setExpandedRows(expandedKeys as string[]),
-        expandRowByClick: false,
-        expandIcon: ({ expanded, onExpand, record }) => {
-          if (record.processing_status !== "completed" || !record.result) {
-            return null;
-          }
-          return expanded ? (
-            <ShrinkOutlined
-              style={{ cursor: "pointer", fontSize: "14px" }}
-              onClick={(e) => onExpand(record, e)}
-            />
-          ) : (
-            <ArrowsAltOutlined
-              style={{ cursor: "pointer", fontSize: "14px" }}
-              onClick={(e) => onExpand(record, e)}
-            />
-          );
-        },
-      }}
-      scroll={{ x: 1000 }}
+      // expandable={{
+      //   expandIcon: ({ record }) => {
+      //     if (record.processing_status !== "completed" || !record.result) {
+      //       return null;
+      //     }
+      //     return (
+      //       <ArrowsAltOutlined
+      //         style={{ cursor: "pointer", fontSize: "14px" }}
+      //         onClick={(e) => {
+      //           e.stopPropagation();
+      //           handleOpenDrawer(record);
+      //         }}
+      //       />
+      //     );
+      //   },
+      // }}
+      // scroll={{ x: 1000 }}
+      scroll={{ x: 300, y: "calc(100vh - 320px)" }}
       className={styles.fileTable}
     />
   );
@@ -837,7 +807,9 @@ const FileTable: React.FC<FileTableProps> = ({
       )}
 
       {/* Files Table */}
-      {createTableComponent()}
+      <div className="border border-gray-200 rounded-lg flex-1">
+        {createTableComponent()}
+      </div>
 
       {/* Retry Upload Modal */}
       <Modal
@@ -1095,6 +1067,88 @@ const FileTable: React.FC<FileTableProps> = ({
           </div>
         </div>
       </Modal>
+
+      {/* File Results Drawer */}
+      <Drawer
+        title={
+          selectedFile ? (
+            <div className="flex items-center space-x-2">
+              <FilePdfOutlined className="text-blue-500" />
+              <span className="font-medium">{selectedFile.filename}</span>
+            </div>
+          ) : (
+            "File Results"
+          )
+        }
+        placement="right"
+        size="large"
+        onClose={handleCloseDrawer}
+        open={drawerVisible}
+        width={800}
+        extra={
+          <Button type="text" onClick={handleCloseDrawer}>
+            Close
+          </Button>
+        }
+      >
+        {selectedFile && (
+          <div className="h-full">
+            {selectedFile.processing_status !== "completed" ||
+            !selectedFile.result ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <ExclamationCircleOutlined className="text-gray-400 text-4xl mb-4" />
+                  <Text type="secondary" className="text-lg">
+                    No results available for this file.
+                  </Text>
+                  <br />
+                  <Text type="secondary" className="text-sm">
+                    File status: {selectedFile.processing_status}
+                  </Text>
+                </div>
+              </div>
+            ) : (
+              <TabbedDataViewer
+                data={selectedFile.result}
+                filename={selectedFile.filename}
+                schema={jobSchema}
+                editable={true}
+                onUpdate={async (updatedData) => {
+                  try {
+                    // Import apiClient dynamically to avoid circular imports
+                    const { apiClient } = await import("@/lib/api");
+                    await apiClient.updateFileResults(
+                      selectedFile.id,
+                      updatedData
+                    );
+
+                    // Show success message
+                    message.success("File results updated successfully");
+
+                    // Refresh the data in the parent component
+                    if (onDataUpdate) {
+                      await onDataUpdate();
+                    }
+
+                    // Update the selected file data
+                    setSelectedFile({
+                      ...selectedFile,
+                      result: updatedData,
+                    });
+                  } catch (error) {
+                    console.error("Error updating file results:", error);
+                    message.error(
+                      `Failed to update file results: ${
+                        (error as Error).message || "Unknown error"
+                      }`
+                    );
+                  }
+                }}
+              />
+            )}
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 };
