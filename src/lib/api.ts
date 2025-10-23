@@ -123,6 +123,11 @@ export interface JobFile {
         processing_time?: string;
         text_length?: number;
     };
+    previews?: Array<{
+        id: string;
+        name: string;
+        created_at: string;
+    }>;
 }
 
 export interface ProcessingConfig {
@@ -364,6 +369,45 @@ class ApiClient {
 
     async getJob(jobId: string): Promise<ApiResponse<{ job: JobDetails }>> {
         return this.request(`/jobs/${jobId}`);
+    }
+
+    async getJobFileStats(jobId: string): Promise<ApiResponse<{
+        jobId: string;
+        stats: {
+            total: number;
+            processed: number;
+            processing: number;
+            pending: number;
+        };
+    }>> {
+        return this.request(`/jobs/${jobId}/files/stats`);
+    }
+
+    async getJobFilesByStatus(
+        jobId: string,
+        status: 'processed' | 'processing' | 'pending',
+        limit: number = 50,
+        offset: number = 0
+    ): Promise<ApiResponse<{
+        jobId: string;
+        status: string;
+        files: JobFile[];
+        total: number;
+        limit: number;
+        offset: number;
+        pagination: {
+            current: number;
+            pageSize: number;
+            total: number;
+            totalPages: number;
+        };
+    }>> {
+        const params = new URLSearchParams({
+            limit: limit.toString(),
+            offset: offset.toString(),
+        });
+
+        return this.request(`/jobs/${jobId}/files/${status}?${params.toString()}`);
     }
 
     async getFileResult(fileId: string): Promise<ApiResponse<{ file: JobFile }>> {

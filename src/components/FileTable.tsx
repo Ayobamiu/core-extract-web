@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import type { GetProp, TableProps } from "antd";
 import {
   Table,
   Tooltip,
@@ -34,12 +35,17 @@ import {
   getViolationSeverityIcon,
 } from "@/lib/constraintUtils";
 import styles from "./FileTable.module.css";
+import { Loader } from "lucide-react";
 
 const { Text } = Typography;
 
+type TablePaginationConfig = Exclude<
+  GetProp<TableProps, "pagination">,
+  boolean
+>;
+
 interface FileTableProps {
-  files: JobFile[];
-  filePreviews: Record<string, any[]>;
+  jobId: string;
   jobSchema: any;
   onShowResults: (fileId: string) => void;
   onAddToPreview: (fileId: string) => void;
@@ -49,14 +55,17 @@ interface FileTableProps {
   showFileResults: Record<string, boolean>;
 }
 
-interface FileTableData extends JobFile {
-  key: string;
-  statusGroup: "completed" | "processing" | "pending" | "failed";
+interface TableParams {
+  pagination?: TablePaginationConfig;
+  sortField?: string;
+  sortOrder?: "ascend" | "descend";
+  filters?: Record<string, any>;
 }
 
+const DEFAULT_PAGE_SIZE = 10;
+
 const FileTable: React.FC<FileTableProps> = ({
-  files,
-  filePreviews,
+  jobId,
   jobSchema,
   onShowResults,
   onAddToPreview,
@@ -82,52 +91,105 @@ const FileTable: React.FC<FileTableProps> = ({
   const [showProcessingConfigInReprocess, setShowProcessingConfigInReprocess] =
     useState(false);
 
-  // Group files by status
-  const groupedFiles = files.reduce(
-    (acc, file) => {
-      let statusGroup: "completed" | "processing" | "pending" | "failed";
-
-      if (
-        file.extraction_status === "completed" &&
-        file.processing_status === "completed"
-      ) {
-        statusGroup = "completed";
-      } else if (
-        file.extraction_status === "processing" ||
-        file.processing_status === "processing"
-      ) {
-        statusGroup = "processing";
-      } else if (
-        file.extraction_status === "failed" ||
-        file.processing_status === "failed"
-      ) {
-        statusGroup = "failed";
-      } else {
-        statusGroup = "pending";
-      }
-
-      acc[statusGroup].push({
-        ...file,
-        key: file.id,
-        statusGroup,
-      });
-
-      return acc;
+  // AJAX loading state
+  const [data, setData] = useState<JobFile[]>([]);
+  console.log({ data });
+  const [loading, setLoading] = useState(false);
+  const [tableParams, setTableParams] = useState<TableParams>({
+    pagination: {
+      current: 1,
+      pageSize: DEFAULT_PAGE_SIZE,
     },
-    {
-      completed: [] as FileTableData[],
-      processing: [] as FileTableData[],
-      pending: [] as FileTableData[],
-      failed: [] as FileTableData[],
+  });
+
+  // AJAX fetch function
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const { pagination } = tableParams;
+      const offset =
+        ((pagination?.current || 1) - 1) *
+        (pagination?.pageSize || DEFAULT_PAGE_SIZE);
+
+      const response = await apiClient.getAllFiles(
+        pagination?.pageSize || DEFAULT_PAGE_SIZE,
+        offset,
+        undefined, // status filter
+        jobId // jobId filter
+      );
+
+      setData(response.files || []);
+      setTableParams((prev) => ({
+        ...prev,
+        pagination: {
+          ...prev.pagination,
+          total: response.total || 0,
+        },
+      }));
+    } catch (error: any) {
+      console.error("Failed to fetch files:", error.message);
+      setData([]);
+    } finally {
+      setLoading(false);
     }
-  );
-  console.log({ groupedFiles });
+  };
+
+  // Handle table change
+  const handleTableChange: TableProps<JobFile>["onChange"] = (
+    pagination,
+    filters,
+    sorter
+  ) => {
+    setTableParams({
+      pagination,
+      filters,
+      sortOrder: Array.isArray(sorter)
+        ? undefined
+        : sorter?.order === "ascend" || sorter?.order === "descend"
+        ? sorter.order
+        : undefined,
+      sortField: Array.isArray(sorter)
+        ? undefined
+        : typeof sorter?.field === "string"
+        ? sorter.field
+        : undefined,
+    });
+
+    // Clear data when page size changes
+    if (pagination.pageSize !== tableParams.pagination?.pageSize) {
+      setData([]);
+    }
+  };
+
+  // Fetch data when dependencies change
+  useEffect(() => {
+    fetchData();
+  }, [
+    jobId,
+    tableParams.pagination?.current,
+    tableParams.pagination?.pageSize,
+    tableParams?.sortOrder,
+    tableParams?.sortField,
+    JSON.stringify(tableParams.filters),
+  ]);
+
+  // Refresh data when onDataUpdate changes
+  useEffect(() => {
+    if (onDataUpdate) {
+      fetchData();
+    }
+  }, [onDataUpdate]);
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
       case "completed":
         return <CheckCircleOutlined style={{ color: "#52c41a" }} />;
       case "processing":
-        return <ClockCircleOutlined style={{ color: "#faad14" }} />;
+        return (
+          <Loader
+            aria-label="Processing"
+            className="w-4 h-4 animate-spin text-yellow-500"
+          />
+        );
       case "failed":
         return <CloseCircleOutlined style={{ color: "#ff4d4f" }} />;
       case "pending":
@@ -165,7 +227,7 @@ const FileTable: React.FC<FileTableProps> = ({
     onChange: (newSelectedRowKeys: React.Key[]) => {
       setSelectedRowKeys(newSelectedRowKeys);
     },
-    getCheckboxProps: (record: FileTableData) => ({
+    getCheckboxProps: (record: JobFile) => ({
       // Only allow selection of completed files
       disabled: record.processing_status !== "completed",
     }),
@@ -406,8 +468,8 @@ const FileTable: React.FC<FileTableProps> = ({
       title: "Previews",
       key: "previews",
       width: 150,
-      render: (_: any, record: FileTableData) => {
-        const previews = filePreviews[record.id] || [];
+      render: (_: any, record: JobFile) => {
+        const previews = record.previews || [];
 
         if (previews.length === 0) {
           return (
@@ -472,7 +534,7 @@ const FileTable: React.FC<FileTableProps> = ({
       title: "Status",
       key: "status",
       width: 100,
-      render: (_: any, record: FileTableData) => (
+      render: (_: any, record: JobFile) => (
         <Tooltip
           title={
             <div>
@@ -499,7 +561,7 @@ const FileTable: React.FC<FileTableProps> = ({
       title: "Constraints",
       key: "constraints",
       width: 120,
-      render: (_: any, record: FileTableData) => {
+      render: (_: any, record: JobFile) => {
         // Only check for permit number mismatch using client-side logic
         const permitCheck = checkPermitNumberMatch(record);
 
@@ -565,7 +627,7 @@ const FileTable: React.FC<FileTableProps> = ({
       title: "Actions",
       key: "actions",
       width: 60,
-      render: (_: any, record: FileTableData) => {
+      render: (_: any, record: JobFile) => {
         const menuItems = [];
 
         // Show retry upload option for failed uploads
@@ -588,8 +650,8 @@ const FileTable: React.FC<FileTableProps> = ({
                   onClick={() => {
                     onShowResults(record.id);
                     // Also expand the row if it's not already expanded
-                    if (!expandedRows.includes(record.key)) {
-                      setExpandedRows([...expandedRows, record.key]);
+                    if (!expandedRows.includes(record.id)) {
+                      setExpandedRows([...expandedRows, record.id]);
                     }
                   }}
                 >
@@ -646,7 +708,7 @@ const FileTable: React.FC<FileTableProps> = ({
     },
   ];
 
-  const expandedRowRender = (record: FileTableData) => {
+  const expandedRowRender = (record: JobFile) => {
     if (record.processing_status !== "completed" || !record.result) {
       return (
         <div style={{ padding: "16px", backgroundColor: "#fafafa" }}>
@@ -689,40 +751,15 @@ const FileTable: React.FC<FileTableProps> = ({
     );
   };
 
-  const getStatusGroupTitle = (status: string, count: number) => {
-    const icons = {
-      completed: <CheckCircleOutlined style={{ color: "#52c41a" }} />,
-      processing: <ClockCircleOutlined style={{ color: "#faad14" }} />,
-      pending: <ClockCircleOutlined style={{ color: "#d9d9d9" }} />,
-      failed: <CloseCircleOutlined style={{ color: "#ff4d4f" }} />,
-    };
-
-    return (
-      <div className="flex items-center space-x-2">
-        {icons[status as keyof typeof icons]}
-        <span className="capitalize">{status} Files</span>
-        <Badge
-          overflowCount={999}
-          count={count}
-          style={{ backgroundColor: "#52c41a" }}
-        />
-      </div>
-    );
-  };
-
-  const createTableComponent = (files: FileTableData[]) => (
-    <Table
+  const createTableComponent = () => (
+    <Table<JobFile>
       columns={columns}
-      dataSource={files}
+      dataSource={data}
+      rowKey="id"
       rowSelection={rowSelection}
-      pagination={{
-        defaultPageSize: 10,
-        showSizeChanger: true,
-        showQuickJumper: false,
-        showTotal: (total, range) =>
-          `${range[0]}-${range[1]} of ${total} files`,
-        size: "small",
-      }}
+      pagination={tableParams.pagination}
+      loading={loading}
+      onChange={handleTableChange}
       size="small"
       expandable={{
         expandedRowRender,
@@ -799,68 +836,8 @@ const FileTable: React.FC<FileTableProps> = ({
         </div>
       )}
 
-      {/* File Groups */}
-      <Collapse
-        defaultActiveKey={["completed", "processing", "pending", "failed"]}
-        ghost
-        items={[
-          // Completed Files
-          ...(groupedFiles.completed.length > 0
-            ? [
-                {
-                  key: "completed",
-                  label: getStatusGroupTitle(
-                    "completed",
-                    groupedFiles.completed.length
-                  ),
-                  children: createTableComponent(groupedFiles.completed),
-                },
-              ]
-            : []),
-
-          // Processing Files
-          ...(groupedFiles.processing.length > 0
-            ? [
-                {
-                  key: "processing",
-                  label: getStatusGroupTitle(
-                    "processing",
-                    groupedFiles.processing.length
-                  ),
-                  children: createTableComponent(groupedFiles.processing),
-                },
-              ]
-            : []),
-
-          // Pending Files
-          ...(groupedFiles.pending.length > 0
-            ? [
-                {
-                  key: "pending",
-                  label: getStatusGroupTitle(
-                    "pending",
-                    groupedFiles.pending.length
-                  ),
-                  children: createTableComponent(groupedFiles.pending),
-                },
-              ]
-            : []),
-
-          // Failed Files
-          ...(groupedFiles.failed.length > 0
-            ? [
-                {
-                  key: "failed",
-                  label: getStatusGroupTitle(
-                    "failed",
-                    groupedFiles.failed.length
-                  ),
-                  children: createTableComponent(groupedFiles.failed),
-                },
-              ]
-            : []),
-        ]}
-      />
+      {/* Files Table */}
+      {createTableComponent()}
 
       {/* Retry Upload Modal */}
       <Modal

@@ -51,7 +51,6 @@ export default function JobDetailPage() {
   const [selectedFileForPreview, setSelectedFileForPreview] = useState<
     string | null
   >(null);
-  const [filePreviews, setFilePreviews] = useState<Record<string, any[]>>({});
   const [showSchemaEditor, setShowSchemaEditor] = useState(false);
   const [showFileResultsEditor, setShowFileResultsEditor] = useState(false);
   const [selectedFileForResultsEdit, setSelectedFileForResultsEdit] =
@@ -66,33 +65,6 @@ export default function JobDetailPage() {
       const response = await apiClient.getJob(jobId);
       setJob(response.job);
       setError(null);
-
-      // Fetch previews for each completed file
-      if (response.job?.files) {
-        const previewPromises = response.job.files
-          .filter((file: JobFile) => file.processing_status === "completed")
-          .map(async (file: JobFile) => {
-            try {
-              const previewResponse = await apiClient.getPreviewsForFile(
-                file.id
-              );
-              return { fileId: file.id, previews: previewResponse.data || [] };
-            } catch (error) {
-              console.error(
-                `Error fetching previews for file ${file.id}:`,
-                error
-              );
-              return { fileId: file.id, previews: [] };
-            }
-          });
-
-        const previewResults = await Promise.all(previewPromises);
-        const previewMap: Record<string, any[]> = {};
-        previewResults.forEach(({ fileId, previews }) => {
-          previewMap[fileId] = previews;
-        });
-        setFilePreviews(previewMap);
-      }
     } catch (err: unknown) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to fetch job details";
@@ -106,33 +78,6 @@ export default function JobDetailPage() {
       const response = await apiClient.getJob(jobId);
       setJob(response.job);
       setError(null);
-
-      // Fetch previews for each completed file
-      if (response.job?.files) {
-        const previewPromises = response.job.files
-          .filter((file: JobFile) => file.processing_status === "completed")
-          .map(async (file: JobFile) => {
-            try {
-              const previewResponse = await apiClient.getPreviewsForFile(
-                file.id
-              );
-              return { fileId: file.id, previews: previewResponse.data || [] };
-            } catch (error) {
-              console.error(
-                `Error fetching previews for file ${file.id}:`,
-                error
-              );
-              return { fileId: file.id, previews: [] };
-            }
-          });
-
-        const previewResults = await Promise.all(previewPromises);
-        const previewMap: Record<string, any[]> = {};
-        previewResults.forEach(({ fileId, previews }) => {
-          previewMap[fileId] = previews;
-        });
-        setFilePreviews(previewMap);
-      }
     } catch (err: unknown) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to fetch job details";
@@ -805,8 +750,7 @@ export default function JobDetailPage() {
 
                 {/* Files Table */}
                 <FileTable
-                  files={job.files}
-                  filePreviews={filePreviews}
+                  jobId={job.id}
                   jobSchema={
                     typeof job.schema_data === "string"
                       ? JSON.parse(job.schema_data)
