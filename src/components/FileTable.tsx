@@ -251,7 +251,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => {
-      message.success("ID copied to clipboard");
+      // message.success("ID copied to clipboard");
     });
   };
 
@@ -266,9 +266,9 @@ const FileTable: React.FC<FileTableProps> = ({
       );
 
       if (response.status === "success") {
-        message.success(
-          response.message || "File upload retry initiated successfully"
-        );
+        // message.success(
+        //   response.message || "File upload retry initiated successfully"
+        // );
         setRetryModalVisible(false);
         setRetryFileId(null);
         setRetryFile(null);
@@ -278,11 +278,11 @@ const FileTable: React.FC<FileTableProps> = ({
           await onDataUpdate();
         }
       } else {
-        message.error(response.message || "Failed to retry upload");
+        // message.error(response.message || "Failed to retry upload");
       }
     } catch (error) {
       console.error("Error retrying upload:", error);
-      message.error("Failed to retry upload");
+      // message.error("Failed to retry upload");
     } finally {
       setRetryLoading(false);
     }
@@ -308,7 +308,7 @@ const FileTable: React.FC<FileTableProps> = ({
       const response = await apiClient.deleteFile(deleteFileId);
 
       if (response.status === "success") {
-        message.success(`File "${deleteFileName}" deleted successfully`);
+        // message.success(`File "${deleteFileName}" deleted successfully`);
         setDeleteModalVisible(false);
         setDeleteFileId(null);
         setDeleteFileName(null);
@@ -318,11 +318,11 @@ const FileTable: React.FC<FileTableProps> = ({
           await onDataUpdate();
         }
       } else {
-        message.error(response.message || "Failed to delete file");
+        // message.error(response.message || "Failed to delete file");
       }
     } catch (error) {
       console.error("Error deleting file:", error);
-      message.error("Failed to delete file");
+      // message.error("Failed to delete file");
     } finally {
       setDeleteLoading(false);
     }
@@ -330,7 +330,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
   const handleBulkDelete = () => {
     if (selectedRowKeys.length === 0) {
-      message.warning("Please select files to delete");
+      // message.warning("Please select files to delete");
       return;
     }
     setBulkDeleteModalVisible(true);
@@ -344,12 +344,12 @@ const FileTable: React.FC<FileTableProps> = ({
 
       if (response.status === "success") {
         const deletedCount = response.data?.deletedFiles?.length || 0;
-        message.success(`${deletedCount} files deleted successfully`);
+        // message.success(`${deletedCount} files deleted successfully`);
 
         if (response.data?.errors && response.data.errors.length > 0) {
-          message.warning(
-            `${response.data.errors.length} files could not be deleted`
-          );
+          // message.warning(
+          //   `${response.data.errors.length} files could not be deleted`
+          // );
         }
 
         // Clear selection and refresh data
@@ -359,11 +359,11 @@ const FileTable: React.FC<FileTableProps> = ({
           await onDataUpdate();
         }
       } else {
-        message.error(response.message || "Failed to delete files");
+        // message.error(response.message || "Failed to delete files");
       }
     } catch (error) {
       console.error("Error deleting files:", error);
-      message.error("Failed to delete files");
+      // message.error("Failed to delete files");
     } finally {
       setBulkDeleteLoading(false);
     }
@@ -371,7 +371,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
   const handleBulkReprocess = () => {
     if (selectedRowKeys.length === 0) {
-      message.warning("Please select files to reprocess");
+      // message.warning("Please select files to reprocess");
       return;
     }
     setReprocessModalVisible(true);
@@ -385,7 +385,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
       if (response.status === "success") {
         const queuedCount = response.data?.queuedFiles?.length || 0;
-        message.success(`${queuedCount} files queued for reprocessing`);
+        // message.success(`${queuedCount} files queued for reprocessing`);
 
         if (
           response.data?.skippedFiles &&
@@ -394,13 +394,13 @@ const FileTable: React.FC<FileTableProps> = ({
           const skippedReasons = response.data.skippedFiles
             .map((f) => f.reason)
             .join(", ");
-          message.warning(
-            `${response.data.skippedFiles.length} files were skipped: ${skippedReasons}`
-          );
+          // message.warning(
+          // `${response.data.skippedFiles.length} files were skipped: ${skippedReasons}`
+          // );
         }
 
         if (response.data?.errors && response.data.errors.length > 0) {
-          message.error(`${response.data.errors.length} files failed to queue`);
+          // message.error(`${response.data.errors.length} files failed to queue`);
         }
 
         // Clear selection and refresh data
@@ -410,11 +410,11 @@ const FileTable: React.FC<FileTableProps> = ({
           await onDataUpdate();
         }
       } else {
-        message.error(response.message || "Failed to reprocess files");
+        // message.error(response.message || "Failed to reprocess files");
       }
     } catch (error) {
       console.error("Error reprocessing files:", error);
-      message.error("Failed to reprocess files");
+      // message.error("Failed to reprocess files");
     } finally {
       setReprocessLoading(false);
     }
@@ -1126,7 +1126,7 @@ const FileTable: React.FC<FileTableProps> = ({
                     );
 
                     // Show success message
-                    message.success("File results updated successfully");
+                    // message.success("File results updated successfully");
 
                     // Refresh the data in the parent component
                     if (onDataUpdate) {
@@ -1140,11 +1140,11 @@ const FileTable: React.FC<FileTableProps> = ({
                     });
                   } catch (error) {
                     console.error("Error updating file results:", error);
-                    message.error(
-                      `Failed to update file results: ${
-                        (error as Error).message || "Unknown error"
-                      }`
-                    );
+                    // message.error(
+                    //   `Failed to update file results: ${
+                    //     (error as Error).message || "Unknown error"
+                    //   }`
+                    // );
                   }
                 }}
               />

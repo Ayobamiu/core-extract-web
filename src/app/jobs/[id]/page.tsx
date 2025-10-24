@@ -123,7 +123,45 @@ export default function JobDetailPage() {
 
       const updatedFiles = prev.files.map((file) =>
         file.id === data.fileId
-          ? { ...file, processing_status: data.status }
+          ? {
+              ...file,
+              // Update all possible fields that might change
+              processing_status:
+                data.processing_status || data.status || file.processing_status,
+              extraction_status:
+                data.extraction_status || file.extraction_status,
+              result: data.result !== undefined ? data.result : file.result,
+              extraction_error:
+                data.extraction_error !== undefined
+                  ? data.extraction_error
+                  : file.extraction_error,
+              processing_error:
+                data.processing_error !== undefined
+                  ? data.processing_error
+                  : file.processing_error,
+              processed_at: data.processed_at || file.processed_at,
+              updated_at: data.updated_at || new Date().toISOString(),
+              // Update any other fields that might be in the data
+              ...(data.filename && { filename: data.filename }),
+              ...(data.size && { size: data.size }),
+              ...(data.extracted_text && {
+                extracted_text: data.extracted_text,
+              }),
+              ...(data.extracted_tables && {
+                extracted_tables: data.extracted_tables,
+              }),
+              ...(data.markdown && { markdown: data.markdown }),
+              ...(data.pages && { pages: data.pages }),
+              ...(data.processing_metadata && {
+                processing_metadata: data.processing_metadata,
+              }),
+              ...(data.extraction_time_seconds && {
+                extraction_time_seconds: data.extraction_time_seconds,
+              }),
+              ...(data.ai_processing_time_seconds && {
+                ai_processing_time_seconds: data.ai_processing_time_seconds,
+              }),
+            }
           : file
       );
 
