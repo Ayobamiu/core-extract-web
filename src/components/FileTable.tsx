@@ -15,6 +15,10 @@ import {
   Upload,
   Button,
   Drawer,
+  Checkbox,
+  Radio,
+  Space,
+  Divider,
 } from "antd";
 import {
   FilePdfOutlined,
@@ -27,7 +31,7 @@ import {
   ArrowsAltOutlined,
   ShrinkOutlined,
 } from "@ant-design/icons";
-import { JobFile } from "@/lib/api";
+import { JobFile, ProcessingConfig } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import { apiClient } from "@/lib/api";
 import {
@@ -94,6 +98,35 @@ const FileTable: React.FC<FileTableProps> = ({
   const [reprocessLoading, setReprocessLoading] = useState(false);
   const [showProcessingConfigInReprocess, setShowProcessingConfigInReprocess] =
     useState(false);
+
+  // Reprocess options state
+  const [reprocessOptions, setReprocessOptions] = useState({
+    reExtract: true,
+    reProcess: true,
+    forceExtraction: false,
+    preview: false,
+  });
+
+  // Convert reprocess options to ProcessingConfig
+  const getReprocessConfig = (): ProcessingConfig | undefined => {
+    return {
+      extraction: {
+        method: "mineru",
+        options: {},
+      },
+      processing: {
+        method: "openai",
+        model: "gpt-4o",
+        options: {},
+      },
+      reprocess: {
+        reExtract: reprocessOptions.reExtract,
+        reProcess: reprocessOptions.reProcess,
+        forceExtraction: reprocessOptions.forceExtraction,
+        preview: reprocessOptions.preview,
+      },
+    };
+  };
 
   // AJAX loading state
   const [data, setData] = useState<JobFile[]>([]);
@@ -381,40 +414,60 @@ const FileTable: React.FC<FileTableProps> = ({
     try {
       setReprocessLoading(true);
       const fileIds = selectedRowKeys.map((key) => key.toString());
-      const response = await apiClient.reprocessFiles(fileIds);
+
+      // Use the reprocess config from state
+      const processingConfig = getReprocessConfig();
+
+      const response = await apiClient.reprocessFiles(
+        fileIds,
+        0,
+        processingConfig
+      );
 
       if (response.status === "success") {
-        const queuedCount = response.data?.queuedFiles?.length || 0;
-        // message.success(`${queuedCount} files queued for reprocessing`);
+        if (reprocessOptions.preview) {
+          // Handle preview response
+          const previewCount = response.data?.preview?.length || 0;
+          message.success(`Preview generated for ${previewCount} files`);
 
-        if (
-          response.data?.skippedFiles &&
-          response.data.skippedFiles.length > 0
-        ) {
-          const skippedReasons = response.data.skippedFiles
-            .map((f) => f.reason)
-            .join(", ");
-          // message.warning(
-          // `${response.data.skippedFiles.length} files were skipped: ${skippedReasons}`
-          // );
-        }
+          // You could show the preview data in a modal or drawer here
+          console.log("Preview data:", response.data?.preview);
+        } else {
+          // Handle normal reprocess response
+          const queuedCount = response.data?.queuedFiles?.length || 0;
+          message.success(`${queuedCount} files queued for reprocessing`);
 
-        if (response.data?.errors && response.data.errors.length > 0) {
-          // message.error(`${response.data.errors.length} files failed to queue`);
-        }
+          if (
+            response.data?.skippedFiles &&
+            response.data.skippedFiles.length > 0
+          ) {
+            const skippedReasons = response.data.skippedFiles
+              .map((f) => f.reason)
+              .join(", ");
+            message.warning(
+              `${response.data.skippedFiles.length} files were skipped: ${skippedReasons}`
+            );
+          }
 
-        // Clear selection and refresh data
-        setSelectedRowKeys([]);
-        setReprocessModalVisible(false);
-        if (onDataUpdate) {
-          await onDataUpdate();
+          if (response.data?.errors && response.data.errors.length > 0) {
+            message.error(
+              `${response.data.errors.length} files failed to queue`
+            );
+          }
+
+          // Clear selection and refresh data
+          setSelectedRowKeys([]);
+          setReprocessModalVisible(false);
+          if (onDataUpdate) {
+            await onDataUpdate();
+          }
         }
       } else {
-        // message.error(response.message || "Failed to reprocess files");
+        message.error(response.message || "Failed to reprocess files");
       }
     } catch (error) {
       console.error("Error reprocessing files:", error);
-      // message.error("Failed to reprocess files");
+      message.error("Failed to reprocess files");
     } finally {
       setReprocessLoading(false);
     }
@@ -985,6 +1038,13 @@ const FileTable: React.FC<FileTableProps> = ({
         onCancel={() => {
           setReprocessModalVisible(false);
           setShowProcessingConfigInReprocess(false);
+          // Reset options to defaults
+          setReprocessOptions({
+            reExtract: true,
+            reProcess: true,
+            forceExtraction: false,
+            preview: false,
+          });
         }}
         footer={[
           <Button
@@ -992,22 +1052,43 @@ const FileTable: React.FC<FileTableProps> = ({
             onClick={() => {
               setReprocessModalVisible(false);
               setShowProcessingConfigInReprocess(false);
+              // Reset options to defaults
+              setReprocessOptions({
+                reExtract: true,
+                reProcess: true,
+                forceExtraction: false,
+                preview: false,
+              });
             }}
           >
             Cancel
           </Button>,
           <Button
+            key="preview"
+            onClick={() => {
+              setReprocessOptions((prev) => ({ ...prev, preview: true }));
+              confirmBulkReprocess();
+            }}
+            loading={reprocessLoading}
+          >
+            Preview
+          </Button>,
+          <Button
             key="reprocess"
             type="primary"
             loading={reprocessLoading}
-            onClick={confirmBulkReprocess}
+            onClick={() => {
+              setReprocessOptions((prev) => ({ ...prev, preview: false }));
+              confirmBulkReprocess();
+            }}
           >
             Reprocess {selectedRowKeys.length} Files
           </Button>,
         ]}
-        width={showProcessingConfigInReprocess ? 700 : 520}
+        width={700}
       >
-        <div className="space-y-4">
+        <div className="space-y-6">
+          {/* Header */}
           <div className="flex items-center space-x-3">
             <div className="text-blue-500 text-2xl">🔄</div>
             <div>
@@ -1015,59 +1096,111 @@ const FileTable: React.FC<FileTableProps> = ({
                 Reprocess {selectedRowKeys.length} files?
               </p>
               <p className="text-sm text-gray-600 mt-1">
-                This will re-run AI processing on the existing extracted text
-                without re-extracting from PDFs.
+                Choose what operations to perform on the selected files.
               </p>
             </div>
           </div>
 
+          {/* Operation Selection */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-gray-900 mb-3">
+              Operations
+            </h4>
+            <Space direction="vertical" size="small" className="w-full">
+              <Checkbox
+                checked={reprocessOptions.reExtract}
+                onChange={(e) =>
+                  setReprocessOptions((prev) => ({
+                    ...prev,
+                    reExtract: e.target.checked,
+                  }))
+                }
+              >
+                <span className="font-medium">Re-run Text Extraction</span>
+                <div className="text-xs text-gray-600 ml-6">
+                  Extract text from PDF files again
+                </div>
+              </Checkbox>
+
+              <Checkbox
+                checked={reprocessOptions.reProcess}
+                onChange={(e) =>
+                  setReprocessOptions((prev) => ({
+                    ...prev,
+                    reProcess: e.target.checked,
+                  }))
+                }
+              >
+                <span className="font-medium">Re-run AI Processing</span>
+                <div className="text-xs text-gray-600 ml-6">
+                  Process extracted text with AI using current schema
+                </div>
+              </Checkbox>
+            </Space>
+          </div>
+
+          {/* Advanced Options */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-yellow-900 mb-3">
+              Advanced Options
+            </h4>
+            <Space direction="vertical" size="small" className="w-full">
+              <Checkbox
+                checked={reprocessOptions.forceExtraction}
+                onChange={(e) =>
+                  setReprocessOptions((prev) => ({
+                    ...prev,
+                    forceExtraction: e.target.checked,
+                  }))
+                }
+                disabled={!reprocessOptions.reExtract}
+              >
+                <span className="font-medium">Force Extraction</span>
+                <div className="text-xs text-yellow-700 ml-6">
+                  Re-extract even if extraction is already completed
+                </div>
+              </Checkbox>
+            </Space>
+          </div>
+
+          {/* What Will Happen */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800">
-              <strong>What happens:</strong>
+            <p className="text-sm text-blue-800 font-medium mb-2">
+              What will happen:
             </p>
-            <ul className="text-sm text-blue-800 mt-2 list-disc list-inside space-y-1">
-              <li>
-                Uses existing extracted text/markdown (no PDF re-processing)
-              </li>
-              <li>Re-runs AI processing with current job schema</li>
-              <li>Overwrites existing processing results</li>
+            <ul className="text-sm text-blue-800 list-disc list-inside space-y-1">
+              {reprocessOptions.reExtract && (
+                <li>
+                  {reprocessOptions.forceExtraction
+                    ? "Force re-extract text from PDF files"
+                    : "Re-extract text from PDF files (if not already completed)"}
+                </li>
+              )}
+              {reprocessOptions.reProcess && (
+                <li>
+                  {reprocessOptions.reExtract
+                    ? "Process newly extracted text with AI"
+                    : "Process existing extracted text with AI"}
+                </li>
+              )}
+              {!reprocessOptions.reExtract && !reprocessOptions.reProcess && (
+                <li className="text-red-600">
+                  No operations selected - please choose at least one
+                </li>
+              )}
               <li>Files will show as "processing" until complete</li>
+              <li>Existing results will be overwritten</li>
             </ul>
           </div>
 
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <p className="text-sm text-yellow-800">
-              <strong>Note:</strong> Current processing results will be replaced
-              with new results.
-            </p>
-          </div>
-
-          <div className="border-t border-gray-200 pt-4">
-            <button
-              onClick={() =>
-                setShowProcessingConfigInReprocess(
-                  !showProcessingConfigInReprocess
-                )
-              }
-              className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center space-x-1"
-            >
-              <span>{showProcessingConfigInReprocess ? "▼" : "▶"}</span>
-              <span>
-                {showProcessingConfigInReprocess ? "Hide" : "Show"} Processing
-                Options (Advanced)
-              </span>
-            </button>
-
-            {showProcessingConfigInReprocess && (
-              <div className="mt-4 text-sm text-gray-600">
-                <p className="mb-2">
-                  Note: Reprocessing will use the current job's processing
-                  configuration. Processing method changes are not currently
-                  supported for reprocessing.
-                </p>
-              </div>
-            )}
-          </div>
+          {/* Validation Warning */}
+          {!reprocessOptions.reExtract && !reprocessOptions.reProcess && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-800">
+                <strong>Error:</strong> At least one operation must be selected.
+              </p>
+            </div>
+          )}
         </div>
       </Modal>
 

@@ -140,6 +140,12 @@ export interface ProcessingConfig {
         model: 'gpt-4o' | 'gpt-4' | 'gpt-3.5-turbo';
         options: Record<string, any>;
     };
+    reprocess?: {
+        reExtract?: boolean;
+        reProcess?: boolean;
+        forceExtraction?: boolean;
+        preview?: boolean;
+    };
 }
 
 export interface JobDetails extends Job {
@@ -759,10 +765,29 @@ class ApiClient {
     }
 
     async reprocessFiles(fileIds: string[], priority: number = 0, processingConfig?: ProcessingConfig): Promise<ApiResponse<{
-        queuedFiles: Array<{
+        queuedFiles?: Array<{
             fileId: string;
             filename: string;
             jobId: string;
+            mode?: string;
+            operations?: {
+                willExtract: boolean;
+                willProcess: boolean;
+            };
+        }>;
+        preview?: Array<{
+            fileId: string;
+            filename: string;
+            jobId: string;
+            currentStatus: {
+                extraction: string;
+                processing: string;
+            };
+            operations: {
+                willExtract: boolean;
+                willProcess: boolean;
+                hasExtractedText: boolean;
+            };
         }>;
         skippedFiles?: Array<{
             fileId: string;
@@ -772,6 +797,18 @@ class ApiClient {
             fileId: string;
             error: string;
         }>;
+        summary?: {
+            total: number;
+            queued?: number;
+            preview?: number;
+            skipped: number;
+            errors: number;
+        };
+        options?: {
+            reExtract: boolean;
+            reProcess: boolean;
+            forceExtraction: boolean;
+        };
     }>> {
         return this.request('/files/reprocess', {
             method: 'POST',
