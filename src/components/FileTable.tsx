@@ -685,6 +685,22 @@ const FileTable: React.FC<FileTableProps> = ({
           );
         }
 
+        if (
+          record.processing_status === "completed" &&
+          record.result &&
+          !record.result.api_number
+        ) {
+          return (
+            <Tooltip title="API number not found">
+              <div className="flex items-center justify-center">
+                <ExclamationCircleOutlined
+                  style={{ color: "#ff4d4f", fontSize: "16px" }}
+                />
+              </div>
+            </Tooltip>
+          );
+        }
+
         // Show checkmark for files with no permit number violations
         if (record.processing_status === "completed" && record.result) {
           return (
