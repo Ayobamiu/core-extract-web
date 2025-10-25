@@ -78,7 +78,7 @@ export function checkPermitNumberMatch(file: JobFile): {
 
     if (!filenamePermit || !dataPermit) {
         return {
-            hasViolation: false,
+            hasViolation: true,
             filenamePermit,
             dataPermit,
             message: 'Cannot compare permit numbers - missing data'

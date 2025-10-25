@@ -31,6 +31,7 @@ import {
   ArrowPathIcon,
   SignalIcon,
 } from "@heroicons/react/24/outline";
+import { Loader } from "lucide-react";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -177,10 +178,27 @@ export default function JobDetailPage() {
     }, 5000);
   }, []);
 
+  const handlePreviewUpdated = useCallback(
+    (data: any) => {
+      console.log("📊 Preview updated:", data);
+      setRealtimeMessage(data.message);
+
+      // Refresh job data to get updated preview information
+      refreshJobData();
+
+      // Clear message after 5 seconds
+      setTimeout(() => {
+        setRealtimeMessage(null);
+      }, 5000);
+    },
+    [refreshJobData]
+  );
+
   // WebSocket connection
   const { isConnected } = useSocket(jobId, {
     onJobStatusUpdate: handleJobStatusUpdate,
     onFileStatusUpdate: handleFileStatusUpdate,
+    onPreviewUpdated: handlePreviewUpdated,
   });
 
   useEffect(() => {
@@ -629,7 +647,7 @@ export default function JobDetailPage() {
                     }`}
                   >
                     {isGoingLive ? (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                      <Loader className="h-4 w-4 animate-spin" />
                     ) : (
                       <SignalIcon className="h-4 w-4" />
                     )}
@@ -931,6 +949,74 @@ export default function JobDetailPage() {
             </Modal>
 
             {/* Components will be added back when interfaces are fixed */}
+
+            {/* Preview Selector Modal */}
+            {showPreviewSelector && selectedFileForPreview && (
+              <PreviewSelector
+                fileId={selectedFileForPreview}
+                onClose={() => {
+                  setShowPreviewSelector(false);
+                  setSelectedFileForPreview(null);
+                }}
+                onSuccess={() => {
+                  setShowPreviewSelector(false);
+                  setSelectedFileForPreview(null);
+                  refreshJobData();
+                }}
+              />
+            )}
+
+            {/* Preview Drawer */}
+            <PreviewDrawer
+              open={showPreviewDrawer}
+              fileIds={selectedPreviewId ? [selectedPreviewId] : []}
+              onClose={() => {
+                setShowPreviewDrawer(false);
+                setSelectedPreviewId(null);
+              }}
+              onSuccess={() => {
+                setShowPreviewDrawer(false);
+                setSelectedPreviewId(null);
+                refreshJobData();
+              }}
+            />
+
+            {/* File Results Editor Modal */}
+            {showFileResultsEditor && selectedFileForResultsEdit && (
+              <FileResultsEditor
+                isOpen={showFileResultsEditor}
+                onClose={() => {
+                  setShowFileResultsEditor(false);
+                  setSelectedFileForResultsEdit(null);
+                }}
+                fileId={selectedFileForResultsEdit.id}
+                filename={selectedFileForResultsEdit.filename}
+                initialResults={selectedFileForResultsEdit.result}
+                onSuccess={(updatedResults) => {
+                  handleEditResults(
+                    selectedFileForResultsEdit.id,
+                    updatedResults
+                  );
+                  setShowFileResultsEditor(false);
+                  setSelectedFileForResultsEdit(null);
+                }}
+              />
+            )}
+
+            {/* Bulk Preview Drawer */}
+            <PreviewDrawer
+              open={showBulkPreviewDrawer}
+              fileIds={selectedFileIds}
+              onClose={() => {
+                setShowBulkPreviewDrawer(false);
+                setSelectedFileIds([]);
+              }}
+              onSuccess={() => {
+                setShowBulkPreviewDrawer(false);
+                setSelectedFileIds([]);
+                refreshJobData();
+              }}
+            />
           </div>
         )}
       </SidebarLayout>

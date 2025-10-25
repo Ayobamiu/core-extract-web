@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client';
 interface SocketEventHandlers {
     onJobStatusUpdate?: (data: any) => void;
     onFileStatusUpdate?: (data: any) => void;
+    onPreviewUpdated?: (data: any) => void;
 }
 
 export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
@@ -40,6 +41,10 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
 
         if (handlers?.onFileStatusUpdate) {
             newSocket.on('file-status-update', handlers.onFileStatusUpdate);
+        }
+
+        if (handlers?.onPreviewUpdated) {
+            newSocket.on('preview-updated', handlers.onPreviewUpdated);
         }
 
         setSocket(newSocket);
