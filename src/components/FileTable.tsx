@@ -30,6 +30,9 @@ import {
   CopyOutlined,
   ArrowsAltOutlined,
   ShrinkOutlined,
+  FullscreenOutlined,
+  LeftOutlined,
+  RightOutlined,
 } from "@ant-design/icons";
 import { JobFile, ProcessingConfig } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
@@ -98,6 +101,10 @@ const FileTable: React.FC<FileTableProps> = ({
   const [reprocessLoading, setReprocessLoading] = useState(false);
   const [showProcessingConfigInReprocess, setShowProcessingConfigInReprocess] =
     useState(false);
+  const [fullscreenModalVisible, setFullscreenModalVisible] = useState(false);
+  const [fullscreenFileIndex, setFullscreenFileIndex] = useState<number>(0);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfUrlLoading, setPdfUrlLoading] = useState(false);
 
   // Reprocess options state
   const [reprocessOptions, setReprocessOptions] = useState({
@@ -209,6 +216,109 @@ const FileTable: React.FC<FileTableProps> = ({
     setSelectedFile(null);
   };
 
+  // Fullscreen modal handlers
+  const handleOpenFullscreen = async (record: JobFile) => {
+    const fileIndex = data.findIndex((f) => f.id === record.id);
+    if (fileIndex !== -1) {
+      setFullscreenFileIndex(fileIndex);
+      setFullscreenModalVisible(true);
+
+      // Fetch PDF URL
+      setPdfUrlLoading(true);
+      try {
+        const url = await getFilePdfUrl(record.id);
+        setPdfUrl(url);
+      } catch (error) {
+        console.error("Error fetching PDF URL:", error);
+        setPdfUrl(null);
+      } finally {
+        setPdfUrlLoading(false);
+      }
+    }
+  };
+
+  const handleCloseFullscreen = () => {
+    setFullscreenModalVisible(false);
+    setFullscreenFileIndex(0);
+    setPdfUrl(null);
+  };
+
+  const handlePreviousFile = async () => {
+    if (fullscreenFileIndex > 0) {
+      const newIndex = fullscreenFileIndex - 1;
+      setFullscreenFileIndex(newIndex);
+
+      // Fetch PDF URL for the new file
+      const newFile = data[newIndex];
+      if (newFile) {
+        setPdfUrlLoading(true);
+        try {
+          const url = await getFilePdfUrl(newFile.id);
+          setPdfUrl(url);
+        } catch (error) {
+          console.error("Error fetching PDF URL:", error);
+          setPdfUrl(null);
+        } finally {
+          setPdfUrlLoading(false);
+        }
+      }
+    }
+  };
+
+  const handleNextFile = async () => {
+    if (fullscreenFileIndex < data.length - 1) {
+      const newIndex = fullscreenFileIndex + 1;
+      setFullscreenFileIndex(newIndex);
+
+      // Fetch PDF URL for the new file
+      const newFile = data[newIndex];
+      if (newFile) {
+        setPdfUrlLoading(true);
+        try {
+          const url = await getFilePdfUrl(newFile.id);
+          setPdfUrl(url);
+        } catch (error) {
+          console.error("Error fetching PDF URL:", error);
+          setPdfUrl(null);
+        } finally {
+          setPdfUrlLoading(false);
+        }
+      }
+    }
+  };
+
+  // Get current file in fullscreen modal
+  const currentFullscreenFile = data[fullscreenFileIndex] || null;
+
+  // Get PDF URL for file
+  const getFilePdfUrl = async (fileId: string) => {
+    const baseURL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+    try {
+      // Request JSON format to get the signed URL for iframe embedding
+      const response = await fetch(
+        `${baseURL}/files/${fileId}/download?format=json`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiClient.getAccessToken()}`,
+            Accept: "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.url; // Return the signed S3 URL
+      } else {
+        // Fallback to direct URL if JSON request fails
+        return `${baseURL}/files/${fileId}/download`;
+      }
+    } catch (error) {
+      console.error("Error getting file URL:", error);
+      // Fallback to direct URL
+      return `${baseURL}/files/${fileId}/download`;
+    }
+  };
+
   // Fetch data when dependencies change
   useEffect(() => {
     fetchData();
@@ -221,6 +331,46 @@ const FileTable: React.FC<FileTableProps> = ({
     JSON.stringify(tableParams.filters),
     refreshTrigger,
   ]);
+
+  // Fetch PDF URL when file index changes in fullscreen modal
+  useEffect(() => {
+    if (!fullscreenModalVisible || !currentFullscreenFile) return;
+
+    setPdfUrlLoading(true);
+    getFilePdfUrl(currentFullscreenFile.id)
+      .then((url) => {
+        setPdfUrl(url);
+      })
+      .catch((error) => {
+        console.error("Error fetching PDF URL:", error);
+        setPdfUrl(null);
+      })
+      .finally(() => {
+        setPdfUrlLoading(false);
+      });
+  }, [fullscreenModalVisible, fullscreenFileIndex, currentFullscreenFile?.id]);
+
+  // Keyboard navigation for fullscreen modal
+  useEffect(() => {
+    if (!fullscreenModalVisible) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft" && fullscreenFileIndex > 0) {
+        setFullscreenFileIndex((prev) => Math.max(0, prev - 1));
+      } else if (
+        e.key === "ArrowRight" &&
+        fullscreenFileIndex < data.length - 1
+      ) {
+        setFullscreenFileIndex((prev) => Math.min(data.length - 1, prev + 1));
+      } else if (e.key === "Escape") {
+        setFullscreenModalVisible(false);
+        setFullscreenFileIndex(0);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [fullscreenModalVisible, fullscreenFileIndex, data.length]);
 
   // Refresh data when onDataUpdate changes
   useEffect(() => {
@@ -486,13 +636,26 @@ const FileTable: React.FC<FileTableProps> = ({
       render: (id: string, record: JobFile) => (
         <div className="flex items-center space-x-1">
           {record.processing_status === "completed" && record.result && (
-            <ArrowsAltOutlined
-              style={{ cursor: "pointer", fontSize: "14px" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenDrawer(record);
-              }}
-            />
+            <>
+              <ArrowsAltOutlined
+                style={{ cursor: "pointer", fontSize: "14px" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenDrawer(record);
+                }}
+              />
+              <FullscreenOutlined
+                style={{
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  color: "#1890ff",
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleOpenFullscreen(record);
+                }}
+              />
+            </>
           )}
           <CopyOutlined
             style={{ color: "#1890ff", cursor: "pointer", fontSize: "12px" }}
@@ -1301,6 +1464,165 @@ const FileTable: React.FC<FileTableProps> = ({
           </div>
         )}
       </Drawer>
+
+      {/* Fullscreen Modal */}
+      <Modal
+        title={null}
+        open={fullscreenModalVisible}
+        onCancel={handleCloseFullscreen}
+        footer={null}
+        width="95vw"
+        styles={{
+          body: {
+            height: "90vh",
+            padding: 0,
+          },
+        }}
+        closeIcon={null}
+        maskClosable={false}
+      >
+        {currentFullscreenFile && (
+          <div className="flex flex-col h-full">
+            {/* Navigation Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center space-x-4 flex-1">
+                <div className="flex items-center space-x-2">
+                  <Button
+                    type="default"
+                    icon={<LeftOutlined />}
+                    onClick={handlePreviousFile}
+                    disabled={fullscreenFileIndex === 0}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    type="default"
+                    icon={<RightOutlined />}
+                    iconPosition="end"
+                    onClick={handleNextFile}
+                    disabled={fullscreenFileIndex === data.length - 1}
+                  >
+                    Next
+                  </Button>
+                </div>
+                <div className="flex items-center space-x-2 text-sm text-gray-600">
+                  <FilePdfOutlined className="text-blue-500" />
+                  <span className="font-medium">
+                    {currentFullscreenFile.filename}
+                  </span>
+                  <span className="text-gray-400">
+                    ({fullscreenFileIndex + 1} of {data.length})
+                  </span>
+                </div>
+              </div>
+              <Button
+                type="text"
+                icon={<ShrinkOutlined />}
+                onClick={handleCloseFullscreen}
+              >
+                Close
+              </Button>
+            </div>
+
+            {/* Content Area - Two Pane Layout */}
+            <div className="flex flex-1 overflow-hidden">
+              {/* Left Pane - PDF Viewer */}
+              <div className="w-1/2 border-r border-gray-200 bg-gray-100 flex flex-col">
+                <div className="px-4 py-2 bg-white border-b border-gray-200">
+                  <Text strong className="text-sm">
+                    PDF Document
+                  </Text>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  {pdfUrlLoading ? (
+                    <div className="flex items-center justify-center h-full">
+                      <Loader className="w-8 h-8 animate-spin text-blue-500" />
+                    </div>
+                  ) : pdfUrl ? (
+                    <iframe
+                      src={pdfUrl}
+                      className="w-full h-full border-0 rounded-lg shadow-lg bg-white"
+                      style={{ minHeight: "100%" }}
+                      title={`PDF viewer for ${currentFullscreenFile.filename}`}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center">
+                        <ExclamationCircleOutlined className="text-gray-400 text-4xl mb-4" />
+                        <Text type="secondary" className="text-lg">
+                          Unable to load PDF
+                        </Text>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Pane - Results Viewer */}
+              <div className="w-1/2 bg-white flex flex-col">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+                  <Text strong className="text-sm">
+                    Extracted Results
+                  </Text>
+                </div>
+                <div className="flex-1 overflow-auto">
+                  {currentFullscreenFile.processing_status !== "completed" ||
+                  !currentFullscreenFile.result ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center">
+                        <ExclamationCircleOutlined className="text-gray-400 text-4xl mb-4" />
+                        <Text type="secondary" className="text-lg">
+                          No results available for this file.
+                        </Text>
+                        <br />
+                        <Text type="secondary" className="text-sm">
+                          File status: {currentFullscreenFile.processing_status}
+                        </Text>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4">
+                      <TabbedDataViewer
+                        data={currentFullscreenFile.result}
+                        filename={currentFullscreenFile.filename}
+                        schema={jobSchema}
+                        editable={true}
+                        onUpdate={async (updatedData) => {
+                          try {
+                            await apiClient.updateFileResults(
+                              currentFullscreenFile.id,
+                              updatedData
+                            );
+
+                            // Refresh the data in the parent component
+                            if (onDataUpdate) {
+                              await onDataUpdate();
+                            }
+
+                            // Update the current file data
+                            setData((prevData) =>
+                              prevData.map((file) =>
+                                file.id === currentFullscreenFile.id
+                                  ? { ...file, result: updatedData }
+                                  : file
+                              )
+                            );
+                          } catch (error) {
+                            console.error(
+                              "Error updating file results:",
+                              error
+                            );
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
