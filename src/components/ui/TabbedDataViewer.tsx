@@ -3,6 +3,8 @@
 import React, { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import JsonView from "@uiw/react-json-view";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { jsonToCsv } from "@/lib/csvExport";
 import {
   useReactTable,
@@ -22,9 +24,10 @@ interface TabbedDataViewerProps {
   className?: string;
   onUpdate?: (updatedData: unknown) => void;
   editable?: boolean;
+  markdown?: string;
 }
 
-type TabType = "preview" | "json" | "csv" | "edit";
+type TabType = "preview" | "json" | "csv" | "edit" | "markdown";
 
 const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   data,
@@ -33,6 +36,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   className = "",
   onUpdate,
   editable = false,
+  markdown,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>("preview");
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -432,6 +436,18 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           >
             JSON
           </button>
+          {markdown && (
+            <button
+              onClick={() => setActiveTab("markdown")}
+              className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
+                activeTab === "markdown"
+                  ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Markdown
+            </button>
+          )}
           {editable && (
             <button
               onClick={() => setActiveTab("edit")}
@@ -464,7 +480,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       </div>
 
       {/* Tab Content */}
-      <div className="p-4">
+      <div className="">
         <motion.div
           key={activeTab}
           initial={{ opacity: 0, y: 10 }}
@@ -472,13 +488,13 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           transition={{ duration: 0.2 }}
         >
           {activeTab === "preview" && (
-            <div className="overflow-auto max-h-96">
+            <div className="overflow-auto max-h-96 p-4">
               <div className="space-y-4">{renderPreviewData(data)}</div>
             </div>
           )}
 
           {activeTab === "json" && (
-            <div className="bg-gray-50 rounded-lg p-4 overflow-auto max-h-96">
+            <div className="overflow-auto max-h-96">
               <JsonView
                 value={data as object}
                 style={{
@@ -521,7 +537,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               )}
 
               {/* JSON Editor */}
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="overflow-hidden">
                 <textarea
                   value={editableJson}
                   onChange={(e) => handleJsonChange(e.target.value)}
@@ -532,7 +548,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between p-2">
                 <div className="text-sm text-gray-500">
                   Edit the JSON data above. Changes will be saved when you click
                   "Update".
@@ -580,6 +596,85 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === "markdown" && markdown && (
+            <div className="overflow-auto max-h-96 p-6">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                // className="prose prose-sm max-w-none"
+                components={{
+                  // Custom styles for better readability
+                  h1: ({ node, ...props }) => (
+                    <h1 className="text-2xl font-bold mb-4 mt-6" {...props} />
+                  ),
+                  h2: ({ node, ...props }) => (
+                    <h2 className="text-xl font-bold mb-3 mt-5" {...props} />
+                  ),
+                  h3: ({ node, ...props }) => (
+                    <h3
+                      className="text-lg font-semibold mb-2 mt-4"
+                      {...props}
+                    />
+                  ),
+                  p: ({ node, ...props }) => (
+                    <p className="mb-4 text-gray-700" {...props} />
+                  ),
+                  code: ({ node, inline, ...props }: any) =>
+                    inline ? (
+                      <code
+                        className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-red-600"
+                        {...props}
+                      />
+                    ) : (
+                      <code
+                        className="block bg-gray-100 p-4 rounded-lg text-sm font-mono overflow-x-auto mb-4"
+                        {...props}
+                      />
+                    ),
+                  pre: ({ node, ...props }) => (
+                    <pre
+                      className="bg-gray-100 p-4 rounded-lg overflow-x-auto mb-4"
+                      {...props}
+                    />
+                  ),
+                  ul: ({ node, ...props }) => (
+                    <ul
+                      className="list-disc list-inside mb-4 space-y-1"
+                      {...props}
+                    />
+                  ),
+                  ol: ({ node, ...props }) => (
+                    <ol
+                      className="list-decimal list-inside mb-4 space-y-1"
+                      {...props}
+                    />
+                  ),
+                  table: ({ node, ...props }) => (
+                    <div className="overflow-x-auto mb-4">
+                      <table
+                        className="min-w-full border border-gray-300"
+                        {...props}
+                      />
+                    </div>
+                  ),
+                  th: ({ node, ...props }) => (
+                    <th
+                      className="border border-gray-300 px-4 py-2 bg-gray-50 font-semibold text-left"
+                      {...props}
+                    />
+                  ),
+                  td: ({ node, ...props }) => (
+                    <td
+                      className="border border-gray-300 px-4 py-2"
+                      {...props}
+                    />
+                  ),
+                }}
+              >
+                {markdown}
+              </ReactMarkdown>
             </div>
           )}
         </motion.div>

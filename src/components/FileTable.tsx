@@ -1428,6 +1428,7 @@ const FileTable: React.FC<FileTableProps> = ({
                 filename={selectedFile.filename}
                 schema={jobSchema}
                 editable={true}
+                markdown={selectedFile.markdown}
                 onUpdate={async (updatedData) => {
                   try {
                     // Import apiClient dynamically to avoid circular imports
@@ -1587,6 +1588,7 @@ const FileTable: React.FC<FileTableProps> = ({
                         filename={currentFullscreenFile.filename}
                         schema={jobSchema}
                         editable={true}
+                        markdown={currentFullscreenFile.markdown}
                         onUpdate={async (updatedData) => {
                           try {
                             await apiClient.updateFileResults(

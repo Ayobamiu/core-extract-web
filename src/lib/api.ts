@@ -112,6 +112,7 @@ export interface JobFile {
     retry_count?: number;
     extracted_text?: string;
     extracted_tables?: any;
+    markdown?: string;
     result?: any;
     extraction_error?: string;
     processing_error?: string;
