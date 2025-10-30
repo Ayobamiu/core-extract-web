@@ -1472,20 +1472,39 @@ const FileTable: React.FC<FileTableProps> = ({
         open={fullscreenModalVisible}
         onCancel={handleCloseFullscreen}
         footer={null}
-        width="95vw"
+        width="100vw"
         styles={{
           body: {
-            height: "90vh",
+            height: "100vh",
             padding: 0,
+            overflow: "hidden",
           },
+          content: {
+            top: 0,
+            paddingBottom: 0,
+            maxHeight: "100vh",
+            borderRadius: 0,
+            boxShadow: "none",
+          },
+          wrapper: {
+            padding: 0,
+            top: 0,
+            overflow: "hidden",
+          },
+        }}
+        style={{
+          top: 0,
+          paddingBottom: 0,
+          maxWidth: "100vw",
+          margin: 0,
         }}
         closeIcon={null}
         maskClosable={false}
       >
         {currentFullscreenFile && (
-          <div className="flex flex-col h-full">
+          <div className="flex flex-col h-full overflow-hidden">
             {/* Navigation Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
               <div className="flex items-center space-x-4 flex-1">
                 <div className="flex items-center space-x-2">
                   <Button
@@ -1526,15 +1545,15 @@ const FileTable: React.FC<FileTableProps> = ({
             </div>
 
             {/* Content Area - Two Pane Layout */}
-            <div className="flex flex-1 overflow-hidden">
+            <div className="flex flex-1 overflow-hidden min-h-0">
               {/* Left Pane - PDF Viewer */}
-              <div className="w-1/2 border-r border-gray-200 bg-gray-100 flex flex-col">
-                <div className="px-4 py-2 bg-white border-b border-gray-200">
+              <div className="w-1/2 border-r border-gray-200 bg-gray-100 flex flex-col min-w-0 overflow-hidden">
+                <div className="px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
                   <Text strong className="text-sm">
                     PDF Document
                   </Text>
                 </div>
-                <div className="flex-1 overflow-hidden">
+                <div className="flex-1 overflow-hidden min-h-0">
                   {pdfUrlLoading ? (
                     <div className="flex items-center justify-center h-full">
                       <Loader className="w-8 h-8 animate-spin text-blue-500" />
@@ -1542,8 +1561,8 @@ const FileTable: React.FC<FileTableProps> = ({
                   ) : pdfUrl ? (
                     <iframe
                       src={pdfUrl}
-                      className="w-full h-full border-0 rounded-lg shadow-lg bg-white"
-                      style={{ minHeight: "100%" }}
+                      className="w-full h-full border-0 bg-white"
+                      style={{ display: "block", height: "100%" }}
                       title={`PDF viewer for ${currentFullscreenFile.filename}`}
                     />
                   ) : (
@@ -1560,13 +1579,13 @@ const FileTable: React.FC<FileTableProps> = ({
               </div>
 
               {/* Right Pane - Results Viewer */}
-              <div className="w-1/2 bg-white flex flex-col">
-                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+              <div className="w-1/2 bg-white flex flex-col min-w-0 overflow-hidden">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0">
                   <Text strong className="text-sm">
                     Extracted Results
                   </Text>
                 </div>
-                <div className="flex-1 overflow-auto">
+                <div className="flex-1 overflow-hidden min-h-0">
                   {currentFullscreenFile.processing_status !== "completed" ||
                   !currentFullscreenFile.result ? (
                     <div className="flex items-center justify-center h-full">
@@ -1582,7 +1601,7 @@ const FileTable: React.FC<FileTableProps> = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="p-4">
+                    <div className="h-full overflow-hidden">
                       <TabbedDataViewer
                         data={currentFullscreenFile.result}
                         filename={currentFullscreenFile.filename}

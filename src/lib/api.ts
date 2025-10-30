@@ -114,6 +114,7 @@ export interface JobFile {
     extracted_tables?: any;
     markdown?: string;
     result?: any;
+    actual_result?: any;
     extraction_error?: string;
     processing_error?: string;
     created_at: string;

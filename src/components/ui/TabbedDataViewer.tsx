@@ -412,9 +412,11 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   };
 
   return (
-    <div className={`bg-white rounded-lg border border-gray-200 ${className}`}>
+    <div
+      className={`bg-white flex flex-col h-full overflow-hidden ${className}`}
+    >
       {/* Tab Headers */}
-      <div className="flex items-center justify-between border-b border-gray-200">
+      <div className="flex items-center justify-between border-b border-gray-200 flex-shrink-0">
         <div className="flex space-x-1">
           <button
             onClick={() => setActiveTab("preview")}
@@ -480,21 +482,22 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       </div>
 
       {/* Tab Content */}
-      <div className="">
+      <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         <motion.div
           key={activeTab}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
+          className="flex-1 overflow-hidden flex flex-col min-h-0"
         >
           {activeTab === "preview" && (
-            <div className="overflow-auto max-h-96 p-4">
+            <div className="overflow-auto flex-1 p-4 min-h-0">
               <div className="space-y-4">{renderPreviewData(data)}</div>
             </div>
           )}
 
           {activeTab === "json" && (
-            <div className="overflow-auto max-h-96">
+            <div className="overflow-auto flex-1 min-h-0">
               <JsonView
                 value={data as object}
                 style={{
@@ -512,7 +515,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           )}
 
           {activeTab === "edit" && editable && (
-            <div className="space-y-4">
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0 space-y-4 p-4">
               {/* Error Display */}
               {jsonError && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3">
@@ -537,11 +540,11 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               )}
 
               {/* JSON Editor */}
-              <div className="overflow-hidden">
+              <div className="flex-1 overflow-hidden min-h-0">
                 <textarea
                   value={editableJson}
                   onChange={(e) => handleJsonChange(e.target.value)}
-                  className="w-full h-96 p-4 font-mono text-sm bg-gray-50 border-0 resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  className="w-full h-full p-4 font-mono text-sm bg-gray-50 border-0 resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   placeholder="Edit JSON data..."
                   spellCheck={false}
                 />
@@ -600,7 +603,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           )}
 
           {activeTab === "markdown" && markdown && (
-            <div className="overflow-auto max-h-96 p-6">
+            <div className="overflow-auto flex-1 p-6 min-h-0">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 // className="prose prose-sm max-w-none"
