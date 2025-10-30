@@ -6,6 +6,7 @@ import JsonView from "@uiw/react-json-view";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { jsonToCsv } from "@/lib/csvExport";
+import CompareDiffViewer from "./CompareDiffViewer";
 import {
   useReactTable,
   getCoreRowModel,
@@ -25,9 +26,10 @@ interface TabbedDataViewerProps {
   onUpdate?: (updatedData: unknown) => void;
   editable?: boolean;
   markdown?: string;
+  actual_result?: any;
 }
 
-type TabType = "preview" | "json" | "csv" | "edit" | "markdown";
+type TabType = "preview" | "json" | "csv" | "edit" | "markdown" | "compare";
 
 const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   data,
@@ -37,6 +39,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   onUpdate,
   editable = false,
   markdown,
+  actual_result,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>("preview");
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -450,6 +453,18 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               Markdown
             </button>
           )}
+          {actual_result && (
+            <button
+              onClick={() => setActiveTab("compare")}
+              className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
+                activeTab === "compare"
+                  ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Compare
+            </button>
+          )}
           {editable && (
             <button
               onClick={() => setActiveTab("edit")}
@@ -678,6 +693,12 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               >
                 {markdown}
               </ReactMarkdown>
+            </div>
+          )}
+
+          {activeTab === "compare" && actual_result && (
+            <div className="flex-1 overflow-hidden min-h-0">
+              <CompareDiffViewer original={actual_result} current={data} />
             </div>
           )}
         </motion.div>
