@@ -1503,9 +1503,9 @@ const FileTable: React.FC<FileTableProps> = ({
         maskClosable={false}
       >
         {currentFullscreenFile && (
-          <div className="flex flex-col h-full overflow-hidden">
+          <div className="flex flex-col h-full overflow-hidden border border-gray-200">
             {/* Navigation Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+            <div className="flex items-center justify-between p-2 border-b border-gray-200 flex-shrink-0">
               <div className="flex items-center space-x-4 flex-1">
                 <div className="flex items-center space-x-2">
                   <Button
