@@ -31,6 +31,7 @@ import {
   ArrowsAltOutlined,
   ShrinkOutlined,
   FullscreenOutlined,
+  ExportOutlined,
   LeftOutlined,
   RightOutlined,
 } from "@ant-design/icons";
@@ -662,17 +663,32 @@ const FileTable: React.FC<FileTableProps> = ({
         <div className="flex items-center space-x-1">
           {record.processing_status === "completed" && record.result && (
             <>
-              <FullscreenOutlined
-                style={{
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  color: "#1890ff",
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenFullscreen(record);
-                }}
-              />
+              <Tooltip title="Open in new tab">
+                <ExportOutlined
+                  style={{
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    color: "#1890ff",
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(`/files/${id}`, "_blank");
+                  }}
+                />
+              </Tooltip>
+              <Tooltip title="Fullscreen view">
+                <FullscreenOutlined
+                  style={{
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    color: "#1890ff",
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenFullscreen(record);
+                  }}
+                />
+              </Tooltip>
             </>
           )}
           <CopyOutlined

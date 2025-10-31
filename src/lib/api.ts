@@ -122,6 +122,7 @@ export interface JobFile {
     extracted_tables?: any;
     markdown?: string;
     result?: any;
+    pages?: number;
     actual_result?: any;
     extraction_error?: string;
     processing_error?: string;
@@ -389,6 +390,10 @@ class ApiClient {
         return this.request(`/jobs/${jobId}`);
     }
 
+    async getJobStatus(jobId: string): Promise<ApiResponse<JobDetails>> {
+        return this.request(`/jobs/${jobId}`);
+    }
+
     async getJobFileStats(jobId: string): Promise<ApiResponse<{
         jobId: string;
         stats: {
@@ -430,6 +435,34 @@ class ApiClient {
 
     async getFileResult(fileId: string): Promise<ApiResponse<{ file: JobFile }>> {
         return this.request(`/files/${fileId}/result`);
+    }
+
+    async getFilePdfUrl(fileId: string): Promise<string> {
+        const baseURL = this.baseURL;
+        try {
+            // Request JSON format to get the signed URL for iframe embedding
+            const response = await fetch(
+                `${baseURL}/files/${fileId}/download?format=json`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${this.getAccessToken()}`,
+                        Accept: "application/json",
+                    },
+                }
+            );
+
+            if (response.ok) {
+                const data = await response.json();
+                return data.url; // Return the signed S3 URL
+            } else {
+                // Fallback to direct URL if JSON request fails
+                return `${baseURL}/files/${fileId}/download`;
+            }
+        } catch (error) {
+            console.error("Error getting file URL:", error);
+            // Fallback to direct URL
+            return `${baseURL}/files/${fileId}/download`;
+        }
     }
 
     async extract(schemaData: { schema: any; schemaName: string }, file: JobFile): Promise<ApiResponse> {
