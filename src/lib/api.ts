@@ -92,6 +92,14 @@ export interface Job {
     status: 'pending' | 'processing' | 'completed' | 'failed';
     summary?: any;
     extraction_mode?: 'full_extraction' | 'text_only';
+    schema_data?: {
+        schema: any;
+        schemaName: string;
+    };
+    schema_data_array?: Array<{
+        schema: any;
+        schemaName: string;
+    }>;
     created_at: string;
     updated_at: string;
     file_count: string;
