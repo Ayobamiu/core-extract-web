@@ -638,9 +638,56 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                       {...props}
                     />
                   ),
-                  p: ({ node, ...props }) => (
-                    <p className="mb-4 text-gray-700" {...props} />
-                  ),
+                  p: ({ node, ...props }: any) => {
+                    // Extract text content from React children
+                    const extractText = (children: any): string => {
+                      if (typeof children === "string") return children;
+                      if (Array.isArray(children)) {
+                        return children.map(extractText).join("");
+                      }
+                      if (children?.props?.children) {
+                        return extractText(children.props.children);
+                      }
+                      return String(children || "");
+                    };
+
+                    const textContent = extractText(props.children);
+
+                    // Detect text table: multiple lines with aligned columns
+                    // Check if text contains multiple lines with spaces or pipes that look like a table
+                    const lines = textContent
+                      .split("\n")
+                      .filter((line) => line.trim().length > 0);
+                    const isTextTable =
+                      lines.length >= 2 &&
+                      lines.some((line) => {
+                        const trimmedLine = line.trim();
+                        // Check for patterns typical of text tables
+                        const hasMultipleSpaces =
+                          (trimmedLine.match(/\s{2,}/g) || []).length >= 2;
+                        const hasPipes = trimmedLine.includes("|");
+                        const hasTableSeparator =
+                          trimmedLine.match(/^[\s|+-]+$/); // Separator row like "|---|---|"
+                        const hasPatternedSpaces =
+                          trimmedLine.match(/^[^\s]+\s{2,}[^\s]/); // Multiple spaces between text
+                        return (
+                          hasMultipleSpaces ||
+                          hasPipes ||
+                          hasTableSeparator ||
+                          hasPatternedSpaces
+                        );
+                      });
+
+                    if (isTextTable) {
+                      return (
+                        <pre className="mb-4 text-gray-700 font-mono text-sm whitespace-pre overflow-x-auto bg-gray-50 p-2 rounded border border-gray-200">
+                          {textContent}
+                        </pre>
+                      );
+                    }
+
+                    return <p className="mb-4 text-gray-700" {...props} />;
+                  },
                   code: ({ node, inline, ...props }: any) =>
                     inline ? (
                       <code
@@ -674,7 +721,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   table: ({ node, ...props }: any) => (
                     <div className="overflow-x-auto mb-4 my-4">
                       <table
-                        className="min-w-full border border-gray-300 border-collapse"
+                        className="min-w-full border border-gray-300 border-collapse whitespace-nowrap"
                         {...props}
                       />
                     </div>
@@ -688,13 +735,13 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   ),
                   th: ({ node, ...props }: any) => (
                     <th
-                      className="border border-gray-300 px-4 py-2 bg-gray-50 font-semibold text-left align-top"
+                      className="border border-gray-300 px-4 py-2 bg-gray-50 font-semibold text-left align-top whitespace-nowrap"
                       {...props}
                     />
                   ),
                   td: ({ node, ...props }: any) => (
                     <td
-                      className="border border-gray-300 px-4 py-2 align-top"
+                      className="border border-gray-300 px-4 py-2 align-top whitespace-nowrap"
                       {...props}
                     />
                   ),
