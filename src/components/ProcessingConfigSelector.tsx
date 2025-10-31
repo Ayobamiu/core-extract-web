@@ -14,7 +14,9 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
   onChange,
   disabled = false,
 }) => {
-  const handleExtractionMethodChange = (method: "mineru" | "documentai") => {
+  const handleExtractionMethodChange = (
+    method: "mineru" | "documentai" | "extendai"
+  ) => {
     onChange({
       ...config,
       extraction: {
@@ -90,6 +92,24 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
               </div>
             </div>
           </label>
+
+          <label className="flex items-center space-x-3 p-3 border rounded-md hover:bg-white cursor-pointer transition-colors">
+            <input
+              type="radio"
+              name="extraction_method"
+              value="extendai"
+              checked={config.extraction.method === "extendai"}
+              onChange={() => handleExtractionMethodChange("extendai")}
+              disabled={disabled}
+              className="h-4 w-4 text-blue-600"
+            />
+            <div>
+              <div className="font-medium text-gray-900">Extend AI</div>
+              <div className="text-sm text-gray-500">
+                Cloud-based extraction with automatic fallback to MinerU
+              </div>
+            </div>
+          </label>
         </div>
       </div>
 
@@ -159,7 +179,12 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
       <div className="pt-4 border-t border-gray-200">
         <div className="text-sm text-gray-600">
           <span className="font-medium">Current configuration:</span>{" "}
-          {config.extraction.method} + OpenAI {config.processing.model}
+          {config.extraction.method === "documentai"
+            ? "Document AI"
+            : config.extraction.method === "extendai"
+            ? "Extend AI"
+            : "MinerU"}{" "}
+          + OpenAI {config.processing.model}
         </div>
       </div>
     </div>

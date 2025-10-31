@@ -144,7 +144,7 @@ export interface JobFile {
 
 export interface ProcessingConfig {
     extraction: {
-        method: 'mineru' | 'documentai';
+        method: 'mineru' | 'documentai' | 'extendai';
         options: Record<string, any>;
     };
     processing: {
