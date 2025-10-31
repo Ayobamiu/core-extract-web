@@ -117,6 +117,8 @@ export interface JobFile {
     actual_result?: any;
     extraction_error?: string;
     processing_error?: string;
+    admin_verified?: boolean;
+    customer_verified?: boolean;
     created_at: string;
     processed_at?: string;
     extraction_time_seconds?: number;
@@ -693,6 +695,13 @@ class ApiClient {
         return this.request(`/files/${fileId}/results`, {
             method: 'PUT',
             body: JSON.stringify({ results }),
+        });
+    }
+
+    async verifyFile(fileId: string, adminVerified?: boolean, customerVerified?: boolean): Promise<ApiResponse<{ id: string; filename: string; admin_verified: boolean; customer_verified: boolean }>> {
+        return this.request(`/files/${fileId}/verify`, {
+            method: 'PUT',
+            body: JSON.stringify({ adminVerified, customerVerified }),
         });
     }
 

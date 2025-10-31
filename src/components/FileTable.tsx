@@ -37,6 +37,7 @@ import {
 import { JobFile, ProcessingConfig } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import { apiClient } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   checkPermitNumberMatch,
   getViolationSeverityColor,
@@ -84,6 +85,8 @@ const FileTable: React.FC<FileTableProps> = ({
   showFileResults,
   refreshTrigger,
 }) => {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [selectedFile, setSelectedFile] = useState<JobFile | null>(null);
@@ -289,6 +292,27 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // Get current file in fullscreen modal
   const currentFullscreenFile = data[fullscreenFileIndex] || null;
+
+  // Handle file verification
+  const handleVerifyFile = async (fileId: string, adminVerified: boolean) => {
+    try {
+      await apiClient.verifyFile(fileId, adminVerified, undefined);
+      message.success("File verification updated successfully");
+      // Refresh data
+      if (onDataUpdate) {
+        await onDataUpdate();
+      }
+      // Update local state
+      setData((prevData) =>
+        prevData.map((file) =>
+          file.id === fileId ? { ...file, admin_verified: adminVerified } : file
+        )
+      );
+    } catch (error: any) {
+      console.error("Error verifying file:", error);
+      message.error(error.message || "Failed to verify file");
+    }
+  };
 
   // Get PDF URL for file
   const getFilePdfUrl = async (fileId: string) => {
@@ -633,17 +657,11 @@ const FileTable: React.FC<FileTableProps> = ({
       dataIndex: "id",
       key: "id",
       width: 150,
+      fixed: "left" as const,
       render: (id: string, record: JobFile) => (
         <div className="flex items-center space-x-1">
           {record.processing_status === "completed" && record.result && (
             <>
-              <ArrowsAltOutlined
-                style={{ cursor: "pointer", fontSize: "14px" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleOpenDrawer(record);
-                }}
-              />
               <FullscreenOutlined
                 style={{
                   cursor: "pointer",
@@ -772,6 +790,34 @@ const FileTable: React.FC<FileTableProps> = ({
       },
     },
     {
+      title: "Verified",
+      key: "verified",
+      width: 120,
+      render: (_: any, record: JobFile) => (
+        <div className="flex items-center space-x-2">
+          {record.admin_verified && (
+            <Tooltip title="Admin Verified">
+              <CheckCircleOutlined
+                style={{ color: "#52c41a", fontSize: "16px" }}
+              />
+            </Tooltip>
+          )}
+          {record.customer_verified && (
+            <Tooltip title="Customer Verified">
+              <CheckCircleOutlined
+                style={{ color: "#1890ff", fontSize: "16px" }}
+              />
+            </Tooltip>
+          )}
+          {!record.admin_verified && !record.customer_verified && (
+            <Text type="secondary" style={{ fontSize: "12px" }}>
+              Not verified
+            </Text>
+          )}
+        </div>
+      ),
+    },
+    {
       title: "Status",
       key: "status",
       width: 100,
@@ -884,6 +930,7 @@ const FileTable: React.FC<FileTableProps> = ({
       title: "Actions",
       key: "actions",
       width: 60,
+      fixed: "right" as const,
       render: (_: any, record: JobFile) => {
         const menuItems = [];
 
@@ -972,24 +1019,7 @@ const FileTable: React.FC<FileTableProps> = ({
       loading={loading}
       onChange={handleTableChange}
       size="small"
-      // expandable={{
-      //   expandIcon: ({ record }) => {
-      //     if (record.processing_status !== "completed" || !record.result) {
-      //       return null;
-      //     }
-      //     return (
-      //       <ArrowsAltOutlined
-      //         style={{ cursor: "pointer", fontSize: "14px" }}
-      //         onClick={(e) => {
-      //           e.stopPropagation();
-      //           handleOpenDrawer(record);
-      //         }}
-      //       />
-      //     );
-      //   },
-      // }}
-      // scroll={{ x: 1000 }}
-      scroll={{ x: 300, y: "calc(100vh - 320px)" }}
+      scroll={{ x: "max-content", y: "calc(100vh - 320px)" }}
       className={styles.fileTable}
     />
   );
@@ -1536,13 +1566,47 @@ const FileTable: React.FC<FileTableProps> = ({
                   </span>
                 </div>
               </div>
-              <Button
-                type="text"
-                icon={<ShrinkOutlined />}
-                onClick={handleCloseFullscreen}
-              >
-                Close
-              </Button>
+              <div className="flex items-center space-x-2">
+                {isAdmin && (
+                  <Button
+                    type={
+                      currentFullscreenFile.admin_verified
+                        ? "default"
+                        : "primary"
+                    }
+                    icon={
+                      currentFullscreenFile.admin_verified ? (
+                        <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                      ) : (
+                        <CheckCircleOutlined />
+                      )
+                    }
+                    onClick={() =>
+                      handleVerifyFile(
+                        currentFullscreenFile.id,
+                        !currentFullscreenFile.admin_verified
+                      )
+                    }
+                    disabled={currentFullscreenFile.admin_verified}
+                    style={
+                      currentFullscreenFile.admin_verified
+                        ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
+                        : {}
+                    }
+                  >
+                    {currentFullscreenFile.admin_verified
+                      ? "Verified"
+                      : "Verify"}
+                  </Button>
+                )}
+                <Button
+                  type="text"
+                  icon={<ShrinkOutlined />}
+                  onClick={handleCloseFullscreen}
+                >
+                  Close
+                </Button>
+              </div>
             </div>
 
             {/* Content Area - Two Pane Layout */}
