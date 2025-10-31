@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import JsonView from "@uiw/react-json-view";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { jsonToCsv } from "@/lib/csvExport";
 import CompareDiffViewer from "./CompareDiffViewer";
 import {
@@ -621,6 +622,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
             <div className="overflow-auto flex-1 p-6 min-h-0">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
                 // className="prose prose-sm max-w-none"
                 components={{
                   // Custom styles for better readability
@@ -669,23 +671,30 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                       {...props}
                     />
                   ),
-                  table: ({ node, ...props }) => (
-                    <div className="overflow-x-auto mb-4">
+                  table: ({ node, ...props }: any) => (
+                    <div className="overflow-x-auto mb-4 my-4">
                       <table
-                        className="min-w-full border border-gray-300"
+                        className="min-w-full border border-gray-300 border-collapse"
                         {...props}
                       />
                     </div>
                   ),
-                  th: ({ node, ...props }) => (
+                  thead: ({ node, ...props }: any) => (
+                    <thead className="bg-gray-50" {...props} />
+                  ),
+                  tbody: ({ node, ...props }: any) => <tbody {...props} />,
+                  tr: ({ node, ...props }: any) => (
+                    <tr className="hover:bg-gray-50" {...props} />
+                  ),
+                  th: ({ node, ...props }: any) => (
                     <th
-                      className="border border-gray-300 px-4 py-2 bg-gray-50 font-semibold text-left"
+                      className="border border-gray-300 px-4 py-2 bg-gray-50 font-semibold text-left align-top"
                       {...props}
                     />
                   ),
-                  td: ({ node, ...props }) => (
+                  td: ({ node, ...props }: any) => (
                     <td
-                      className="border border-gray-300 px-4 py-2"
+                      className="border border-gray-300 px-4 py-2 align-top"
                       {...props}
                     />
                   ),
