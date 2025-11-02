@@ -68,7 +68,7 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
             <div>
               <div className="font-medium text-gray-900">MinerU</div>
               <div className="text-sm text-gray-500">
-                High-quality extraction with formatting preservation (Default)
+                High-quality extraction with formatting preservation
               </div>
             </div>
           </label>
@@ -124,7 +124,7 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
             <div>
               <div className="font-medium text-gray-900">PaddleOCR</div>
               <div className="text-sm text-gray-500">
-                OCR-based extraction with layout parsing and table detection
+                OCR-based extraction with layout parsing and table detection (Default)
               </div>
             </div>
           </label>

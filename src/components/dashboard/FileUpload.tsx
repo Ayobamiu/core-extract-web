@@ -33,7 +33,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
   >("full_extraction");
 
   const [processingConfig, setProcessingConfig] = useState<ProcessingConfig>({
-    extraction: { method: "mineru", options: {} },
+    extraction: { method: "paddleocr", options: {} },
     processing: { method: "openai", model: "gpt-4o", options: {} },
   });
 

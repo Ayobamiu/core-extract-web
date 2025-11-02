@@ -122,7 +122,7 @@ const FileTable: React.FC<FileTableProps> = ({
   const getReprocessConfig = (): ProcessingConfig | undefined => {
     return {
       extraction: {
-        method: "mineru",
+        method: "paddleocr",
         options: {},
       },
       processing: {
