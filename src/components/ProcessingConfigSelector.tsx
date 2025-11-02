@@ -15,7 +15,7 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
   disabled = false,
 }) => {
   const handleExtractionMethodChange = (
-    method: "mineru" | "documentai" | "extendai"
+    method: "mineru" | "documentai" | "extendai" | "paddleocr"
   ) => {
     onChange({
       ...config,
@@ -110,6 +110,24 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
               </div>
             </div>
           </label>
+
+          <label className="flex items-center space-x-3 p-3 border rounded-md hover:bg-white cursor-pointer transition-colors">
+            <input
+              type="radio"
+              name="extraction_method"
+              value="paddleocr"
+              checked={config.extraction.method === "paddleocr"}
+              onChange={() => handleExtractionMethodChange("paddleocr")}
+              disabled={disabled}
+              className="h-4 w-4 text-blue-600"
+            />
+            <div>
+              <div className="font-medium text-gray-900">PaddleOCR</div>
+              <div className="text-sm text-gray-500">
+                OCR-based extraction with layout parsing and table detection
+              </div>
+            </div>
+          </label>
         </div>
       </div>
 
@@ -183,6 +201,8 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
             ? "Document AI"
             : config.extraction.method === "extendai"
             ? "Extend AI"
+            : config.extraction.method === "paddleocr"
+            ? "PaddleOCR"
             : "MinerU"}{" "}
           + OpenAI {config.processing.model}
         </div>

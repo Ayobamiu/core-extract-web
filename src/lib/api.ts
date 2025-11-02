@@ -145,7 +145,7 @@ export interface JobFile {
 
 export interface ProcessingConfig {
     extraction: {
-        method: 'mineru' | 'documentai' | 'extendai';
+        method: 'mineru' | 'documentai' | 'extendai' | 'paddleocr';
         options: Record<string, any>;
     };
     processing: {
