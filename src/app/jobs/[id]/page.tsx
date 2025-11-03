@@ -72,6 +72,7 @@ export default function JobDetailPage() {
   const [isGoingLive, setIsGoingLive] = useState(false);
   const [fileTableRefreshTrigger, setFileTableRefreshTrigger] = useState(0);
   const [showConfigEditor, setShowConfigEditor] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -368,7 +369,7 @@ export default function JobDetailPage() {
 
   const handleUpdateJobConfig = async (updates: {
     name?: string;
-    extraction_mode?: 'full_extraction' | 'text_only';
+    extraction_mode?: "full_extraction" | "text_only";
     processing_config?: any;
   }) => {
     try {
@@ -378,7 +379,9 @@ export default function JobDetailPage() {
         await refreshJobData();
         message.success("Job configuration updated successfully");
       } else {
-        throw new Error(response.message || "Failed to update job configuration");
+        throw new Error(
+          response.message || "Failed to update job configuration"
+        );
       }
     } catch (error) {
       console.error("Error updating job configuration:", error);
@@ -683,10 +686,24 @@ export default function JobDetailPage() {
 
                   <Button
                     variant="secondary"
-                    onClick={refreshJobData}
+                    onClick={async () => {
+                      setIsRefreshing(true);
+                      try {
+                        await refreshJobData();
+                        // Trigger FileTable refresh
+                        setFileTableRefreshTrigger((prev) => prev + 1);
+                      } finally {
+                        setIsRefreshing(false);
+                      }
+                    }}
                     className="flex items-center space-x-2"
+                    disabled={isRefreshing}
                   >
-                    <ArrowPathIcon className="h-4 w-4" />
+                    <ArrowPathIcon
+                      className={`h-4 w-4 ${
+                        isRefreshing ? "animate-spin" : ""
+                      }`}
+                    />
                     <span>Refresh</span>
                   </Button>
 
