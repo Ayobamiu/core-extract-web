@@ -12,6 +12,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@ant-design/v5-patch-for-react-19": "^1.0.3",
     "@headlessui/react": "^2.2.9",
     "@heroicons/react": "^2.2.0",
     "@tanstack/react-table": "^8.21.3",

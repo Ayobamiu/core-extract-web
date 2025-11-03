@@ -109,6 +109,7 @@ const FileTable: React.FC<FileTableProps> = ({
   const [fullscreenFileIndex, setFullscreenFileIndex] = useState<number>(0);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfUrlLoading, setPdfUrlLoading] = useState(false);
+  const [verifyingFileId, setVerifyingFileId] = useState<string | null>(null);
 
   // Reprocess options state
   const [reprocessOptions, setReprocessOptions] = useState({
@@ -296,6 +297,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // Handle file verification
   const handleVerifyFile = async (fileId: string, adminVerified: boolean) => {
+    setVerifyingFileId(fileId);
     try {
       await apiClient.verifyFile(fileId, adminVerified, undefined);
       message.success("File verification updated successfully");
@@ -312,6 +314,8 @@ const FileTable: React.FC<FileTableProps> = ({
     } catch (error: any) {
       console.error("Error verifying file:", error);
       message.error(error.message || "Failed to verify file");
+    } finally {
+      setVerifyingFileId(null);
     }
   };
 
@@ -1591,7 +1595,9 @@ const FileTable: React.FC<FileTableProps> = ({
                         : "primary"
                     }
                     icon={
-                      currentFullscreenFile.admin_verified ? (
+                      verifyingFileId === currentFullscreenFile.id ? (
+                        <Loader className="w-4 h-4 animate-spin" />
+                      ) : currentFullscreenFile.admin_verified ? (
                         <CheckCircleOutlined style={{ color: "#52c41a" }} />
                       ) : (
                         <CheckCircleOutlined />
@@ -1603,14 +1609,20 @@ const FileTable: React.FC<FileTableProps> = ({
                         !currentFullscreenFile.admin_verified
                       )
                     }
-                    disabled={currentFullscreenFile.admin_verified}
+                    disabled={
+                      currentFullscreenFile.admin_verified ||
+                      verifyingFileId === currentFullscreenFile.id
+                    }
+                    loading={verifyingFileId === currentFullscreenFile.id}
                     style={
                       currentFullscreenFile.admin_verified
                         ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
                         : {}
                     }
                   >
-                    {currentFullscreenFile.admin_verified
+                    {verifyingFileId === currentFullscreenFile.id
+                      ? "Verifying..."
+                      : currentFullscreenFile.admin_verified
                       ? "Verified"
                       : "Verify"}
                   </Button>

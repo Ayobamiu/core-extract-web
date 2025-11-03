@@ -30,6 +30,7 @@ export default function FilePage() {
   const [error, setError] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfUrlLoading, setPdfUrlLoading] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   // Fetch file data
   useEffect(() => {
@@ -92,12 +93,15 @@ export default function FilePage() {
   }, [file?.id]);
 
   const handleVerifyFile = async (fileId: string, verified: boolean) => {
+    setIsVerifying(true);
     try {
       await apiClient.verifyFile(fileId, verified, undefined);
       setFile((prev) => (prev ? { ...prev, admin_verified: verified } : null));
       message.success(`File ${verified ? "verified" : "unverified"}`);
     } catch (err: any) {
       message.error(err.message || "Failed to update verification status");
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -152,21 +156,28 @@ export default function FilePage() {
             <Button
               type={file.admin_verified ? "default" : "primary"}
               icon={
-                file.admin_verified ? (
+                isVerifying ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : file.admin_verified ? (
                   <CheckCircleOutlined style={{ color: "#52c41a" }} />
                 ) : (
                   <CheckCircleOutlined />
                 )
               }
               onClick={() => handleVerifyFile(file.id, !file.admin_verified)}
-              disabled={file.admin_verified}
+              disabled={file.admin_verified || isVerifying}
+              loading={isVerifying}
               style={
                 file.admin_verified
                   ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
                   : {}
               }
             >
-              {file.admin_verified ? "Verified" : "Verify"}
+              {isVerifying
+                ? "Verifying..."
+                : file.admin_verified
+                ? "Verified"
+                : "Verify"}
             </Button>
           ) : undefined
         }
