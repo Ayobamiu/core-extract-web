@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Drawer, Tabs, Dropdown, Modal } from "antd";
+import { Drawer, Tabs, Dropdown, Modal, message } from "antd";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
@@ -19,6 +19,7 @@ import PreviewDrawer from "@/components/preview/PreviewDrawer";
 import InlineSchemaEditor from "@/components/InlineSchemaEditor";
 import FileResultsEditor from "@/components/FileResultsEditor";
 import FileTable from "@/components/FileTable";
+import JobConfigEditor from "@/components/JobConfigEditor";
 import { useSocket } from "@/hooks/useSocket";
 import {
   PlusIcon,
@@ -70,6 +71,7 @@ export default function JobDetailPage() {
   const [showFilePreviewModal, setShowFilePreviewModal] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
   const [fileTableRefreshTrigger, setFileTableRefreshTrigger] = useState(0);
+  const [showConfigEditor, setShowConfigEditor] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -361,6 +363,31 @@ export default function JobDetailPage() {
       }
     } catch (error) {
       console.error("Error adding file to preview:", error);
+    }
+  };
+
+  const handleUpdateJobConfig = async (updates: {
+    name?: string;
+    extraction_mode?: 'full_extraction' | 'text_only';
+    processing_config?: any;
+  }) => {
+    try {
+      const response = await apiClient.updateJobConfig(jobId, updates);
+      if (response.status === "success") {
+        // Refresh job data to get updated configuration
+        await refreshJobData();
+        message.success("Job configuration updated successfully");
+      } else {
+        throw new Error(response.message || "Failed to update job configuration");
+      }
+    } catch (error) {
+      console.error("Error updating job configuration:", error);
+      message.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to update job configuration"
+      );
+      throw error;
     }
   };
 
@@ -675,6 +702,12 @@ export default function JobDetailPage() {
                   <Dropdown
                     menu={{
                       items: [
+                        {
+                          key: "config",
+                          label: "Edit Configuration",
+                          icon: <PencilIcon className="w-4 h-4" />,
+                          onClick: () => setShowConfigEditor(true),
+                        },
                         {
                           key: "schema",
                           label: "Show Schema",
@@ -1017,6 +1050,21 @@ export default function JobDetailPage() {
                 refreshJobData();
               }}
             />
+
+            {/* Job Configuration Editor */}
+            {job && (
+              <JobConfigEditor
+                open={showConfigEditor}
+                onClose={() => setShowConfigEditor(false)}
+                jobId={jobId}
+                currentConfig={{
+                  name: job.name,
+                  extraction_mode: job.extraction_mode,
+                  processing_config: job.processing_config,
+                }}
+                onUpdate={handleUpdateJobConfig}
+              />
+            )}
           </div>
         )}
       </SidebarLayout>

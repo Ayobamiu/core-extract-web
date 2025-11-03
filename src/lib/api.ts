@@ -725,6 +725,25 @@ class ApiClient {
         });
     }
 
+    async updateJobConfig(
+        jobId: string, 
+        updates: {
+            name?: string;
+            extraction_mode?: 'full_extraction' | 'text_only';
+            processing_config?: Partial<ProcessingConfig>;
+        }
+    ): Promise<ApiResponse<{
+        jobId: string;
+        name: string;
+        extraction_mode: string;
+        processing_config: ProcessingConfig;
+    }>> {
+        return this.request(`/jobs/${jobId}/config`, {
+            method: 'PUT',
+            body: JSON.stringify(updates),
+        });
+    }
+
     async updateJobSchema(jobId: string, schema: any): Promise<ApiResponse<{ jobId: string; schema: any }>> {
         return this.request(`/jobs/${jobId}/schema`, {
             method: 'PUT',
