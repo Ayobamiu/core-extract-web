@@ -19,6 +19,8 @@ import {
   Radio,
   Space,
   Divider,
+  Descriptions,
+  Tag,
 } from "antd";
 import {
   FilePdfOutlined,
@@ -34,11 +36,13 @@ import {
   ExportOutlined,
   LeftOutlined,
   RightOutlined,
+  InfoCircleOutlined,
 } from "@ant-design/icons";
 import { JobFile, ProcessingConfig } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import { apiClient } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import moment from "moment";
 import {
   checkPermitNumberMatch,
   getViolationSeverityColor,
@@ -110,6 +114,12 @@ const FileTable: React.FC<FileTableProps> = ({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfUrlLoading, setPdfUrlLoading] = useState(false);
   const [verifyingFileId, setVerifyingFileId] = useState<string | null>(null);
+  const [fileDetailsDrawerVisible, setFileDetailsDrawerVisible] =
+    useState(false);
+  const [selectedFileForDetails, setSelectedFileForDetails] =
+    useState<JobFile | null>(null);
+  const [jobConfig, setJobConfig] = useState<ProcessingConfig | null>(null);
+  const [jobConfigLoading, setJobConfigLoading] = useState(false);
 
   // Reprocess options state
   const [reprocessOptions, setReprocessOptions] = useState({
@@ -219,6 +229,30 @@ const FileTable: React.FC<FileTableProps> = ({
   const handleCloseDrawer = () => {
     setDrawerVisible(false);
     setSelectedFile(null);
+  };
+
+  // Handle file details drawer
+  const handleOpenFileDetails = async (record: JobFile) => {
+    setSelectedFileForDetails(record);
+    setFileDetailsDrawerVisible(true);
+
+    // Fetch job config
+    setJobConfigLoading(true);
+    try {
+      const response = await apiClient.getJob(jobId);
+      setJobConfig(response.job.processing_config || null);
+    } catch (error) {
+      console.error("Error fetching job config:", error);
+      setJobConfig(null);
+    } finally {
+      setJobConfigLoading(false);
+    }
+  };
+
+  const handleCloseFileDetails = () => {
+    setFileDetailsDrawerVisible(false);
+    setSelectedFileForDetails(null);
+    setJobConfig(null);
   };
 
   // Fullscreen modal handlers
@@ -448,6 +482,21 @@ const FileTable: React.FC<FileTableProps> = ({
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  };
+
+  const formatDuration = (seconds: number): string => {
+    if (seconds < 60) {
+      return `${seconds.toFixed(2)}s`;
+    } else if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      const secs = (seconds % 60).toFixed(0);
+      return `${minutes}m ${secs}s`;
+    } else {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const secs = (seconds % 60).toFixed(0);
+      return `${hours}h ${minutes}m ${secs}s`;
+    }
   };
 
   const rowSelection = {
@@ -992,6 +1041,14 @@ const FileTable: React.FC<FileTableProps> = ({
             }
           );
         }
+
+        // Add "View Details" option for all files
+        menuItems.push({
+          key: "details",
+          label: (
+            <a onClick={() => handleOpenFileDetails(record)}>📄 File Info</a>
+          ),
+        });
 
         // Add delete option for all files (except those currently processing)
         if (
@@ -1738,6 +1795,422 @@ const FileTable: React.FC<FileTableProps> = ({
           </div>
         )}
       </Modal>
+
+      {/* File Details Drawer */}
+      <Drawer
+        title={
+          selectedFileForDetails ? (
+            <div className="flex items-center space-x-2">
+              <InfoCircleOutlined className="text-blue-500" />
+              <span className="font-medium">
+                File Details: {selectedFileForDetails.filename}
+              </span>
+            </div>
+          ) : (
+            "File Details"
+          )
+        }
+        placement="right"
+        size="large"
+        onClose={handleCloseFileDetails}
+        open={fileDetailsDrawerVisible}
+        width={600}
+      >
+        {selectedFileForDetails && (
+          <div className="space-y-6">
+            {/* File Overview */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Overview</h3>
+              <Descriptions column={1} bordered size="small">
+                <Descriptions.Item label="Filename">
+                  {selectedFileForDetails.filename}
+                </Descriptions.Item>
+                <Descriptions.Item label="File ID">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-mono text-xs">
+                      {selectedFileForDetails.id}
+                    </span>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<CopyOutlined />}
+                      onClick={() => copyToClipboard(selectedFileForDetails.id)}
+                    />
+                  </div>
+                </Descriptions.Item>
+                <Descriptions.Item label="File Size">
+                  {formatFileSize(selectedFileForDetails.size)}
+                </Descriptions.Item>
+                <Descriptions.Item label="File Hash">
+                  {selectedFileForDetails.file_hash ? (
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono text-xs">
+                        {selectedFileForDetails.file_hash}
+                      </span>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CopyOutlined />}
+                        onClick={() =>
+                          copyToClipboard(
+                            selectedFileForDetails.file_hash || ""
+                          )
+                        }
+                      />
+                    </div>
+                  ) : (
+                    <Text type="secondary">-</Text>
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="Storage Type">
+                  <Tag>{selectedFileForDetails.storage_type || "s3"}</Tag>
+                </Descriptions.Item>
+                {selectedFileForDetails.s3_key && (
+                  <Descriptions.Item label="S3 Key">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono text-xs break-all">
+                        {selectedFileForDetails.s3_key}
+                      </span>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CopyOutlined />}
+                        onClick={() =>
+                          copyToClipboard(selectedFileForDetails.s3_key || "")
+                        }
+                      />
+                    </div>
+                  </Descriptions.Item>
+                )}
+              </Descriptions>
+            </div>
+
+            {/* Status Information */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Status</h3>
+              <Descriptions column={1} bordered size="small">
+                <Descriptions.Item label="Upload Status">
+                  {getUploadStatusIcon(selectedFileForDetails.upload_status)}
+                  <span className="ml-2">
+                    {selectedFileForDetails.upload_status ? (
+                      <Tag
+                        color={
+                          selectedFileForDetails.upload_status === "success"
+                            ? "green"
+                            : selectedFileForDetails.upload_status === "failed"
+                            ? "red"
+                            : "orange"
+                        }
+                      >
+                        {selectedFileForDetails.upload_status}
+                      </Tag>
+                    ) : (
+                      <Tag>pending</Tag>
+                    )}
+                  </span>
+                </Descriptions.Item>
+                <Descriptions.Item label="Extraction Status">
+                  {getStatusIcon(selectedFileForDetails.extraction_status)}
+                  <span className="ml-2">
+                    <Tag
+                      color={
+                        selectedFileForDetails.extraction_status === "completed"
+                          ? "green"
+                          : selectedFileForDetails.extraction_status ===
+                            "failed"
+                          ? "red"
+                          : selectedFileForDetails.extraction_status ===
+                            "processing"
+                          ? "blue"
+                          : "default"
+                      }
+                    >
+                      {selectedFileForDetails.extraction_status}
+                    </Tag>
+                  </span>
+                </Descriptions.Item>
+                <Descriptions.Item label="Processing Status">
+                  {getStatusIcon(selectedFileForDetails.processing_status)}
+                  <span className="ml-2">
+                    <Tag
+                      color={
+                        selectedFileForDetails.processing_status === "completed"
+                          ? "green"
+                          : selectedFileForDetails.processing_status ===
+                            "failed"
+                          ? "red"
+                          : selectedFileForDetails.processing_status ===
+                            "processing"
+                          ? "blue"
+                          : "default"
+                      }
+                    >
+                      {selectedFileForDetails.processing_status}
+                    </Tag>
+                  </span>
+                </Descriptions.Item>
+                <Descriptions.Item label="Verification">
+                  <Space>
+                    {selectedFileForDetails.admin_verified && (
+                      <Tag color="green">Admin Verified</Tag>
+                    )}
+                    {selectedFileForDetails.customer_verified && (
+                      <Tag color="blue">Customer Verified</Tag>
+                    )}
+                    {!selectedFileForDetails.admin_verified &&
+                      !selectedFileForDetails.customer_verified && (
+                        <Text type="secondary">Not verified</Text>
+                      )}
+                  </Space>
+                </Descriptions.Item>
+                {selectedFileForDetails.retry_count !== undefined &&
+                  selectedFileForDetails.retry_count > 0 && (
+                    <Descriptions.Item label="Retry Count">
+                      <Tag color="orange">
+                        {selectedFileForDetails.retry_count}
+                      </Tag>
+                    </Descriptions.Item>
+                  )}
+              </Descriptions>
+            </div>
+
+            {/* Processing Configuration */}
+            {jobConfigLoading ? (
+              <div className="text-center py-4">
+                <Text type="secondary">Loading configuration...</Text>
+              </div>
+            ) : jobConfig ? (
+              <div>
+                <h3 className="text-lg font-semibold mb-3">
+                  Processing Configuration
+                </h3>
+                <Descriptions column={1} bordered size="small">
+                  <Descriptions.Item label="Extraction Method">
+                    <Tag color="blue">
+                      {jobConfig.extraction?.method || "N/A"}
+                    </Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Processing Method">
+                    <Tag color="purple">
+                      {jobConfig.processing?.method || "N/A"}
+                    </Tag>
+                  </Descriptions.Item>
+                  {jobConfig.processing?.model && (
+                    <Descriptions.Item label="AI Model">
+                      <Tag color="green">{jobConfig.processing.model}</Tag>
+                    </Descriptions.Item>
+                  )}
+                </Descriptions>
+              </div>
+            ) : null}
+
+            {/* Timing Information */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Timing</h3>
+              <Descriptions column={1} bordered size="small">
+                <Descriptions.Item label="Created At">
+                  {moment(selectedFileForDetails.created_at).format(
+                    "MMMM DD, YYYY hh:mm:ss A"
+                  )}
+                  <div className="text-xs text-gray-500 mt-1">
+                    ({moment(selectedFileForDetails.created_at).fromNow()})
+                  </div>
+                </Descriptions.Item>
+                {selectedFileForDetails.processed_at && (
+                  <Descriptions.Item label="Processed At">
+                    {moment(selectedFileForDetails.processed_at).format(
+                      "MMMM DD, YYYY hh:mm:ss A"
+                    )}
+                    <div className="text-xs text-gray-500 mt-1">
+                      ({moment(selectedFileForDetails.processed_at).fromNow()})
+                    </div>
+                  </Descriptions.Item>
+                )}
+                {selectedFileForDetails.processed_at && (
+                  <Descriptions.Item label="Total Time Elapsed">
+                    <Tag color="geekblue">
+                      {moment
+                        .duration(
+                          moment(selectedFileForDetails.processed_at).diff(
+                            moment(selectedFileForDetails.created_at)
+                          )
+                        )
+                        .humanize()}
+                    </Tag>
+                    <span className="ml-2 text-gray-500 text-xs">
+                      (
+                      {formatDuration(
+                        moment(selectedFileForDetails.processed_at).diff(
+                          moment(selectedFileForDetails.created_at),
+                          "seconds"
+                        )
+                      )}
+                      )
+                    </span>
+                  </Descriptions.Item>
+                )}
+                {selectedFileForDetails.extraction_time_seconds !== undefined &&
+                  selectedFileForDetails.extraction_time_seconds !== null && (
+                    <Descriptions.Item label="Extraction Duration">
+                      <Tag color="blue">
+                        {formatDuration(
+                          Number(selectedFileForDetails.extraction_time_seconds)
+                        )}
+                      </Tag>
+                      <span className="ml-2 text-gray-500 text-xs">
+                        (
+                        {Number(
+                          selectedFileForDetails.extraction_time_seconds
+                        ).toFixed(2)}
+                        s)
+                      </span>
+                    </Descriptions.Item>
+                  )}
+                {selectedFileForDetails.ai_processing_time_seconds !==
+                  undefined &&
+                  selectedFileForDetails.ai_processing_time_seconds !==
+                    null && (
+                    <Descriptions.Item label="Processing Duration">
+                      <Tag color="purple">
+                        {formatDuration(
+                          Number(
+                            selectedFileForDetails.ai_processing_time_seconds
+                          )
+                        )}
+                      </Tag>
+                      <span className="ml-2 text-gray-500 text-xs">
+                        (
+                        {Number(
+                          selectedFileForDetails.ai_processing_time_seconds
+                        ).toFixed(2)}
+                        s)
+                      </span>
+                    </Descriptions.Item>
+                  )}
+                {selectedFileForDetails.extraction_time_seconds !== undefined &&
+                  selectedFileForDetails.extraction_time_seconds !== null &&
+                  selectedFileForDetails.ai_processing_time_seconds !==
+                    undefined &&
+                  selectedFileForDetails.ai_processing_time_seconds !==
+                    null && (
+                    <Descriptions.Item label="Combined Processing Time">
+                      <Tag color="green">
+                        {formatDuration(
+                          Number(
+                            selectedFileForDetails.extraction_time_seconds
+                          ) +
+                            Number(
+                              selectedFileForDetails.ai_processing_time_seconds
+                            )
+                        )}
+                      </Tag>
+                      <span className="ml-2 text-gray-500 text-xs">
+                        (
+                        {(
+                          Number(
+                            selectedFileForDetails.extraction_time_seconds
+                          ) +
+                          Number(
+                            selectedFileForDetails.ai_processing_time_seconds
+                          )
+                        ).toFixed(2)}
+                        s)
+                      </span>
+                    </Descriptions.Item>
+                  )}
+              </Descriptions>
+            </div>
+
+            {/* Errors */}
+            {(selectedFileForDetails.upload_error ||
+              selectedFileForDetails.extraction_error ||
+              selectedFileForDetails.processing_error) && (
+              <div>
+                <h3 className="text-lg font-semibold mb-3 text-red-600">
+                  Errors
+                </h3>
+                <Collapse>
+                  {selectedFileForDetails.upload_error && (
+                    <Collapse.Panel header="Upload Error" key="upload">
+                      <Text
+                        type="danger"
+                        className="font-mono text-xs whitespace-pre-wrap"
+                      >
+                        {selectedFileForDetails.upload_error}
+                      </Text>
+                    </Collapse.Panel>
+                  )}
+                  {selectedFileForDetails.extraction_error && (
+                    <Collapse.Panel header="Extraction Error" key="extraction">
+                      <Text
+                        type="danger"
+                        className="font-mono text-xs whitespace-pre-wrap"
+                      >
+                        {selectedFileForDetails.extraction_error}
+                      </Text>
+                    </Collapse.Panel>
+                  )}
+                  {selectedFileForDetails.processing_error && (
+                    <Collapse.Panel header="Processing Error" key="processing">
+                      <Text
+                        type="danger"
+                        className="font-mono text-xs whitespace-pre-wrap"
+                      >
+                        {selectedFileForDetails.processing_error}
+                      </Text>
+                    </Collapse.Panel>
+                  )}
+                </Collapse>
+              </div>
+            )}
+
+            {/* Content Metadata */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Content Metadata</h3>
+              <Descriptions column={1} bordered size="small">
+                {selectedFileForDetails.pages !== undefined && (
+                  <Descriptions.Item label="Pages">
+                    {typeof selectedFileForDetails.pages === "number"
+                      ? selectedFileForDetails.pages
+                      : Array.isArray(selectedFileForDetails.pages)
+                      ? (selectedFileForDetails.pages as any[]).length
+                      : "-"}
+                  </Descriptions.Item>
+                )}
+                {selectedFileForDetails.extracted_text &&
+                  typeof selectedFileForDetails.extracted_text === "string" && (
+                    <Descriptions.Item label="Extracted Text Length">
+                      {selectedFileForDetails.extracted_text.length.toLocaleString()}{" "}
+                      characters
+                    </Descriptions.Item>
+                  )}
+                {selectedFileForDetails.extracted_tables &&
+                  Array.isArray(selectedFileForDetails.extracted_tables) && (
+                    <Descriptions.Item label="Extracted Tables">
+                      {selectedFileForDetails.extracted_tables.length}
+                    </Descriptions.Item>
+                  )}
+                <Descriptions.Item label="Has Result">
+                  <Tag
+                    color={selectedFileForDetails.result ? "green" : "default"}
+                  >
+                    {selectedFileForDetails.result ? "Yes" : "No"}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="Has Actual Result">
+                  <Tag
+                    color={
+                      selectedFileForDetails.actual_result ? "green" : "default"
+                    }
+                  >
+                    {selectedFileForDetails.actual_result ? "Yes" : "No"}
+                  </Tag>
+                </Descriptions.Item>
+              </Descriptions>
+            </div>
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 };
