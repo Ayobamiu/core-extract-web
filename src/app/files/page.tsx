@@ -48,6 +48,7 @@ import { useOrganization } from "@/contexts/OrganizationContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import { ArrowsAltOutlined } from "@ant-design/icons";
+import moment from "moment";
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -208,12 +209,6 @@ export default function FilesPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const formatDuration = (seconds: number) => {
-    if (seconds < 60) return `${seconds.toFixed(1)}s`;
-    if (seconds < 3600) return `${(seconds / 60).toFixed(1)}m`;
-    return `${(seconds / 3600).toFixed(1)}h`;
-  };
-
   const columns = [
     {
       title: "File ID",
@@ -319,7 +314,7 @@ export default function FilesPage() {
         const totalTime = extractionTime + aiTime;
         return (
           <div className="text-sm">
-            {totalTime > 0 ? formatDuration(totalTime) : "-"}
+            {totalTime > 0 ? moment.duration(totalTime).humanize() : "-"}
           </div>
         );
       },
