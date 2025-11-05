@@ -122,7 +122,7 @@ export interface JobFile {
     extracted_tables?: any;
     markdown?: string;
     result?: any;
-    pages?: number;
+    pages?: number | any[]; // Can be a number (count) or array of page objects from raw_data
     actual_result?: any;
     extraction_error?: string;
     processing_error?: string;
@@ -726,7 +726,7 @@ class ApiClient {
     }
 
     async updateJobConfig(
-        jobId: string, 
+        jobId: string,
         updates: {
             name?: string;
             extraction_mode?: 'full_extraction' | 'text_only';

@@ -1537,6 +1537,11 @@ const FileTable: React.FC<FileTableProps> = ({
                 editable={true}
                 markdown={selectedFile.markdown}
                 actual_result={selectedFile.actual_result}
+                pages={
+                  Array.isArray(selectedFile.pages)
+                    ? selectedFile.pages
+                    : undefined
+                }
                 onUpdate={async (updatedData) => {
                   try {
                     // Import apiClient dynamically to avoid circular imports
@@ -1759,6 +1764,11 @@ const FileTable: React.FC<FileTableProps> = ({
                         editable={true}
                         markdown={currentFullscreenFile.markdown}
                         actual_result={currentFullscreenFile.actual_result}
+                        pages={
+                          Array.isArray(currentFullscreenFile.pages)
+                            ? currentFullscreenFile.pages
+                            : undefined
+                        }
                         onUpdate={async (updatedData) => {
                           try {
                             await apiClient.updateFileResults(

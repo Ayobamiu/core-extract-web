@@ -251,6 +251,7 @@ export default function FilePage() {
                     editable={true}
                     markdown={file.markdown}
                     actual_result={file.actual_result}
+                    pages={Array.isArray(file.pages) ? file.pages : undefined}
                     onUpdate={handleUpdateResults}
                   />
                 )}

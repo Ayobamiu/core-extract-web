@@ -28,9 +28,11 @@ interface TabbedDataViewerProps {
   editable?: boolean;
   markdown?: string;
   actual_result?: any;
+  pages?: any; // Pages data from raw_data (array of page objects with markdown and sourceBlocks)
 }
 
 type TabType = "preview" | "json" | "csv" | "edit" | "markdown" | "compare";
+type MarkdownViewType = "full" | "pages" | "chunks";
 
 const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   data,
@@ -41,8 +43,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   editable = false,
   markdown,
   actual_result,
+  pages,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>("preview");
+  const [markdownView, setMarkdownView] = useState<MarkdownViewType>("full");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
@@ -57,6 +61,13 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       setJsonError(null);
     }
   }, [data]);
+
+  // Reset markdown view when switching away from markdown tab
+  React.useEffect(() => {
+    if (activeTab !== "markdown") {
+      setMarkdownView("full");
+    }
+  }, [activeTab]);
 
   // Handle JSON editing
   const handleJsonChange = (value: string) => {
@@ -619,136 +630,434 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           )}
 
           {activeTab === "markdown" && markdown && (
-            <div className="overflow-auto flex-1 p-6 min-h-0">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
-                // className="prose prose-sm max-w-none"
-                components={{
-                  // Custom styles for better readability
-                  h1: ({ node, ...props }) => (
-                    <h1 className="text-2xl font-bold mb-4 mt-6" {...props} />
-                  ),
-                  h2: ({ node, ...props }) => (
-                    <h2 className="text-xl font-bold mb-3 mt-5" {...props} />
-                  ),
-                  h3: ({ node, ...props }) => (
-                    <h3
-                      className="text-lg font-semibold mb-2 mt-4"
-                      {...props}
-                    />
-                  ),
-                  p: ({ node, ...props }: any) => {
-                    // Extract text content from React children
-                    const extractText = (children: any): string => {
-                      if (typeof children === "string") return children;
-                      if (Array.isArray(children)) {
-                        return children.map(extractText).join("");
-                      }
-                      if (children?.props?.children) {
-                        return extractText(children.props.children);
-                      }
-                      return String(children || "");
-                    };
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+              {/* Markdown Subtabs */}
+              {pages && Array.isArray(pages) && pages.length > 0 && (
+                <div className="flex border-b border-gray-200 bg-gray-50 px-4">
+                  <button
+                    onClick={() => setMarkdownView("full")}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      markdownView === "full"
+                        ? "text-blue-600 border-b-2 border-blue-600"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Full
+                  </button>
+                  <button
+                    onClick={() => setMarkdownView("pages")}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      markdownView === "pages"
+                        ? "text-blue-600 border-b-2 border-blue-600"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Pages
+                  </button>
+                  <button
+                    onClick={() => setMarkdownView("chunks")}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      markdownView === "chunks"
+                        ? "text-blue-600 border-b-2 border-blue-600"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Chunks
+                  </button>
+                </div>
+              )}
 
-                    const textContent = extractText(props.children);
+              {/* Markdown Content */}
+              <div className="overflow-auto flex-1 p-6 min-h-0">
+                {markdownView === "full" && (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw]}
+                    // className="prose prose-sm max-w-none"
+                    components={{
+                      // Custom styles for better readability
+                      h1: ({ node, ...props }) => (
+                        <h1
+                          className="text-2xl font-bold mb-4 mt-6"
+                          {...props}
+                        />
+                      ),
+                      h2: ({ node, ...props }) => (
+                        <h2
+                          className="text-xl font-bold mb-3 mt-5"
+                          {...props}
+                        />
+                      ),
+                      h3: ({ node, ...props }) => (
+                        <h3
+                          className="text-lg font-semibold mb-2 mt-4"
+                          {...props}
+                        />
+                      ),
+                      p: ({ node, ...props }: any) => {
+                        // Extract text content from React children
+                        const extractText = (children: any): string => {
+                          if (typeof children === "string") return children;
+                          if (Array.isArray(children)) {
+                            return children.map(extractText).join("");
+                          }
+                          if (children?.props?.children) {
+                            return extractText(children.props.children);
+                          }
+                          return String(children || "");
+                        };
 
-                    // Detect text table: multiple lines with aligned columns
-                    // Check if text contains multiple lines with spaces or pipes that look like a table
-                    const lines = textContent
-                      .split("\n")
-                      .filter((line) => line.trim().length > 0);
-                    const isTextTable =
-                      lines.length >= 2 &&
-                      lines.some((line) => {
-                        const trimmedLine = line.trim();
-                        // Check for patterns typical of text tables
-                        const hasMultipleSpaces =
-                          (trimmedLine.match(/\s{2,}/g) || []).length >= 2;
-                        const hasPipes = trimmedLine.includes("|");
-                        const hasTableSeparator =
-                          trimmedLine.match(/^[\s|+-]+$/); // Separator row like "|---|---|"
-                        const hasPatternedSpaces =
-                          trimmedLine.match(/^[^\s]+\s{2,}[^\s]/); // Multiple spaces between text
-                        return (
-                          hasMultipleSpaces ||
-                          hasPipes ||
-                          hasTableSeparator ||
-                          hasPatternedSpaces
-                        );
-                      });
+                        const textContent = extractText(props.children);
 
-                    if (isTextTable) {
+                        // Detect text table: multiple lines with aligned columns
+                        // Check if text contains multiple lines with spaces or pipes that look like a table
+                        const lines = textContent
+                          .split("\n")
+                          .filter((line) => line.trim().length > 0);
+                        const isTextTable =
+                          lines.length >= 2 &&
+                          lines.some((line) => {
+                            const trimmedLine = line.trim();
+                            // Check for patterns typical of text tables
+                            const hasMultipleSpaces =
+                              (trimmedLine.match(/\s{2,}/g) || []).length >= 2;
+                            const hasPipes = trimmedLine.includes("|");
+                            const hasTableSeparator =
+                              trimmedLine.match(/^[\s|+-]+$/); // Separator row like "|---|---|"
+                            const hasPatternedSpaces =
+                              trimmedLine.match(/^[^\s]+\s{2,}[^\s]/); // Multiple spaces between text
+                            return (
+                              hasMultipleSpaces ||
+                              hasPipes ||
+                              hasTableSeparator ||
+                              hasPatternedSpaces
+                            );
+                          });
+
+                        if (isTextTable) {
+                          return (
+                            <pre className="mb-4 text-gray-700 font-mono text-sm whitespace-pre overflow-x-auto bg-gray-50 p-2 rounded border border-gray-200">
+                              {textContent}
+                            </pre>
+                          );
+                        }
+
+                        return <p className="mb-4 text-gray-700" {...props} />;
+                      },
+                      code: ({ node, inline, ...props }: any) =>
+                        inline ? (
+                          <code
+                            className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-red-600"
+                            {...props}
+                          />
+                        ) : (
+                          <code
+                            className="block bg-gray-100 p-4 rounded-lg text-sm font-mono overflow-x-auto mb-4"
+                            {...props}
+                          />
+                        ),
+                      pre: ({ node, ...props }) => (
+                        <pre
+                          className="bg-gray-100 p-4 rounded-lg overflow-x-auto mb-4"
+                          {...props}
+                        />
+                      ),
+                      ul: ({ node, ...props }) => (
+                        <ul
+                          className="list-disc list-inside mb-4 space-y-1"
+                          {...props}
+                        />
+                      ),
+                      ol: ({ node, ...props }) => (
+                        <ol
+                          className="list-decimal list-inside mb-4 space-y-1"
+                          {...props}
+                        />
+                      ),
+                      table: ({ node, ...props }: any) => (
+                        <div className="overflow-x-auto mb-4 my-4">
+                          <table
+                            className="min-w-full border border-gray-300 border-collapse whitespace-nowrap"
+                            {...props}
+                          />
+                        </div>
+                      ),
+                      thead: ({ node, ...props }: any) => (
+                        <thead className="bg-gray-50" {...props} />
+                      ),
+                      tbody: ({ node, ...props }: any) => <tbody {...props} />,
+                      tr: ({ node, ...props }: any) => (
+                        <tr className="hover:bg-gray-50" {...props} />
+                      ),
+                      th: ({ node, ...props }: any) => (
+                        <th
+                          className="border border-gray-300 px-4 py-2 bg-gray-50 font-semibold text-left align-top whitespace-nowrap"
+                          {...props}
+                        />
+                      ),
+                      td: ({ node, ...props }: any) => (
+                        <td
+                          className="border border-gray-300 px-4 py-2 align-top whitespace-nowrap"
+                          {...props}
+                        />
+                      ),
+                    }}
+                  >
+                    {markdown}
+                  </ReactMarkdown>
+                )}
+
+                {markdownView === "pages" && pages && Array.isArray(pages) && (
+                  <div className="space-y-8">
+                    {pages.map((page: any, index: number) => {
+                      const pageMarkdown =
+                        page?.markdown?.text || page?.markdown || "";
+                      const pageNumber =
+                        page?.pageIndex !== undefined
+                          ? page.pageIndex + 1
+                          : index + 1;
+
                       return (
-                        <pre className="mb-4 text-gray-700 font-mono text-sm whitespace-pre overflow-x-auto bg-gray-50 p-2 rounded border border-gray-200">
-                          {textContent}
-                        </pre>
+                        <div
+                          key={index}
+                          className="border-b border-gray-200 pb-8 last:border-b-0"
+                        >
+                          <div className="mb-4 flex items-center">
+                            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium">
+                              Page {pageNumber}
+                            </span>
+                          </div>
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[rehypeRaw]}
+                            components={{
+                              h1: ({ node, ...props }) => (
+                                <h1
+                                  className="text-2xl font-bold mb-4 mt-6"
+                                  {...props}
+                                />
+                              ),
+                              h2: ({ node, ...props }) => (
+                                <h2
+                                  className="text-xl font-bold mb-3 mt-5"
+                                  {...props}
+                                />
+                              ),
+                              h3: ({ node, ...props }) => (
+                                <h3
+                                  className="text-lg font-semibold mb-2 mt-4"
+                                  {...props}
+                                />
+                              ),
+                              p: ({ node, ...props }: any) => (
+                                <p className="mb-4 text-gray-700" {...props} />
+                              ),
+                              code: ({ node, inline, ...props }: any) =>
+                                inline ? (
+                                  <code
+                                    className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-red-600"
+                                    {...props}
+                                  />
+                                ) : (
+                                  <code
+                                    className="block bg-gray-100 p-4 rounded-lg text-sm font-mono overflow-x-auto mb-4"
+                                    {...props}
+                                  />
+                                ),
+                              pre: ({ node, ...props }) => (
+                                <pre
+                                  className="bg-gray-100 p-4 rounded-lg overflow-x-auto mb-4"
+                                  {...props}
+                                />
+                              ),
+                              ul: ({ node, ...props }) => (
+                                <ul
+                                  className="list-disc list-inside mb-4 space-y-1"
+                                  {...props}
+                                />
+                              ),
+                              ol: ({ node, ...props }) => (
+                                <ol
+                                  className="list-decimal list-inside mb-4 space-y-1"
+                                  {...props}
+                                />
+                              ),
+                              table: ({ node, ...props }: any) => (
+                                <div className="overflow-x-auto mb-4 my-4">
+                                  <table
+                                    className="min-w-full border border-gray-300 border-collapse whitespace-nowrap"
+                                    {...props}
+                                  />
+                                </div>
+                              ),
+                              thead: ({ node, ...props }: any) => (
+                                <thead className="bg-gray-50" {...props} />
+                              ),
+                              tbody: ({ node, ...props }: any) => (
+                                <tbody {...props} />
+                              ),
+                              tr: ({ node, ...props }: any) => (
+                                <tr className="hover:bg-gray-50" {...props} />
+                              ),
+                              th: ({ node, ...props }: any) => (
+                                <th
+                                  className="border border-gray-300 px-4 py-2 bg-gray-50 font-semibold text-left align-top whitespace-nowrap"
+                                  {...props}
+                                />
+                              ),
+                              td: ({ node, ...props }: any) => (
+                                <td
+                                  className="border border-gray-300 px-4 py-2 align-top whitespace-nowrap"
+                                  {...props}
+                                />
+                              ),
+                            }}
+                          >
+                            {pageMarkdown}
+                          </ReactMarkdown>
+                        </div>
                       );
-                    }
+                    })}
+                  </div>
+                )}
 
-                    return <p className="mb-4 text-gray-700" {...props} />;
-                  },
-                  code: ({ node, inline, ...props }: any) =>
-                    inline ? (
-                      <code
-                        className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-red-600"
-                        {...props}
-                      />
-                    ) : (
-                      <code
-                        className="block bg-gray-100 p-4 rounded-lg text-sm font-mono overflow-x-auto mb-4"
-                        {...props}
-                      />
-                    ),
-                  pre: ({ node, ...props }) => (
-                    <pre
-                      className="bg-gray-100 p-4 rounded-lg overflow-x-auto mb-4"
-                      {...props}
-                    />
-                  ),
-                  ul: ({ node, ...props }) => (
-                    <ul
-                      className="list-disc list-inside mb-4 space-y-1"
-                      {...props}
-                    />
-                  ),
-                  ol: ({ node, ...props }) => (
-                    <ol
-                      className="list-decimal list-inside mb-4 space-y-1"
-                      {...props}
-                    />
-                  ),
-                  table: ({ node, ...props }: any) => (
-                    <div className="overflow-x-auto mb-4 my-4">
-                      <table
-                        className="min-w-full border border-gray-300 border-collapse whitespace-nowrap"
-                        {...props}
-                      />
-                    </div>
-                  ),
-                  thead: ({ node, ...props }: any) => (
-                    <thead className="bg-gray-50" {...props} />
-                  ),
-                  tbody: ({ node, ...props }: any) => <tbody {...props} />,
-                  tr: ({ node, ...props }: any) => (
-                    <tr className="hover:bg-gray-50" {...props} />
-                  ),
-                  th: ({ node, ...props }: any) => (
-                    <th
-                      className="border border-gray-300 px-4 py-2 bg-gray-50 font-semibold text-left align-top whitespace-nowrap"
-                      {...props}
-                    />
-                  ),
-                  td: ({ node, ...props }: any) => (
-                    <td
-                      className="border border-gray-300 px-4 py-2 align-top whitespace-nowrap"
-                      {...props}
-                    />
-                  ),
-                }}
-              >
-                {markdown}
-              </ReactMarkdown>
+                {markdownView === "chunks" && pages && Array.isArray(pages) && (
+                  <div className="space-y-8">
+                    {pages.map((page: any, pageIndex: number) => {
+                      const pageNumber =
+                        page?.pageIndex !== undefined
+                          ? page.pageIndex + 1
+                          : pageIndex + 1;
+                      const sourceBlocks = page?.source_blocks || [];
+
+                      if (!sourceBlocks || sourceBlocks.length === 0) {
+                        return (
+                          <div
+                            key={pageIndex}
+                            className="border-b border-gray-200 pb-8 last:border-b-0"
+                          >
+                            <div className="mb-4 flex items-center">
+                              <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium">
+                                Page {pageNumber}
+                              </span>
+                              <span className="ml-4 text-sm text-gray-500">
+                                No chunks available
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={pageIndex}
+                          className="border-b border-gray-200 pb-8 last:border-b-0"
+                        >
+                          <div className="mb-4 flex items-center">
+                            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium">
+                              Page {pageNumber}
+                            </span>
+                            <span className="ml-4 text-sm text-gray-500">
+                              {sourceBlocks.length} chunk
+                              {sourceBlocks.length !== 1 ? "s" : ""}
+                            </span>
+                          </div>
+                          <div className="space-y-4">
+                            {sourceBlocks.map(
+                              (block: any, blockIndex: number) => {
+                                const chunkMarkdown =
+                                  block?.markdown ||
+                                  block?.text ||
+                                  block?.blockContent ||
+                                  "";
+                                const chunkType = block?.type || "text";
+
+                                return (
+                                  <div
+                                    key={blockIndex}
+                                    className="border border-gray-200 rounded-lg p-4 bg-gray-50"
+                                  >
+                                    <div className="mb-2 flex items-center justify-between">
+                                      <span className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs font-medium">
+                                        Chunk {blockIndex + 1}
+                                      </span>
+                                      {chunkType && (
+                                        <span className="text-xs text-gray-500 capitalize">
+                                          {chunkType}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <ReactMarkdown
+                                      remarkPlugins={[remarkGfm]}
+                                      rehypePlugins={[rehypeRaw]}
+                                      components={{
+                                        h1: ({ node, ...props }) => (
+                                          <h1
+                                            className="text-xl font-bold mb-3 mt-4"
+                                            {...props}
+                                          />
+                                        ),
+                                        h2: ({ node, ...props }) => (
+                                          <h2
+                                            className="text-lg font-bold mb-2 mt-3"
+                                            {...props}
+                                          />
+                                        ),
+                                        h3: ({ node, ...props }) => (
+                                          <h3
+                                            className="text-base font-semibold mb-2 mt-2"
+                                            {...props}
+                                          />
+                                        ),
+                                        p: ({ node, ...props }: any) => (
+                                          <p
+                                            className="mb-2 text-gray-700 text-sm"
+                                            {...props}
+                                          />
+                                        ),
+                                        code: ({
+                                          node,
+                                          inline,
+                                          ...props
+                                        }: any) =>
+                                          inline ? (
+                                            <code
+                                              className="bg-gray-200 px-1 py-0.5 rounded text-xs font-mono text-red-600"
+                                              {...props}
+                                            />
+                                          ) : (
+                                            <code
+                                              className="block bg-gray-200 p-2 rounded text-xs font-mono overflow-x-auto mb-2"
+                                              {...props}
+                                            />
+                                          ),
+                                        ul: ({ node, ...props }) => (
+                                          <ul
+                                            className="list-disc list-inside mb-2 space-y-1 text-sm"
+                                            {...props}
+                                          />
+                                        ),
+                                        ol: ({ node, ...props }) => (
+                                          <ol
+                                            className="list-decimal list-inside mb-2 space-y-1 text-sm"
+                                            {...props}
+                                          />
+                                        ),
+                                      }}
+                                    >
+                                      {chunkMarkdown}
+                                    </ReactMarkdown>
+                                  </div>
+                                );
+                              }
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
