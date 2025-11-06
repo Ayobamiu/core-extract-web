@@ -136,6 +136,14 @@ export interface JobFile {
     processing_metadata?: {
         processing_time?: string;
         text_length?: number;
+        processing_method?: string;
+        model?: string;
+        [key: string]: any;
+    };
+    extraction_metadata?: {
+        extraction_method?: string;
+        extraction_time_seconds?: number;
+        [key: string]: any;
     };
     previews?: Array<{
         id: string;

@@ -118,8 +118,6 @@ const FileTable: React.FC<FileTableProps> = ({
     useState(false);
   const [selectedFileForDetails, setSelectedFileForDetails] =
     useState<JobFile | null>(null);
-  const [jobConfig, setJobConfig] = useState<ProcessingConfig | null>(null);
-  const [jobConfigLoading, setJobConfigLoading] = useState(false);
 
   // Reprocess options state
   const [reprocessOptions, setReprocessOptions] = useState({
@@ -235,24 +233,11 @@ const FileTable: React.FC<FileTableProps> = ({
   const handleOpenFileDetails = async (record: JobFile) => {
     setSelectedFileForDetails(record);
     setFileDetailsDrawerVisible(true);
-
-    // Fetch job config
-    setJobConfigLoading(true);
-    try {
-      const response = await apiClient.getJob(jobId);
-      setJobConfig(response.job.processing_config || null);
-    } catch (error) {
-      console.error("Error fetching job config:", error);
-      setJobConfig(null);
-    } finally {
-      setJobConfigLoading(false);
-    }
   };
 
   const handleCloseFileDetails = () => {
     setFileDetailsDrawerVisible(false);
     setSelectedFileForDetails(null);
-    setJobConfig(null);
   };
 
   // Fullscreen modal handlers
@@ -885,6 +870,38 @@ const FileTable: React.FC<FileTableProps> = ({
           )}
         </div>
       ),
+    },
+    {
+      title: "Config",
+      key: "config",
+      width: 150,
+      render: (_: any, record: JobFile) => {
+        // Get extraction method from extraction_metadata
+        const extractionMethod =
+          (record.extraction_metadata as any)?.extraction_method || "unknown";
+
+        // Get model from processing_metadata
+        const model = (record.processing_metadata as any)?.model || "unknown";
+
+        // If both are unknown, show dash
+        if (extractionMethod === "unknown" && model === "unknown") {
+          return (
+            <Text type="secondary" style={{ fontSize: "12px" }}>
+              -
+            </Text>
+          );
+        }
+
+        // Simple display: lowercase extraction, model name
+        const extractionDisplay = extractionMethod.toLowerCase();
+        const modelDisplay = model !== "unknown" ? model : "-";
+
+        return (
+          <Text type="secondary" style={{ fontSize: "12px" }}>
+            {extractionDisplay}, {modelDisplay}
+          </Text>
+        );
+      },
     },
     {
       title: "Status",
@@ -1990,34 +2007,45 @@ const FileTable: React.FC<FileTableProps> = ({
             </div>
 
             {/* Processing Configuration */}
-            {jobConfigLoading ? (
-              <div className="text-center py-4">
-                <Text type="secondary">Loading configuration...</Text>
-              </div>
-            ) : jobConfig ? (
-              <div>
-                <h3 className="text-lg font-semibold mb-3">
-                  Processing Configuration
-                </h3>
-                <Descriptions column={1} bordered size="small">
-                  <Descriptions.Item label="Extraction Method">
-                    <Tag color="blue">
-                      {jobConfig.extraction?.method || "N/A"}
-                    </Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Processing Method">
-                    <Tag color="purple">
-                      {jobConfig.processing?.method || "N/A"}
-                    </Tag>
-                  </Descriptions.Item>
-                  {jobConfig.processing?.model && (
-                    <Descriptions.Item label="AI Model">
-                      <Tag color="green">{jobConfig.processing.model}</Tag>
-                    </Descriptions.Item>
-                  )}
-                </Descriptions>
-              </div>
-            ) : null}
+            {(() => {
+              const extractionMethod = (
+                selectedFileForDetails.extraction_metadata as any
+              )?.extraction_method;
+              const processingMethod = (
+                selectedFileForDetails.processing_metadata as any
+              )?.processing_method;
+              const model = (selectedFileForDetails.processing_metadata as any)
+                ?.model;
+
+              if (!extractionMethod && !processingMethod && !model) {
+                return null;
+              }
+
+              return (
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">
+                    Processing Configuration
+                  </h3>
+                  <Descriptions column={1} bordered size="small">
+                    {extractionMethod && (
+                      <Descriptions.Item label="Extraction Method">
+                        <Tag color="blue">{extractionMethod}</Tag>
+                      </Descriptions.Item>
+                    )}
+                    {processingMethod && (
+                      <Descriptions.Item label="Processing Method">
+                        <Tag color="purple">{processingMethod}</Tag>
+                      </Descriptions.Item>
+                    )}
+                    {model && (
+                      <Descriptions.Item label="AI Model">
+                        <Tag color="green">{model}</Tag>
+                      </Descriptions.Item>
+                    )}
+                  </Descriptions>
+                </div>
+              );
+            })()}
 
             {/* Timing Information */}
             <div>
