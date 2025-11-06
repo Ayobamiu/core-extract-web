@@ -965,6 +965,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
         if (
           record.processing_status === "completed" &&
+          record.job_id === "5667fe82-63e1-47fa-a640-b182b5c5d034" &&
           record.result &&
           !record.result.api_number
         ) {
@@ -980,7 +981,11 @@ const FileTable: React.FC<FileTableProps> = ({
         }
 
         // Show checkmark for files with no permit number violations
-        if (record.processing_status === "completed" && record.result) {
+        if (
+          record.processing_status === "completed" &&
+          record.result &&
+          record.job_id === "5667fe82-63e1-47fa-a640-b182b5c5d034"
+        ) {
           return (
             <Tooltip title="Permit numbers match">
               <div className="flex items-center justify-center">

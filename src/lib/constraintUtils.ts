@@ -73,6 +73,14 @@ export function checkPermitNumberMatch(file: JobFile): {
     dataPermit: string | null;
     message: string;
 } {
+    if (file.job_id !== '5667fe82-63e1-47fa-a640-b182b5c5d034') {
+        return {
+            hasViolation: false,
+            filenamePermit: null,
+            dataPermit: null,
+            message: 'Not applicable'
+        };
+    }
     const filenamePermit = extractPermitFromFilename(file.filename);
     const dataPermit = extractPermitFromData(file.result);
 
