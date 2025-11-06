@@ -6,6 +6,7 @@ import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
 import { apiClient, ProcessingConfig } from "@/lib/api";
+import { PROCESSING_METHODS, DEFAULT_MODELS } from "@/lib/processingConfig";
 import ExampleSchemaDropdown from "./ExampleSchemaPanel";
 import ProcessingConfigSelector from "../ProcessingConfigSelector";
 
@@ -34,7 +35,11 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
   const [processingConfig, setProcessingConfig] = useState<ProcessingConfig>({
     extraction: { method: "paddleocr", options: {} },
-    processing: { method: "openai", model: "gpt-4o", options: {} },
+    processing: {
+      method: PROCESSING_METHODS.OPENAI,
+      model: DEFAULT_MODELS[PROCESSING_METHODS.OPENAI],
+      options: {},
+    },
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);

@@ -150,8 +150,8 @@ export interface ProcessingConfig {
         options: Record<string, any>;
     };
     processing: {
-        method: 'openai';
-        model: 'gpt-4o' | 'gpt-4' | 'gpt-3.5-turbo';
+        method: 'openai' | 'qwen';
+        model: string; // Dynamic based on method
         options: Record<string, any>;
     };
     reprocess?: {

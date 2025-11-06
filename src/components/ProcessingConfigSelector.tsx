@@ -1,7 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { ProcessingConfig } from "@/lib/api";
+import {
+  PROCESSING_METHODS,
+  getModelsForMethod,
+  getDefaultModel,
+  getModelDisplayName,
+  getMethodDisplayName,
+} from "@/lib/processingConfig";
 
 interface ProcessingConfigSelectorProps {
   config: ProcessingConfig;
@@ -14,6 +21,27 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
   onChange,
   disabled = false,
 }) => {
+  // Update model to default when method changes
+  useEffect(() => {
+    const currentMethod = config.processing.method || PROCESSING_METHODS.OPENAI;
+    const availableModels = getModelsForMethod(currentMethod);
+    const currentModel = config.processing.model;
+
+    // If current model is not valid for current method, reset to default
+    if (!availableModels.includes(currentModel)) {
+      const defaultModel = getDefaultModel(currentMethod);
+      onChange({
+        ...config,
+        processing: {
+          ...config.processing,
+          method: currentMethod,
+          model: defaultModel,
+        },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.processing.method]);
+
   const handleExtractionMethodChange = (
     method: "mineru" | "documentai" | "extendai" | "paddleocr"
   ) => {
@@ -26,9 +54,19 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
     });
   };
 
-  const handleProcessingModelChange = (
-    model: "gpt-4o" | "gpt-4" | "gpt-3.5-turbo"
-  ) => {
+  const handleProcessingMethodChange = (method: "openai" | "qwen") => {
+    const defaultModel = getDefaultModel(method);
+    onChange({
+      ...config,
+      processing: {
+        ...config.processing,
+        method,
+        model: defaultModel,
+      },
+    });
+  };
+
+  const handleProcessingModelChange = (model: string) => {
     onChange({
       ...config,
       processing: {
@@ -37,6 +75,9 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
       },
     });
   };
+
+  const currentMethod = config.processing.method || PROCESSING_METHODS.OPENAI;
+  const availableModels = getModelsForMethod(currentMethod);
 
   return (
     <div className="space-y-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -124,7 +165,60 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
             <div>
               <div className="font-medium text-gray-900">PaddleOCR</div>
               <div className="text-sm text-gray-500">
-                OCR-based extraction with layout parsing and table detection (Default)
+                OCR-based extraction with layout parsing and table detection
+                (Default)
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Processing Method Selection */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          AI Processing Method
+        </label>
+        <div className="space-y-2">
+          <label className="flex items-center space-x-3 p-3 border rounded-md hover:bg-white cursor-pointer transition-colors">
+            <input
+              type="radio"
+              name="processing_method"
+              value={PROCESSING_METHODS.OPENAI}
+              checked={currentMethod === PROCESSING_METHODS.OPENAI}
+              onChange={() =>
+                handleProcessingMethodChange(PROCESSING_METHODS.OPENAI)
+              }
+              disabled={disabled}
+              className="h-4 w-4 text-blue-600"
+            />
+            <div>
+              <div className="font-medium text-gray-900">
+                {getMethodDisplayName(PROCESSING_METHODS.OPENAI)}
+              </div>
+              <div className="text-sm text-gray-500">
+                OpenAI GPT models (Default)
+              </div>
+            </div>
+          </label>
+
+          <label className="flex items-center space-x-3 p-3 border rounded-md hover:bg-white cursor-pointer transition-colors">
+            <input
+              type="radio"
+              name="processing_method"
+              value={PROCESSING_METHODS.QWEN}
+              checked={currentMethod === PROCESSING_METHODS.QWEN}
+              onChange={() =>
+                handleProcessingMethodChange(PROCESSING_METHODS.QWEN)
+              }
+              disabled={disabled}
+              className="h-4 w-4 text-blue-600"
+            />
+            <div>
+              <div className="font-medium text-gray-900">
+                {getMethodDisplayName(PROCESSING_METHODS.QWEN)}
+              </div>
+              <div className="text-sm text-gray-500">
+                Alibaba Cloud Qwen models
               </div>
             </div>
           </label>
@@ -134,63 +228,20 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
       {/* Processing Model Selection */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          AI Processing Model
+          AI Model
         </label>
-        <div className="space-y-2">
-          <label className="flex items-center space-x-3 p-3 border rounded-md hover:bg-white cursor-pointer transition-colors">
-            <input
-              type="radio"
-              name="processing_model"
-              value="gpt-4o"
-              checked={config.processing.model === "gpt-4o"}
-              onChange={() => handleProcessingModelChange("gpt-4o")}
-              disabled={disabled}
-              className="h-4 w-4 text-blue-600"
-            />
-            <div>
-              <div className="font-medium text-gray-900">GPT-4o</div>
-              <div className="text-sm text-gray-500">
-                Best accuracy and speed (Default)
-              </div>
-            </div>
-          </label>
-
-          <label className="flex items-center space-x-3 p-3 border rounded-md hover:bg-white cursor-pointer transition-colors">
-            <input
-              type="radio"
-              name="processing_model"
-              value="gpt-4"
-              checked={config.processing.model === "gpt-4"}
-              onChange={() => handleProcessingModelChange("gpt-4")}
-              disabled={disabled}
-              className="h-4 w-4 text-blue-600"
-            />
-            <div>
-              <div className="font-medium text-gray-900">GPT-4</div>
-              <div className="text-sm text-gray-500">
-                High accuracy, thorough analysis
-              </div>
-            </div>
-          </label>
-
-          <label className="flex items-center space-x-3 p-3 border rounded-md hover:bg-white cursor-pointer transition-colors">
-            <input
-              type="radio"
-              name="processing_model"
-              value="gpt-3.5-turbo"
-              checked={config.processing.model === "gpt-3.5-turbo"}
-              onChange={() => handleProcessingModelChange("gpt-3.5-turbo")}
-              disabled={disabled}
-              className="h-4 w-4 text-blue-600"
-            />
-            <div>
-              <div className="font-medium text-gray-900">GPT-3.5 Turbo</div>
-              <div className="text-sm text-gray-500">
-                Fast and cost-effective
-              </div>
-            </div>
-          </label>
-        </div>
+        <select
+          value={config.processing.model}
+          onChange={(e) => handleProcessingModelChange(e.target.value)}
+          disabled={disabled}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        >
+          {availableModels.map((model) => (
+            <option key={model} value={model}>
+              {getModelDisplayName(model)}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Current Configuration Summary */}
@@ -204,7 +255,8 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
             : config.extraction.method === "paddleocr"
             ? "PaddleOCR"
             : "MinerU"}{" "}
-          + OpenAI {config.processing.model}
+          + {getMethodDisplayName(currentMethod)}{" "}
+          {getModelDisplayName(config.processing.model)}
         </div>
       </div>
     </div>

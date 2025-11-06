@@ -3,6 +3,13 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Form, Input, Select, message, Divider } from "antd";
 import { ProcessingConfig } from "@/lib/api";
+import {
+  PROCESSING_METHODS,
+  getModelsForMethod,
+  getDefaultModel,
+  getModelDisplayName,
+  getMethodDisplayName,
+} from "@/lib/processingConfig";
 import Button from "@/components/ui/Button";
 
 const { Option } = Select;
@@ -32,22 +39,40 @@ export default function JobConfigEditor({
 }: JobConfigEditorProps) {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [selectedProcessingMethod, setSelectedProcessingMethod] = useState<
+    "openai" | "qwen"
+  >(PROCESSING_METHODS.OPENAI);
 
   // Initialize form with current values when modal opens
   useEffect(() => {
     if (open && currentConfig) {
+      const processingMethod =
+        currentConfig.processing_config?.processing?.method ||
+        PROCESSING_METHODS.OPENAI;
+      const defaultModel = getDefaultModel(processingMethod);
+      const processingModel =
+        currentConfig.processing_config?.processing?.model || defaultModel;
+
+      setSelectedProcessingMethod(processingMethod);
       form.setFieldsValue({
         name: currentConfig.name,
         extraction_mode: currentConfig.extraction_mode || "full_extraction",
         extraction_method:
           currentConfig.processing_config?.extraction?.method || "paddleocr",
-        processing_method:
-          currentConfig.processing_config?.processing?.method || "openai",
-        processing_model:
-          currentConfig.processing_config?.processing?.model || "gpt-4o",
+        processing_method: processingMethod,
+        processing_model: processingModel,
       });
     }
   }, [open, currentConfig, form]);
+
+  const handleProcessingMethodChange = (method: "openai" | "qwen") => {
+    setSelectedProcessingMethod(method);
+    const defaultModel = getDefaultModel(method);
+    form.setFieldsValue({
+      processing_method: method,
+      processing_model: defaultModel,
+    });
+  };
 
   const handleSubmit = async () => {
     try {
@@ -64,8 +89,8 @@ export default function JobConfigEditor({
           options: currentConfig.processing_config?.extraction?.options || {},
         },
         processing: {
-          method: values.processing_method || "openai",
-          model: values.processing_model || "gpt-4o",
+          method: values.processing_method || PROCESSING_METHODS.OPENAI,
+          model: values.processing_model || getDefaultModel(values.processing_method || PROCESSING_METHODS.OPENAI),
           options: currentConfig.processing_config?.processing?.options || {},
         },
       };
@@ -89,9 +114,11 @@ export default function JobConfigEditor({
       const currentExtractionMethod =
         currentConfig.processing_config?.extraction?.method || "paddleocr";
       const currentProcessingMethod =
-        currentConfig.processing_config?.processing?.method || "openai";
+        currentConfig.processing_config?.processing?.method ||
+        PROCESSING_METHODS.OPENAI;
       const currentProcessingModel =
-        currentConfig.processing_config?.processing?.model || "gpt-4o";
+        currentConfig.processing_config?.processing?.model ||
+        getDefaultModel(currentProcessingMethod);
 
       if (
         values.extraction_method !== currentExtractionMethod ||
@@ -126,6 +153,8 @@ export default function JobConfigEditor({
     form.resetFields();
     onClose();
   };
+
+  const availableModels = getModelsForMethod(selectedProcessingMethod);
 
   return (
     <Modal
@@ -196,8 +225,16 @@ export default function JobConfigEditor({
             name="processing_method"
             tooltip="AI processing method"
           >
-            <Select placeholder="Select processing method" disabled>
-              <Option value="openai">OpenAI</Option>
+            <Select
+              placeholder="Select processing method"
+              onChange={handleProcessingMethodChange}
+            >
+              <Option value={PROCESSING_METHODS.OPENAI}>
+                {getMethodDisplayName(PROCESSING_METHODS.OPENAI)}
+              </Option>
+              <Option value={PROCESSING_METHODS.QWEN}>
+                {getMethodDisplayName(PROCESSING_METHODS.QWEN)}
+              </Option>
             </Select>
           </Form.Item>
 
@@ -205,12 +242,14 @@ export default function JobConfigEditor({
           <Form.Item
             label="AI Model"
             name="processing_model"
-            tooltip="OpenAI model to use for processing"
+            tooltip="AI model to use for processing"
           >
             <Select placeholder="Select AI model">
-              <Option value="gpt-4o">GPT-4o</Option>
-              <Option value="gpt-4">GPT-4</Option>
-              <Option value="gpt-3.5-turbo">GPT-3.5 Turbo</Option>
+              {availableModels.map((model) => (
+                <Option key={model} value={model}>
+                  {getModelDisplayName(model)}
+                </Option>
+              ))}
             </Select>
           </Form.Item>
         </div>
