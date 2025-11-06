@@ -18,6 +18,23 @@ interface ExampleSchema {
 
 const exampleSchemas: ExampleSchema[] = [
   {
+    id: "simple-detailed-schema",
+    name: "Simple Detailed Schema",
+    description: "Simple schema for extracting a description of the document",
+    category: "General",
+    schema: {
+      type: "object",
+      properties: {
+        description: {
+          type: ["string", "null"],
+          description: "A description of the document",
+        },
+      },
+      required: ["description"],
+      additionalProperties: false,
+    },
+  },
+  {
     id: "well-drilling",
     name: "Well Drilling Log",
     description:

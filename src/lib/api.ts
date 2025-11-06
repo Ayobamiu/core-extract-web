@@ -466,13 +466,17 @@ class ApiClient {
         }
     }
 
-    async extract(schemaData: { schema: any; schemaName: string }, file: JobFile): Promise<ApiResponse> {
+    async extract(schemaData: { schema: any; schemaName: string; jobName?: string }, file: JobFile): Promise<ApiResponse> {
         const formData = new FormData();
 
         // Add schema data
         formData.append('schema', JSON.stringify(schemaData.schema));
         formData.append('schemaName', schemaData.schemaName);
-        formData.append('jobName', `Job ${new Date().toISOString()}`);
+
+        // Only append jobName if explicitly provided - let Groq generate it if not provided
+        if (schemaData.jobName && schemaData.jobName.trim() !== '') {
+            formData.append('jobName', schemaData.jobName);
+        }
 
         // Add single file with "files" field name (backend expects "files" even for single file)
         formData.append('files', file as unknown as Blob);
@@ -483,13 +487,17 @@ class ApiClient {
         });
     }
 
-    async extractMultiple(schemaData: { schema: any; schemaName: string; extractionMode?: string }, files: JobFile[], processingConfig?: ProcessingConfig): Promise<ApiResponse> {
+    async extractMultiple(schemaData: { schema: any; schemaName: string; extractionMode?: string; jobName?: string }, files: JobFile[], processingConfig?: ProcessingConfig): Promise<ApiResponse> {
         const formData = new FormData();
 
         // Add schema data
         formData.append('schema', JSON.stringify(schemaData.schema));
         formData.append('schemaName', schemaData.schemaName);
-        formData.append('jobName', `Job ${new Date().toISOString()}`);
+
+        // Only append jobName if explicitly provided - let Groq generate it if not provided
+        if (schemaData.jobName && schemaData.jobName.trim() !== '') {
+            formData.append('jobName', schemaData.jobName);
+        }
 
         // Add extraction mode (default to full_extraction if not provided)
         formData.append('extractionMode', schemaData.extractionMode || 'full_extraction');
