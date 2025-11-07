@@ -399,6 +399,23 @@ class ApiClient {
         return this.request(`/jobs/${jobId}`);
     }
 
+    async getJobDetails(jobId: string): Promise<ApiResponse<{
+        job: Omit<JobDetails, 'files' | 'summary'>;
+        summary: {
+            total: number;
+            extraction_pending: number;
+            extraction_processing: number;
+            extraction_completed: number;
+            extraction_failed: number;
+            processing_pending: number;
+            processing_processing: number;
+            processing_completed: number;
+            processing_failed: number;
+        };
+    }>> {
+        return this.request(`/jobs/${jobId}/details`);
+    }
+
     async getJobStatus(jobId: string): Promise<ApiResponse<JobDetails>> {
         return this.request(`/jobs/${jobId}`);
     }

@@ -12,7 +12,6 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { apiClient, JobDetails, JobFile } from "@/lib/api";
-import { smartCsvExport } from "@/lib/csvExport";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import PreviewSelector from "@/components/preview/PreviewSelector";
 import PreviewDrawer from "@/components/preview/PreviewDrawer";
@@ -24,11 +23,8 @@ import { useSocket } from "@/hooks/useSocket";
 import {
   PlusIcon,
   DocumentIcon,
-  ArrowDownTrayIcon,
-  ChevronDownIcon,
   PencilIcon,
   EllipsisVerticalIcon,
-  XMarkIcon,
   ArrowPathIcon,
   SignalIcon,
 } from "@heroicons/react/24/outline";
@@ -42,6 +38,17 @@ export default function JobDetailPage() {
   const jobId = params.id as string;
 
   const [job, setJob] = useState<JobDetails | null>(null);
+  const [fileSummary, setFileSummary] = useState<{
+    total: number;
+    extraction_pending: number;
+    extraction_processing: number;
+    extraction_completed: number;
+    extraction_failed: number;
+    processing_pending: number;
+    processing_processing: number;
+    processing_completed: number;
+    processing_failed: number;
+  } | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +61,6 @@ export default function JobDetailPage() {
   const [isAddingFiles, setIsAddingFiles] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileList, setFileList] = useState<FileList | null>(null);
-  const [showExportDropdown, setShowExportDropdown] = useState(false);
   const [showPreviewSelector, setShowPreviewSelector] = useState(false);
   const [selectedFileForPreview, setSelectedFileForPreview] = useState<
     string | null
@@ -74,12 +80,13 @@ export default function JobDetailPage() {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const exportDropdownRef = useRef<HTMLDivElement>(null);
 
   const refreshJobData = useCallback(async () => {
     try {
-      const response = await apiClient.getJob(jobId);
-      setJob(response.job);
+      const response = await apiClient.getJobDetails(jobId);
+      // getJobDetails returns job without files, but we need JobDetails type for compatibility
+      setJob(response.job as JobDetails);
+      setFileSummary(response.summary);
       setError(null);
     } catch (err: unknown) {
       const errorMessage =
@@ -91,8 +98,10 @@ export default function JobDetailPage() {
   const fetchJobDetails = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiClient.getJob(jobId);
-      setJob(response.job);
+      const response = await apiClient.getJobDetails(jobId);
+      // getJobDetails returns job without files, but we need JobDetails type for compatibility
+      setJob(response.job as JobDetails);
+      setFileSummary(response.summary);
       setError(null);
     } catch (err: unknown) {
       const errorMessage =
@@ -117,69 +126,29 @@ export default function JobDetailPage() {
     }, 5000);
   }, []);
 
-  const handleFileStatusUpdate = useCallback((data: any) => {
-    console.log("📄 File status update:", data);
-    setRealtimeMessage(data.message);
+  const handleFileStatusUpdate = useCallback(
+    async (data: any) => {
+      console.log("📄 File status update:", data);
+      setRealtimeMessage(data.message);
 
-    // Update file status in job
-    setJob((prev) => {
-      if (!prev) return null;
+      // Refresh summary when file status changes
+      try {
+        const response = await apiClient.getJobDetails(jobId);
+        setFileSummary(response.summary);
+      } catch (err) {
+        console.error("Failed to refresh file summary:", err);
+      }
 
-      const updatedFiles = prev.files.map((file) =>
-        file.id === data.fileId
-          ? {
-              ...file,
-              // Update all possible fields that might change
-              processing_status:
-                data.processing_status || data.status || file.processing_status,
-              extraction_status:
-                data.extraction_status || file.extraction_status,
-              result: data.result !== undefined ? data.result : file.result,
-              extraction_error:
-                data.extraction_error !== undefined
-                  ? data.extraction_error
-                  : file.extraction_error,
-              processing_error:
-                data.processing_error !== undefined
-                  ? data.processing_error
-                  : file.processing_error,
-              processed_at: data.processed_at || file.processed_at,
-              updated_at: data.updated_at || new Date().toISOString(),
-              // Update any other fields that might be in the data
-              ...(data.filename && { filename: data.filename }),
-              ...(data.size && { size: data.size }),
-              ...(data.extracted_text && {
-                extracted_text: data.extracted_text,
-              }),
-              ...(data.extracted_tables && {
-                extracted_tables: data.extracted_tables,
-              }),
-              ...(data.markdown && { markdown: data.markdown }),
-              ...(data.pages && { pages: data.pages }),
-              ...(data.processing_metadata && {
-                processing_metadata: data.processing_metadata,
-              }),
-              ...(data.extraction_time_seconds && {
-                extraction_time_seconds: data.extraction_time_seconds,
-              }),
-              ...(data.ai_processing_time_seconds && {
-                ai_processing_time_seconds: data.ai_processing_time_seconds,
-              }),
-            }
-          : file
-      );
+      // Trigger FileTable refresh - FileTable will fetch updated file data itself
+      setFileTableRefreshTrigger((prev) => prev + 1);
 
-      return { ...prev, files: updatedFiles };
-    });
-
-    // Trigger FileTable refresh
-    setFileTableRefreshTrigger((prev) => prev + 1);
-
-    // Clear message after 5 seconds
-    setTimeout(() => {
-      setRealtimeMessage(null);
-    }, 5000);
-  }, []);
+      // Clear message after 5 seconds
+      setTimeout(() => {
+        setRealtimeMessage(null);
+      }, 5000);
+    },
+    [jobId]
+  );
 
   const handlePreviewUpdated = useCallback(
     (data: any) => {
@@ -286,56 +255,6 @@ export default function JobDetailPage() {
       // Handle error (you might want to show a toast notification)
     } finally {
       setIsAddingFiles(false);
-    }
-  };
-
-  // Export results
-  const exportResults = async (format: "json" | "csv") => {
-    if (!job) return;
-
-    try {
-      const completedFiles = job.files.filter(
-        (file) => file.processing_status === "completed"
-      );
-
-      if (completedFiles.length === 0) {
-        alert("No completed files to export");
-        return;
-      }
-
-      if (format === "json") {
-        const data = {
-          job: {
-            id: job.id,
-            name: job.name,
-            status: job.status,
-            created_at: job.created_at,
-          },
-          files: completedFiles.map((file) => ({
-            id: file.id,
-            filename: file.filename,
-            result: file.result,
-            processed_at: file.processed_at,
-          })),
-        };
-
-        const blob = new Blob([JSON.stringify(data, null, 2)], {
-          type: "application/json",
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${job.name}_results.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } else if (format === "csv") {
-        await smartCsvExport(completedFiles, job.name);
-      }
-    } catch (error) {
-      console.error("Export error:", error);
-      alert("Failed to export results");
     }
   };
 
@@ -459,23 +378,6 @@ export default function JobDetailPage() {
     });
   };
 
-  // Close export dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        exportDropdownRef.current &&
-        !exportDropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowExportDropdown(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
-
   // WebSocket connection status logging
   useEffect(() => {
     if (isConnected) {
@@ -501,25 +403,13 @@ export default function JobDetailPage() {
   };
 
   const getFileStats = () => {
-    if (!job?.files) return { processed: 0, processing: 0, pending: 0 };
+    if (!fileSummary) return { processed: 0, processing: 0, pending: 0 };
 
-    const processed = job.files.filter(
-      (file) =>
-        file.processing_status === "completed" &&
-        file.extraction_status === "completed"
-    ).length;
-
-    const processing = job.files.filter(
-      (file) =>
-        file.processing_status === "processing" ||
-        file.extraction_status === "processing"
-    ).length;
-
-    const pending = job.files.filter(
-      (file) =>
-        file.processing_status === "pending" &&
-        file.extraction_status === "pending"
-    ).length;
+    const processed = fileSummary.processing_completed;
+    const processing =
+      fileSummary.processing_processing + fileSummary.extraction_processing;
+    const pending =
+      fileSummary.processing_pending + fileSummary.extraction_pending;
 
     return { processed, processing, pending };
   };
@@ -730,24 +620,6 @@ export default function JobDetailPage() {
                           label: "Show Schema",
                           icon: <DocumentIcon className="w-4 h-4" />,
                           onClick: () => setShowSchemaDrawer(true),
-                        },
-                        {
-                          key: "export-json",
-                          label: "Export as JSON",
-                          icon: <ArrowDownTrayIcon className="w-4 h-4" />,
-                          onClick: () => exportResults("json"),
-                          disabled: !job.files.some(
-                            (file) => file.processing_status === "completed"
-                          ),
-                        },
-                        {
-                          key: "export-csv",
-                          label: "Export as CSV",
-                          icon: <ArrowDownTrayIcon className="w-4 h-4" />,
-                          onClick: () => exportResults("csv"),
-                          disabled: !job.files.some(
-                            (file) => file.processing_status === "completed"
-                          ),
                         },
                       ],
                     }}
