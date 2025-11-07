@@ -99,6 +99,8 @@ interface FileTableProps {
     processing_processing: number;
     processing_completed: number;
     processing_failed: number;
+    processing: number; // extraction_status = 'processing' OR processing_status = 'processing'
+    pending: number; // extraction_status = 'pending' AND processing_status = 'pending'
   } | null;
   // Actions props
   isConnected?: boolean;
@@ -1574,9 +1576,8 @@ const FileTable: React.FC<FileTableProps> = ({
     if (!fileSummary) return { processed: 0, processing: 0, pending: 0 };
     return {
       processed: fileSummary.processing_completed,
-      processing:
-        fileSummary.processing_processing + fileSummary.extraction_processing,
-      pending: fileSummary.processing_pending + fileSummary.extraction_pending,
+      processing: fileSummary.processing ?? 0,
+      pending: fileSummary.pending ?? 0,
     };
   };
 

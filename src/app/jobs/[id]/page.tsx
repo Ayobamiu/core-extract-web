@@ -48,6 +48,8 @@ export default function JobDetailPage() {
     processing_processing: number;
     processing_completed: number;
     processing_failed: number;
+    processing: number; // extraction_status = 'processing' OR processing_status = 'processing'
+    pending: number; // extraction_status = 'pending' AND processing_status = 'pending'
   } | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -404,14 +406,11 @@ export default function JobDetailPage() {
 
   const getFileStats = () => {
     if (!fileSummary) return { processed: 0, processing: 0, pending: 0 };
-
-    const processed = fileSummary.processing_completed;
-    const processing =
-      fileSummary.processing_processing + fileSummary.extraction_processing;
-    const pending =
-      fileSummary.processing_pending + fileSummary.extraction_pending;
-
-    return { processed, processing, pending };
+    return {
+      processed: fileSummary.processing_completed,
+      processing: fileSummary.processing ?? 0,
+      pending: fileSummary.pending ?? 0,
+    };
   };
 
   const getFileStatusColor = (status: string) => {
@@ -465,14 +464,7 @@ export default function JobDetailPage() {
 
   return (
     <ProtectedRoute>
-      <SidebarLayout
-        pageTitle={job.name}
-        pageDescription={`Job Status: ${job.status} • ${
-          getFileStats().processed
-        } processed, ${getFileStats().processing} processing, ${
-          getFileStats().pending
-        } pending`}
-      >
+      <SidebarLayout pageTitle={job.name}>
         {/* Check if user has an organization */}
         {!currentOrganization ? (
           <div className="flex items-center justify-center h-full">

@@ -412,6 +412,8 @@ class ApiClient {
             processing_processing: number;
             processing_completed: number;
             processing_failed: number;
+            processing: number; // extraction_status = 'processing' OR processing_status = 'processing'
+            pending: number; // extraction_status = 'pending' AND processing_status = 'pending'
         };
     }>> {
         return this.request(`/jobs/${jobId}/details`);
