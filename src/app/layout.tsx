@@ -32,9 +32,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AntdPatchProvider>
-          <AuthProvider>
-            <OrganizationProvider>{children}</OrganizationProvider>
-          </AuthProvider>
+        <AuthProvider>
+          <OrganizationProvider>{children}</OrganizationProvider>
+        </AuthProvider>
         </AntdPatchProvider>
       </body>
     </html>

@@ -504,137 +504,8 @@ export default function JobDetailPage() {
             </Card>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Job Header - All in One Line */}
-            <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                {/* Left: Job Status and Connection */}
-                <div className="flex items-center space-x-4">
-                  <StatusIndicator status={getJobStatusColor(job.status)}>
-                    {job.status}
-                  </StatusIndicator>
-                  <div className="flex items-center space-x-2">
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        isConnected ? "bg-green-500" : "bg-red-500"
-                      }`}
-                    ></div>
-                    <span className="text-xs text-gray-500">
-                      {isConnected ? "Live" : "Offline"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Center: File Stats */}
-                <div className="flex items-center space-x-6">
-                  {(() => {
-                    const stats = getFileStats();
-                    return (
-                      <>
-                        <div className="text-center">
-                          <div className="text-lg font-semibold text-green-600">
-                            {stats.processed}
-                          </div>
-                          <div className="text-xs text-gray-500">Processed</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-lg font-semibold text-blue-600">
-                            {stats.processing}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            Processing
-                          </div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-lg font-semibold text-gray-600">
-                            {stats.pending}
-                          </div>
-                          <div className="text-xs text-gray-500">Pending</div>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-
-                {/* Right: Actions */}
-                <div className="flex items-center space-x-3">
-                  <Button
-                    variant="secondary"
-                    onClick={handleGoLive}
-                    disabled={isGoingLive}
-                    className={`flex items-center space-x-2 ${
-                      isConnected ? "text-green-600" : "text-orange-600"
-                    }`}
-                  >
-                    {isGoingLive ? (
-                      <Loader className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <SignalIcon className="h-4 w-4" />
-                    )}
-                    <span>{isGoingLive ? "Going Live..." : "Go Live"}</span>
-                  </Button>
-
-                  <Button
-                    variant="secondary"
-                    onClick={async () => {
-                      setIsRefreshing(true);
-                      try {
-                        await refreshJobData();
-                        // Trigger FileTable refresh
-                        setFileTableRefreshTrigger((prev) => prev + 1);
-                      } finally {
-                        setIsRefreshing(false);
-                      }
-                    }}
-                    className="flex items-center space-x-2"
-                    disabled={isRefreshing}
-                  >
-                    <ArrowPathIcon
-                      className={`h-4 w-4 ${
-                        isRefreshing ? "animate-spin" : ""
-                      }`}
-                    />
-                    <span>Refresh</span>
-                  </Button>
-
-                  <Button
-                    variant="secondary"
-                    onClick={() => setShowFilePreviewModal(true)}
-                    className="flex items-center space-x-2"
-                  >
-                    <PlusIcon className="h-4 w-4" />
-                    <span>Add Files</span>
-                  </Button>
-
-                  <Dropdown
-                    menu={{
-                      items: [
-                        {
-                          key: "config",
-                          label: "Edit Configuration",
-                          icon: <PencilIcon className="w-4 h-4" />,
-                          onClick: () => setShowConfigEditor(true),
-                        },
-                        {
-                          key: "schema",
-                          label: "Show Schema",
-                          icon: <DocumentIcon className="w-4 h-4" />,
-                          onClick: () => setShowSchemaDrawer(true),
-                        },
-                      ],
-                    }}
-                    trigger={["click"]}
-                  >
-                    <Button variant="secondary" size="sm">
-                      <EllipsisVerticalIcon className="w-4 h-4" />
-                    </Button>
-                  </Dropdown>
-                </div>
-              </div>
-            </div>
-
+          <div className="h-full -m-6">
             {/* Files Table */}
-
             <FileTable
               jobId={job.id}
               jobSchema={
@@ -660,6 +531,25 @@ export default function JobDetailPage() {
               onDataUpdate={refreshJobData}
               showFileResults={showFileResults}
               refreshTrigger={fileTableRefreshTrigger}
+              fileSummary={fileSummary}
+              isConnected={isConnected}
+              isGoingLive={isGoingLive}
+              isRefreshing={isRefreshing}
+              onGoLive={handleGoLive}
+              onRefresh={async () => {
+                setIsRefreshing(true);
+                try {
+                  await refreshJobData();
+                  setFileTableRefreshTrigger((prev) => prev + 1);
+                } finally {
+                  setIsRefreshing(false);
+                }
+              }}
+              onAddFiles={() => setShowFilePreviewModal(true)}
+              onEditConfig={() => setShowConfigEditor(true)}
+              onShowSchema={() => setShowSchemaDrawer(true)}
+              jobStatus={job.status}
+              getJobStatusColor={getJobStatusColor}
             />
 
             {/* Floating Real-time Message */}

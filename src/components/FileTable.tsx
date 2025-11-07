@@ -37,6 +37,11 @@ import {
   LeftOutlined,
   RightOutlined,
   InfoCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SettingOutlined,
+  FileTextOutlined,
+  EllipsisOutlined,
 } from "@ant-design/icons";
 import { JobFile, ProcessingConfig } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
@@ -50,6 +55,8 @@ import {
 } from "@/lib/constraintUtils";
 import styles from "./FileTable.module.css";
 import { Loader } from "lucide-react";
+import { SignalIcon } from "@heroicons/react/24/outline";
+import StatusIndicator from "@/components/ui/StatusIndicator";
 
 const { Text } = Typography;
 
@@ -68,6 +75,29 @@ interface FileTableProps {
   onDataUpdate?: () => void;
   showFileResults: Record<string, boolean>;
   refreshTrigger?: number;
+  fileSummary?: {
+    total: number;
+    extraction_pending: number;
+    extraction_processing: number;
+    extraction_completed: number;
+    extraction_failed: number;
+    processing_pending: number;
+    processing_processing: number;
+    processing_completed: number;
+    processing_failed: number;
+  } | null;
+  // Actions props
+  isConnected?: boolean;
+  isGoingLive?: boolean;
+  isRefreshing?: boolean;
+  onGoLive?: () => void;
+  onRefresh?: () => void;
+  onAddFiles?: () => void;
+  onEditConfig?: () => void;
+  onShowSchema?: () => void;
+  // Job status props
+  jobStatus?: string;
+  getJobStatusColor?: (status: string) => string;
 }
 
 interface TableParams {
@@ -77,7 +107,7 @@ interface TableParams {
   filters?: Record<string, any>;
 }
 
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 20;
 
 const FileTable: React.FC<FileTableProps> = ({
   jobId,
@@ -89,6 +119,17 @@ const FileTable: React.FC<FileTableProps> = ({
   onDataUpdate,
   showFileResults,
   refreshTrigger,
+  fileSummary,
+  isConnected = false,
+  isGoingLive = false,
+  isRefreshing = false,
+  onGoLive,
+  onRefresh,
+  onAddFiles,
+  onEditConfig,
+  onShowSchema,
+  jobStatus,
+  getJobStatusColor,
 }) => {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -826,15 +867,18 @@ const FileTable: React.FC<FileTableProps> = ({
       width: 150,
       fixed: "left" as const,
       render: (id: string, record: JobFile) => (
-        <div className="flex items-center space-x-1">
+        <div
+          className="flex items-center space-x-1"
+          style={{ whiteSpace: "nowrap", overflow: "hidden" }}
+        >
           {record.processing_status === "completed" && record.result && (
             <>
               <Tooltip title="Open in new tab">
                 <ExportOutlined
                   style={{
                     cursor: "pointer",
-                    fontSize: "14px",
                     color: "#1890ff",
+                    flexShrink: 0,
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -846,8 +890,8 @@ const FileTable: React.FC<FileTableProps> = ({
                 <FullscreenOutlined
                   style={{
                     cursor: "pointer",
-                    fontSize: "14px",
                     color: "#1890ff",
+                    flexShrink: 0,
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -858,10 +902,21 @@ const FileTable: React.FC<FileTableProps> = ({
             </>
           )}
           <CopyOutlined
-            style={{ color: "#1890ff", cursor: "pointer", fontSize: "12px" }}
+            style={{
+              color: "#1890ff",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
             onClick={() => copyToClipboard(id)}
           />
-          <Text code style={{ fontSize: "12px" }}>
+          <Text
+            code
+            style={{
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
             {id.slice(0, 8)}...
           </Text>
         </div>
@@ -873,10 +928,20 @@ const FileTable: React.FC<FileTableProps> = ({
       key: "filename",
       width: 200,
       render: (filename: string) => (
-        <div className="flex items-center space-x-2">
-          <FilePdfOutlined style={{ color: "#ff4d4f" }} />
+        <div
+          className="flex items-center space-x-1"
+          style={{ overflow: "hidden" }}
+        >
+          <FilePdfOutlined style={{ color: "#ff4d4f", flexShrink: 0 }} />
           <Tooltip title={filename}>
-            <Text ellipsis style={{ maxWidth: 150 }}>
+            <Text
+              ellipsis
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {filename}
             </Text>
           </Tooltip>
@@ -889,7 +954,7 @@ const FileTable: React.FC<FileTableProps> = ({
       key: "size",
       width: 100,
       render: (size: number) => (
-        <Text type="secondary" style={{ fontSize: "12px" }}>
+        <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
           {formatFileSize(size)}
         </Text>
       ),
@@ -900,7 +965,14 @@ const FileTable: React.FC<FileTableProps> = ({
       key: "created_at",
       width: 150,
       render: (date: string) => (
-        <Text type="secondary" style={{ fontSize: "12px" }}>
+        <Text
+          type="secondary"
+          style={{
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
           {formatDate(date)}
         </Text>
       ),
@@ -914,7 +986,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
         if (previews.length === 0) {
           return (
-            <Text type="secondary" style={{ fontSize: "12px" }}>
+            <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
               None
             </Text>
           );
@@ -924,13 +996,20 @@ const FileTable: React.FC<FileTableProps> = ({
         const remainingCount = previews.length - 2;
 
         return (
-          <div className="flex items-center space-x-1">
+          <div
+            className="flex items-center space-x-1"
+            style={{ overflow: "hidden", whiteSpace: "nowrap" }}
+          >
             {visiblePreviews.map((preview, index) => (
               <a
                 key={preview.id}
                 href={`/preview/${preview.id}`}
                 target="_blank"
-                style={{ color: "#1890ff", fontSize: "12px" }}
+                style={{
+                  color: "#1890ff",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
               >
                 {preview.name}
                 {index < visiblePreviews.length - 1 && ", "}
@@ -959,8 +1038,9 @@ const FileTable: React.FC<FileTableProps> = ({
                 <a
                   style={{
                     color: "#1890ff",
-                    fontSize: "12px",
                     cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
                   }}
                 >
                   +{remainingCount}
@@ -976,24 +1056,27 @@ const FileTable: React.FC<FileTableProps> = ({
       key: "verified",
       width: 120,
       render: (_: any, record: JobFile) => (
-        <div className="flex items-center space-x-2">
+        <div
+          className="flex items-center space-x-1"
+          style={{ whiteSpace: "nowrap" }}
+        >
           {record.admin_verified && (
             <Tooltip title="Admin Verified">
               <CheckCircleOutlined
-                style={{ color: "#52c41a", fontSize: "16px" }}
+                style={{ color: "#52c41a", flexShrink: 0 }}
               />
             </Tooltip>
           )}
           {record.customer_verified && (
             <Tooltip title="Customer Verified">
               <CheckCircleOutlined
-                style={{ color: "#1890ff", fontSize: "16px" }}
+                style={{ color: "#1890ff", flexShrink: 0 }}
               />
             </Tooltip>
           )}
           {!record.admin_verified && !record.customer_verified && (
-            <Text type="secondary" style={{ fontSize: "12px" }}>
-              Not verified
+            <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
+              -
             </Text>
           )}
         </div>
@@ -1014,7 +1097,7 @@ const FileTable: React.FC<FileTableProps> = ({
         // If both are unknown, show dash
         if (extractionMethod === "unknown" && model === "unknown") {
           return (
-            <Text type="secondary" style={{ fontSize: "12px" }}>
+            <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
               -
             </Text>
           );
@@ -1025,7 +1108,14 @@ const FileTable: React.FC<FileTableProps> = ({
         const modelDisplay = model !== "unknown" ? model : "-";
 
         return (
-          <Text type="secondary" style={{ fontSize: "12px" }}>
+          <Text
+            type="secondary"
+            style={{
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
             {extractionDisplay}, {modelDisplay}
           </Text>
         );
@@ -1050,7 +1140,10 @@ const FileTable: React.FC<FileTableProps> = ({
             </div>
           }
         >
-          <div className="flex items-center space-x-1">
+          <div
+            className="flex items-center space-x-0.5"
+            style={{ whiteSpace: "nowrap" }}
+          >
             {getUploadStatusIcon(record.upload_status)}
             {getStatusIcon(record.extraction_status)}
             {getStatusIcon(record.processing_status)}
@@ -1089,18 +1182,21 @@ const FileTable: React.FC<FileTableProps> = ({
                 </div>
               }
             >
-              <div className="flex items-center space-x-1">
-                <span style={{ fontSize: "16px" }}>
+              <div
+                className="flex items-center space-x-0.5"
+                style={{ whiteSpace: "nowrap" }}
+              >
+                <span style={{ flexShrink: 0 }}>
                   {getViolationSeverityIcon("warning")}
                 </span>
                 <Badge
                   count={1}
                   style={{
                     backgroundColor: getViolationSeverityColor("warning"),
-                    fontSize: "10px",
-                    minWidth: "16px",
-                    height: "16px",
-                    lineHeight: "16px",
+                    minWidth: "14px",
+                    height: "14px",
+                    lineHeight: "14px",
+                    flexShrink: 0,
                   }}
                 />
               </div>
@@ -1116,9 +1212,12 @@ const FileTable: React.FC<FileTableProps> = ({
         ) {
           return (
             <Tooltip title="API number not found">
-              <div className="flex items-center justify-center">
+              <div
+                className="flex items-center justify-center"
+                style={{ whiteSpace: "nowrap" }}
+              >
                 <ExclamationCircleOutlined
-                  style={{ color: "#ff4d4f", fontSize: "16px" }}
+                  style={{ color: "#ff4d4f", flexShrink: 0 }}
                 />
               </div>
             </Tooltip>
@@ -1133,9 +1232,12 @@ const FileTable: React.FC<FileTableProps> = ({
         ) {
           return (
             <Tooltip title="Permit numbers match">
-              <div className="flex items-center justify-center">
+              <div
+                className="flex items-center justify-center"
+                style={{ whiteSpace: "nowrap" }}
+              >
                 <CheckCircleOutlined
-                  style={{ color: "#52c41a", fontSize: "16px" }}
+                  style={{ color: "#52c41a", flexShrink: 0 }}
                 />
               </div>
             </Tooltip>
@@ -1229,15 +1331,199 @@ const FileTable: React.FC<FileTableProps> = ({
             trigger={["hover"]}
             placement="bottomRight"
           >
-            <MoreOutlined style={{ cursor: "pointer", fontSize: "16px" }} />
+            <MoreOutlined style={{ cursor: "pointer", flexShrink: 0 }} />
           </Dropdown>
         );
       },
     },
   ];
 
+  // Create header component (summary or bulk actions)
+  const renderTableHeader = () => {
+    // Show bulk actions when selections are made
+    if (selectedRowKeys.length > 0) {
+      return (
+        <div className={styles.bulkActionsHeader}>
+          <div className="flex items-center space-x-2">
+            <Text strong style={{ fontSize: "12px" }}>
+              {selectedRowKeys.length} selected
+            </Text>
+          </div>
+          <div className="flex items-center space-x-1">
+            <Button
+              size="small"
+              type="primary"
+              style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
+              onClick={() => {
+                onBulkAddToPreview(selectedRowKeys as string[]);
+                setSelectedRowKeys([]);
+              }}
+            >
+              Add to Preview
+            </Button>
+            {isAdmin && (
+              <Button
+                size="small"
+                style={{
+                  backgroundColor: "#722ed1",
+                  borderColor: "#722ed1",
+                  color: "white",
+                }}
+                onClick={handleBulkVerify}
+              >
+                ✓ Verify
+              </Button>
+            )}
+            <Button size="small" type="primary" onClick={handleBulkReprocess}>
+              🔄 Reprocess
+            </Button>
+            <Button size="small" danger onClick={handleBulkDelete}>
+              🗑️ Delete
+            </Button>
+            <Button size="small" onClick={() => setSelectedRowKeys([])}>
+              Clear
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    // Show summary header by default
+    return (
+      <div className={styles.summaryHeader}>
+        <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+          {/* Live Status Indicator */}
+          {jobStatus && getJobStatusColor && (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <StatusIndicator
+                status={
+                  getJobStatusColor(jobStatus) as
+                    | "success"
+                    | "warning"
+                    | "error"
+                    | "info"
+                    | "neutral"
+                }
+              >
+                {jobStatus}
+              </StatusIndicator>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "4px" }}
+              >
+                <div
+                  style={{
+                    width: "8px",
+                    height: "8px",
+                    borderRadius: "50%",
+                    backgroundColor: isConnected ? "#52c41a" : "#ff4d4f",
+                  }}
+                />
+                <span style={{ fontSize: "11px", color: "#8c8c8c" }}>
+                  {isConnected ? "Live" : "Offline"}
+                </span>
+              </div>
+            </div>
+          )}
+          <div className="text-center flex space-x-2 items-center">
+            <div className="text-sm font-semibold text-green-600">
+              {stats.processed}
+            </div>
+            <div className="text-xs text-gray-500">Processed</div>
+          </div>
+          <div className="text-center flex space-x-2 items-center">
+            <div className="text-sm font-semibold text-blue-600">
+              {stats.processing}
+            </div>
+            <div className="text-xs text-gray-500">Processing</div>
+          </div>
+          <div className="text-center flex space-x-2 items-center">
+            <div className="text-sm font-semibold text-gray-600">
+              {stats.pending}
+            </div>
+            <div className="text-xs text-gray-500">Pending</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {onGoLive && (
+            <Button
+              size="small"
+              onClick={onGoLive}
+              disabled={isGoingLive}
+              color={isConnected ? "green" : "orange"}
+              icon={
+                isGoingLive ? (
+                  <Loader className="w-3 h-3 animate-spin" />
+                ) : (
+                  <SignalIcon className="text-green-600 w-4 h-4" />
+                )
+              }
+            >
+              {isGoingLive ? "Going Live..." : "Go Live"}
+            </Button>
+          )}
+          {onRefresh && (
+            <Button
+              size="small"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              icon={
+                <ReloadOutlined
+                  className={isRefreshing ? "animate-spin" : ""}
+                />
+              }
+            >
+              Refresh
+            </Button>
+          )}
+          {onAddFiles && (
+            <Button
+              size="small"
+              type="primary"
+              onClick={onAddFiles}
+              icon={<PlusOutlined />}
+            >
+              Add Files
+            </Button>
+          )}
+          {(onEditConfig || onShowSchema) && (
+            <Dropdown
+              menu={{
+                items: [
+                  ...(onEditConfig
+                    ? [
+                        {
+                          key: "config",
+                          label: "Edit Configuration",
+                          icon: <SettingOutlined />,
+                          onClick: onEditConfig,
+                        },
+                      ]
+                    : []),
+                  ...(onShowSchema
+                    ? [
+                        {
+                          key: "schema",
+                          label: "Show Schema",
+                          icon: <FileTextOutlined />,
+                          onClick: onShowSchema,
+                        },
+                      ]
+                    : []),
+                ],
+              }}
+              trigger={["click"]}
+            >
+              <Button size="small" icon={<EllipsisOutlined />} />
+            </Dropdown>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const createTableComponent = () => (
     <Table<JobFile>
+      title={renderTableHeader}
       columns={columns}
       dataSource={data}
       rowKey="id"
@@ -1246,70 +1532,32 @@ const FileTable: React.FC<FileTableProps> = ({
       loading={loading}
       onChange={handleTableChange}
       size="small"
-      scroll={{ x: "max-content", y: "calc(100vh - 320px)" }}
+      scroll={{
+        x: "max-content",
+        // Calculate scroll height: 100vh - (top bar 64px + table title header 40px + pagination 40px)
+        y: "calc(100vh - 64px - 40px - 110px)",
+      }}
       className={styles.fileTable}
     />
   );
 
-  return (
-    <div className="space-y-4">
-      {/* Bulk Actions */}
-      {selectedRowKeys.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Text strong className="text-blue-900">
-                {selectedRowKeys.length} file(s) selected
-              </Text>
-              <Text type="secondary" className="text-sm">
-                Only completed files can be selected
-              </Text>
-            </div>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => {
-                  onBulkAddToPreview(selectedRowKeys as string[]);
-                  setSelectedRowKeys([]); // Clear selection after clicking
-                }}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium"
-              >
-                Add to Preview
-              </button>
-              {isAdmin && (
-                <button
-                  onClick={handleBulkVerify}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm font-medium"
-                >
-                  ✓ Verify Selected
-                </button>
-              )}
-              <button
-                onClick={handleBulkReprocess}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
-              >
-                🔄 Reprocess Selected
-              </button>
-              <button
-                onClick={handleBulkDelete}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
-              >
-                🗑️ Delete Selected
-              </button>
-              <button
-                onClick={() => setSelectedRowKeys([])}
-                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors text-sm font-medium"
-              >
-                Clear Selection
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+  // Calculate file stats from summary
+  const getFileStats = () => {
+    if (!fileSummary) return { processed: 0, processing: 0, pending: 0 };
+    return {
+      processed: fileSummary.processing_completed,
+      processing:
+        fileSummary.processing_processing + fileSummary.extraction_processing,
+      pending: fileSummary.processing_pending + fileSummary.extraction_pending,
+    };
+  };
 
-      {/* Files Table */}
-      <div className="border border-gray-200 rounded-lg flex-1">
-        {createTableComponent()}
-      </div>
+  const stats = getFileStats();
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Files Table - fills entire space, header and pagination handled by Ant Design */}
+      <div className="border-0 flex-1 h-full">{createTableComponent()}</div>
 
       {/* Retry Upload Modal */}
       <Modal
