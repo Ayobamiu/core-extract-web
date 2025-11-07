@@ -31,6 +31,11 @@ export default function FilePage() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfUrlLoading, setPdfUrlLoading] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [splitPosition, setSplitPosition] = useState(50); // Percentage
+  const [isResizing, setIsResizing] = useState(false);
+  const splitPositionRef = React.useRef(50);
+  const leftPaneRef = React.useRef<HTMLDivElement>(null);
+  const rightPaneRef = React.useRef<HTMLDivElement>(null);
 
   // Fetch file data
   useEffect(() => {
@@ -118,6 +123,71 @@ export default function FilePage() {
     }
   };
 
+  // Resize handlers - optimized for smooth dragging
+  useEffect(() => {
+    let animationFrameId: number | null = null;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+
+      // Cancel previous animation frame if exists
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+
+      animationFrameId = requestAnimationFrame(() => {
+        const container = document.querySelector(".file-page-content");
+        if (!container || !leftPaneRef.current || !rightPaneRef.current) return;
+
+        const rect = container.getBoundingClientRect();
+        const newPosition = ((e.clientX - rect.left) / rect.width) * 100;
+        const clampedPosition = Math.max(20, Math.min(80, newPosition));
+
+        // Update ref immediately
+        splitPositionRef.current = clampedPosition;
+
+        // Update DOM directly for smooth performance (no React re-render)
+        leftPaneRef.current.style.width = `${clampedPosition}%`;
+        rightPaneRef.current.style.width = `${100 - clampedPosition}%`;
+      });
+    };
+
+    const handleMouseUp = () => {
+      // Sync final position to React state
+      setSplitPosition(splitPositionRef.current);
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener("mousemove", handleMouseMove, {
+        passive: true,
+      });
+      document.addEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    }
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [isResizing]);
+
+  // Sync ref when state changes (e.g., initial load)
+  useEffect(() => {
+    splitPositionRef.current = splitPosition;
+  }, [splitPosition]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
   if (loading) {
     return (
       <ProtectedRoute>
@@ -184,9 +254,13 @@ export default function FilePage() {
       >
         <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden -m-6 bg-white">
           {/* Content Area - Two Pane Layout with Independent Scrolling */}
-          <div className="flex flex-1 overflow-hidden min-h-0">
+          <div className="flex flex-1 overflow-hidden min-h-0 file-page-content">
             {/* Left Pane - PDF Viewer with Independent Scroll */}
-            <div className="w-1/2 border-r border-gray-200 bg-gray-100 flex flex-col min-w-0 overflow-hidden">
+            <div
+              ref={leftPaneRef}
+              className="border-r border-gray-200 bg-gray-100 flex flex-col min-w-0 overflow-hidden"
+              style={{ width: `${splitPosition}%`, minWidth: "200px" }}
+            >
               <div className="px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
                 <Text strong className="text-sm">
                   PDF Document
@@ -222,8 +296,21 @@ export default function FilePage() {
               </div>
             </div>
 
+            {/* Resizable Divider */}
+            <div
+              className="w-1 bg-gray-300 hover:bg-blue-500 cursor-col-resize flex-shrink-0 relative group"
+              onMouseDown={handleMouseDown}
+              style={{ minWidth: "4px" }}
+            >
+              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1 group-hover:bg-blue-500 transition-colors" />
+            </div>
+
             {/* Right Pane - Results Viewer with Independent Scroll */}
-            <div className="w-1/2 bg-white flex flex-col min-w-0 overflow-hidden">
+            <div
+              ref={rightPaneRef}
+              className="bg-white flex flex-col min-w-0 overflow-hidden"
+              style={{ width: `${100 - splitPosition}%`, minWidth: "200px" }}
+            >
               <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0">
                 <Text strong className="text-sm">
                   Extracted Results
