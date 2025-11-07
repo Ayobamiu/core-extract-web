@@ -60,6 +60,20 @@ import StatusIndicator from "@/components/ui/StatusIndicator";
 
 const { Text } = Typography;
 
+const computePageCount = (file?: JobFile | null): number | null => {
+  if (!file) return null;
+  if (typeof file.page_count === "number" && Number.isFinite(file.page_count)) {
+    return file.page_count;
+  }
+  if (typeof file.pages === "number" && Number.isFinite(file.pages)) {
+    return file.pages;
+  }
+  if (Array.isArray(file.pages)) {
+    return file.pages.length;
+  }
+  return null;
+};
+
 type TablePaginationConfig = Exclude<
   GetProp<TableProps, "pagination">,
   boolean
@@ -161,6 +175,7 @@ const FileTable: React.FC<FileTableProps> = ({
     useState(false);
   const [selectedFileForDetails, setSelectedFileForDetails] =
     useState<JobFile | null>(null);
+  const selectedFilePageCount = computePageCount(selectedFileForDetails);
   const [splitPosition, setSplitPosition] = useState(50); // Percentage
   const [isResizing, setIsResizing] = useState(false);
   const splitPositionRef = React.useRef(50);
@@ -958,6 +973,19 @@ const FileTable: React.FC<FileTableProps> = ({
           {formatFileSize(size)}
         </Text>
       ),
+    },
+    {
+      title: "Pages",
+      key: "pages",
+      width: 80,
+      render: (_: any, record: JobFile) => {
+        const pageCount = computePageCount(record);
+        return (
+          <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
+            {pageCount !== null ? pageCount : "-"}
+          </Text>
+        );
+      },
     },
     {
       title: "Created",
@@ -2654,13 +2682,9 @@ const FileTable: React.FC<FileTableProps> = ({
             <div>
               <h3 className="text-lg font-semibold mb-3">Content Metadata</h3>
               <Descriptions column={1} bordered size="small">
-                {selectedFileForDetails.pages !== undefined && (
+                {selectedFilePageCount !== null && (
                   <Descriptions.Item label="Pages">
-                    {typeof selectedFileForDetails.pages === "number"
-                      ? selectedFileForDetails.pages
-                      : Array.isArray(selectedFileForDetails.pages)
-                      ? (selectedFileForDetails.pages as any[]).length
-                      : "-"}
+                    {selectedFilePageCount}
                   </Descriptions.Item>
                 )}
                 {selectedFileForDetails.extracted_text &&

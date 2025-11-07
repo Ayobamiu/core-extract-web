@@ -37,6 +37,20 @@ export default function FilePage() {
   const leftPaneRef = React.useRef<HTMLDivElement>(null);
   const rightPaneRef = React.useRef<HTMLDivElement>(null);
 
+  const pageCountDisplay = React.useMemo(() => {
+    if (!file) return null;
+    if (typeof file.page_count === "number" && Number.isFinite(file.page_count)) {
+      return file.page_count;
+    }
+    if (typeof file.pages === "number" && Number.isFinite(file.pages)) {
+      return file.pages;
+    }
+    if (Array.isArray(file.pages)) {
+      return file.pages.length;
+    }
+    return null;
+  }, [file]);
+
   // Fetch file data
   useEffect(() => {
     const fetchFile = async () => {
@@ -265,9 +279,9 @@ export default function FilePage() {
                 <Text strong className="text-sm">
                   PDF Document
                 </Text>
-                {file.pages && typeof file.pages === "number" && (
+                {pageCountDisplay !== null && (
                   <Text className="text-xs text-gray-500 ml-2">
-                    ({file.pages} pages)
+                    ({pageCountDisplay} pages)
                   </Text>
                 )}
               </div>

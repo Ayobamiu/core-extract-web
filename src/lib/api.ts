@@ -124,6 +124,7 @@ export interface JobFile {
     markdown?: string;
     result?: any;
     pages?: number | any[]; // Can be a number (count) or array of page objects from raw_data
+    page_count?: number;
     actual_result?: any;
     extraction_error?: string;
     processing_error?: string;
