@@ -105,6 +105,8 @@ const FileTable: React.FC<FileTableProps> = ({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [bulkDeleteModalVisible, setBulkDeleteModalVisible] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [bulkVerifyModalVisible, setBulkVerifyModalVisible] = useState(false);
+  const [bulkVerifyLoading, setBulkVerifyLoading] = useState(false);
   const [reprocessModalVisible, setReprocessModalVisible] = useState(false);
   const [reprocessLoading, setReprocessLoading] = useState(false);
   const [showProcessingConfigInReprocess, setShowProcessingConfigInReprocess] =
@@ -335,6 +337,62 @@ const FileTable: React.FC<FileTableProps> = ({
       message.error(error.message || "Failed to verify file");
     } finally {
       setVerifyingFileId(null);
+    }
+  };
+
+  // Handle bulk verification
+  const handleBulkVerify = () => {
+    if (selectedRowKeys.length === 0) {
+      return;
+    }
+    setBulkVerifyModalVisible(true);
+  };
+
+  const confirmBulkVerify = async (adminVerified: boolean) => {
+    try {
+      setBulkVerifyLoading(true);
+      const fileIds = selectedRowKeys.map((key) => key.toString());
+      const results = {
+        success: [] as string[],
+        failed: [] as Array<{ fileId: string; error: string }>,
+      };
+
+      // Verify each file
+      for (const fileId of fileIds) {
+        try {
+          await apiClient.verifyFile(fileId, adminVerified, undefined);
+          results.success.push(fileId);
+        } catch (error: any) {
+          results.failed.push({
+            fileId,
+            error: error.message || "Failed to verify file",
+          });
+        }
+      }
+
+      // Show results
+      if (results.success.length > 0) {
+        message.success(
+          `${results.success.length} file(s) ${
+            adminVerified ? "verified" : "unverified"
+          } successfully`
+        );
+      }
+      if (results.failed.length > 0) {
+        message.error(`${results.failed.length} file(s) failed to verify`);
+      }
+
+      // Clear selection and refresh data
+      setSelectedRowKeys([]);
+      setBulkVerifyModalVisible(false);
+      if (onDataUpdate) {
+        await onDataUpdate();
+      }
+    } catch (error) {
+      console.error("Error verifying files:", error);
+      message.error("Failed to verify files");
+    } finally {
+      setBulkVerifyLoading(false);
     }
   };
 
@@ -1147,6 +1205,14 @@ const FileTable: React.FC<FileTableProps> = ({
               >
                 Add to Preview
               </button>
+              {isAdmin && (
+                <button
+                  onClick={handleBulkVerify}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm font-medium"
+                >
+                  ✓ Verify Selected
+                </button>
+              )}
               <button
                 onClick={handleBulkReprocess}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
@@ -1291,6 +1357,48 @@ const FileTable: React.FC<FileTableProps> = ({
               <strong>Warning:</strong> This action cannot be undone. The file
               and all its extracted data will be permanently deleted.
             </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Bulk Verify Modal */}
+      <Modal
+        title="Verify Files"
+        open={bulkVerifyModalVisible}
+        onCancel={() => setBulkVerifyModalVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setBulkVerifyModalVisible(false)}>
+            Cancel
+          </Button>,
+          <Button
+            key="unverify"
+            onClick={() => confirmBulkVerify(false)}
+            loading={bulkVerifyLoading}
+          >
+            Unverify {selectedRowKeys.length} Files
+          </Button>,
+          <Button
+            key="verify"
+            type="primary"
+            loading={bulkVerifyLoading}
+            onClick={() => confirmBulkVerify(true)}
+          >
+            Verify {selectedRowKeys.length} Files
+          </Button>,
+        ]}
+      >
+        <div className="space-y-4">
+          <div className="flex items-center space-x-3">
+            <div className="text-purple-500 text-2xl">✓</div>
+            <div>
+              <p className="text-lg font-medium text-gray-900">
+                Verify {selectedRowKeys.length} selected file(s)?
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                This will mark all selected files as verified (or unverified).
+                Only admins can perform this action.
+              </p>
+            </div>
           </div>
         </div>
       </Modal>
