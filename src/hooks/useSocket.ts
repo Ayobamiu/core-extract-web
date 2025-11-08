@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 
 interface SocketEventHandlers {
@@ -10,6 +10,12 @@ interface SocketEventHandlers {
 export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
     const [socket, setSocket] = useState<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
+    const handlersRef = useRef(handlers);
+
+    // Keep handlers ref up to date
+    useEffect(() => {
+        handlersRef.current = handlers;
+    }, [handlers]);
 
     useEffect(() => {
         // Create socket connection
@@ -34,18 +40,33 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
             console.log(`📋 Joined job room: job-${jobId}`);
         }
 
-        // Event handlers
-        if (handlers?.onJobStatusUpdate) {
-            newSocket.on('job-status-update', handlers.onJobStatusUpdate);
-        }
+        // Event handlers - use wrapper functions that call the latest handlers from ref
+        const handleJobStatusUpdate = (data: any) => {
+            console.log('📋 job-status-update event received:', data);
+            handlersRef.current?.onJobStatusUpdate?.(data);
+        };
 
-        if (handlers?.onFileStatusUpdate) {
-            newSocket.on('file-status-update', handlers.onFileStatusUpdate);
-        }
+        const handleFileStatusUpdate = (data: any) => {
+            console.log('📄 file-status-update event received:', data);
+            handlersRef.current?.onFileStatusUpdate?.(data);
+        };
 
-        if (handlers?.onPreviewUpdated) {
-            newSocket.on('preview-updated', handlers.onPreviewUpdated);
-        }
+        const handlePreviewUpdated = (data: any) => {
+            console.log('📊 preview-updated event received:', data);
+            handlersRef.current?.onPreviewUpdated?.(data);
+        };
+
+        // Remove old listeners first to avoid duplicates
+        newSocket.off('job-status-update');
+        newSocket.off('file-status-update');
+        newSocket.off('preview-updated');
+
+        // Register event handlers
+        newSocket.on('job-status-update', handleJobStatusUpdate);
+        newSocket.on('file-status-update', handleFileStatusUpdate);
+        newSocket.on('preview-updated', handlePreviewUpdated);
+        
+        console.log('📡 Registered all Socket.IO event handlers');
 
         setSocket(newSocket);
 
@@ -55,6 +76,9 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
                 newSocket.emit('leave-job', jobId);
                 console.log(`📋 Left job room: job-${jobId}`);
             }
+            newSocket.off('job-status-update');
+            newSocket.off('file-status-update');
+            newSocket.off('preview-updated');
             newSocket.disconnect();
         };
     }, [jobId]);

@@ -130,19 +130,28 @@ export default function JobDetailPage() {
 
   const handleFileStatusUpdate = useCallback(
     async (data: any) => {
-      console.log("📄 File status update:", data);
+      console.log("📄 File status update received:", data);
       setRealtimeMessage(data.message);
 
       // Refresh summary when file status changes
       try {
         const response = await apiClient.getJobDetails(jobId);
         setFileSummary(response.summary);
+        console.log("✅ Summary refreshed");
       } catch (err) {
         console.error("Failed to refresh file summary:", err);
       }
 
       // Trigger FileTable refresh - FileTable will fetch updated file data itself
-      setFileTableRefreshTrigger((prev) => prev + 1);
+      // Use a small delay to ensure database has been updated
+      setTimeout(() => {
+        console.log("🔄 Triggering FileTable refresh...");
+        setFileTableRefreshTrigger((prev) => {
+          const newValue = prev + 1;
+          console.log(`📊 Refresh trigger updated: ${prev} -> ${newValue}`);
+          return newValue;
+        });
+      }, 100);
 
       // Clear message after 5 seconds
       setTimeout(() => {

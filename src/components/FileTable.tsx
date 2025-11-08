@@ -226,6 +226,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // AJAX fetch function
   const fetchData = async () => {
+    console.log("📥 FileTable fetchData called");
     setLoading(true);
     try {
       const { pagination } = tableParams;
@@ -448,8 +449,13 @@ const FileTable: React.FC<FileTableProps> = ({
       // Clear selection and refresh data
       setSelectedRowKeys([]);
       setBulkVerifyModalVisible(false);
+
+      // Trigger refresh - both via callback and by refetching data
       if (onDataUpdate) {
         await onDataUpdate();
+      } else {
+        // Fallback: directly refetch data if onDataUpdate is not provided
+        await fetchData();
       }
     } catch (error) {
       console.error("Error verifying files:", error);
@@ -490,6 +496,10 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // Fetch data when dependencies change
   useEffect(() => {
+    console.log(
+      "🔄 FileTable useEffect triggered - refreshTrigger:",
+      refreshTrigger
+    );
     fetchData();
   }, [
     jobId,
@@ -1188,69 +1198,120 @@ const FileTable: React.FC<FileTableProps> = ({
       render: (_: any, record: JobFile) => {
         // Only check for permit number mismatch using client-side logic
         const permitCheck = checkPermitNumberMatch(record);
+        const hasApiNumber = record.result?.api_number;
+        const correctElevation =
+          record.result?.elevation && record.result?.elevation > 100;
+        const correctFormationCount =
+          record.result?.formations && record.result?.formations.length >= 10;
 
         // Show violation flag if there's a permit number mismatch
-        if (permitCheck.hasViolation) {
-          return (
-            <Tooltip
-              title={
-                <div>
-                  <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
-                    Permit Number Mismatch:
-                  </div>
-                  <div>Filename: {permitCheck.filenamePermit || "N/A"}</div>
-                  <div>Data: {permitCheck.dataPermit || "N/A"}</div>
-                  <div
-                    style={{
-                      marginTop: "8px",
-                      fontSize: "12px",
-                      color: "#666",
-                    }}
-                  >
-                    {permitCheck.message}
-                  </div>
-                </div>
-              }
-            >
-              <div
-                className="flex items-center space-x-0.5"
-                style={{ whiteSpace: "nowrap" }}
-              >
-                <span style={{ flexShrink: 0 }}>
-                  {getViolationSeverityIcon("warning")}
-                </span>
-                <Badge
-                  count={1}
-                  style={{
-                    backgroundColor: getViolationSeverityColor("warning"),
-                    minWidth: "14px",
-                    height: "14px",
-                    lineHeight: "14px",
-                    flexShrink: 0,
-                  }}
-                />
-              </div>
-            </Tooltip>
-          );
-        }
 
         if (
           record.processing_status === "completed" &&
           record.job_id === "5667fe82-63e1-47fa-a640-b182b5c5d034" &&
-          record.result &&
-          !record.result.api_number
+          record.result
         ) {
           return (
-            <Tooltip title="API number not found">
-              <div
-                className="flex items-center justify-center"
-                style={{ whiteSpace: "nowrap" }}
-              >
-                <ExclamationCircleOutlined
-                  style={{ color: "#ff4d4f", flexShrink: 0 }}
-                />
-              </div>
-            </Tooltip>
+            <div className="flex items-center justify-center">
+              {permitCheck.hasViolation && (
+                <Tooltip
+                  title={
+                    <div>
+                      <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                        Permit Number Mismatch:
+                      </div>
+                      <div>Filename: {permitCheck.filenamePermit || "N/A"}</div>
+                      <div>Data: {permitCheck.dataPermit || "N/A"}</div>
+                      <div
+                        style={{
+                          marginTop: "8px",
+                          fontSize: "12px",
+                          color: "#666",
+                        }}
+                      >
+                        {permitCheck.message}
+                      </div>
+                    </div>
+                  }
+                >
+                  <div
+                    className="flex items-center space-x-0.5"
+                    style={{ whiteSpace: "nowrap" }}
+                  >
+                    <span style={{ flexShrink: 0 }}>
+                      {getViolationSeverityIcon("warning")}
+                    </span>
+                    <Badge
+                      count={1}
+                      style={{
+                        backgroundColor: getViolationSeverityColor("warning"),
+                        minWidth: "14px",
+                        height: "14px",
+                        lineHeight: "14px",
+                        flexShrink: 0,
+                      }}
+                    />
+                  </div>
+                </Tooltip>
+              )}
+              {!hasApiNumber && (
+                <Tooltip title="API number not found">
+                  <div
+                    className="flex items-center justify-center"
+                    style={{ whiteSpace: "nowrap" }}
+                  >
+                    <ExclamationCircleOutlined
+                      style={{ color: "#ff4d4f", flexShrink: 0 }}
+                    />
+                  </div>
+                </Tooltip>
+              )}
+              {!correctElevation && (
+                <Tooltip
+                  title={
+                    <div>
+                      <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                        Check Elevation:
+                      </div>
+                      <div>Elevation: {record.result?.elevation || "N/A"}</div>
+                    </div>
+                  }
+                >
+                  <div
+                    className="flex items-center justify-center"
+                    style={{ whiteSpace: "nowrap" }}
+                  >
+                    <ExclamationCircleOutlined
+                      style={{ color: "#ff4d4f", flexShrink: 0 }}
+                    />
+                  </div>
+                </Tooltip>
+              )}
+              {!correctFormationCount && (
+                <Tooltip
+                  title={
+                    <div>
+                      <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
+                        Check Formation Count:
+                      </div>
+                      <div>
+                        Formation count:{" "}
+                        {record.result?.formations?.length || "N/A"}
+                      </div>
+                    </div>
+                  }
+                >
+                  <div
+                    className="flex items-center justify-center"
+                    style={{ whiteSpace: "nowrap" }}
+                  >
+                    <ExclamationCircleOutlined
+                      style={{ color: "#ff4d4f", flexShrink: 0 }}
+                    />
+                  </div>
+                </Tooltip>
+              )}
+            </div>
           );
         }
 
@@ -1258,10 +1319,12 @@ const FileTable: React.FC<FileTableProps> = ({
         if (
           record.processing_status === "completed" &&
           record.result &&
-          record.job_id === "5667fe82-63e1-47fa-a640-b182b5c5d034"
+          record.job_id === "5667fe82-63e1-47fa-a640-b182b5c5d034" &&
+          correctElevation &&
+          hasApiNumber
         ) {
           return (
-            <Tooltip title="Permit numbers match">
+            <Tooltip title="All constraints met">
               <div
                 className="flex items-center justify-center"
                 style={{ whiteSpace: "nowrap" }}
