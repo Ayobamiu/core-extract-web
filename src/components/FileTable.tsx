@@ -1146,7 +1146,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
   const columns = [
     {
-      title: "File ID",
+      title: "Filename",
       dataIndex: "id",
       key: "id",
       width: 150,
@@ -1195,45 +1195,44 @@ const FileTable: React.FC<FileTableProps> = ({
             onClick={() => copyToClipboard(id)}
           />
           <Text
-            code
             style={{
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
             }}
           >
-            {id.slice(0, 8)}...
+            {record.filename}
           </Text>
         </div>
       ),
     },
-    {
-      title: "Filename",
-      dataIndex: "filename",
-      key: "filename",
-      fixed: "left" as const,
-      width: 200,
-      render: (filename: string) => (
-        <div
-          className="flex items-center space-x-1"
-          style={{ overflow: "hidden" }}
-        >
-          <FilePdfOutlined style={{ color: "#ff4d4f", flexShrink: 0 }} />
-          <Tooltip title={filename}>
-            <Text
-              ellipsis
-              style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {filename}
-            </Text>
-          </Tooltip>
-        </div>
-      ),
-    },
+    // {
+    //   title: "Filename",
+    //   dataIndex: "filename",
+    //   key: "filename",
+    //   fixed: "left" as const,
+    //   width: 200,
+    //   render: (filename: string) => (
+    //     <div
+    //       className="flex items-center space-x-1"
+    //       style={{ overflow: "hidden" }}
+    //     >
+    //       <FilePdfOutlined style={{ color: "#ff4d4f", flexShrink: 0 }} />
+    //       <Tooltip title={filename}>
+    //         <Text
+    //           ellipsis
+    //           style={{
+    //             overflow: "hidden",
+    //             textOverflow: "ellipsis",
+    //             whiteSpace: "nowrap",
+    //           }}
+    //         >
+    //           {filename}
+    //         </Text>
+    //       </Tooltip>
+    //     </div>
+    //   ),
+    // },
     {
       title: "Size",
       dataIndex: "size",
