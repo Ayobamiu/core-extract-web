@@ -684,7 +684,7 @@ export default function JobDetailPage() {
                     ref={fileInputRef}
                     type="file"
                     multiple
-                    accept=".pdf,.doc,.docx,.txt"
+                    accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.tif,.webp"
                     onChange={handleModalFileSelect}
                     className="hidden"
                   />

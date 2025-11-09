@@ -953,6 +953,7 @@ const FileTable: React.FC<FileTableProps> = ({
       title: "Filename",
       dataIndex: "filename",
       key: "filename",
+      fixed: "left" as const,
       width: 200,
       render: (filename: string) => (
         <div
@@ -1704,7 +1705,7 @@ const FileTable: React.FC<FileTableProps> = ({
               }}
               onRemove={() => setRetryFile(null)}
               maxCount={1}
-              accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+              accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.tif,.webp"
             >
               <Button>Select File</Button>
             </Upload>

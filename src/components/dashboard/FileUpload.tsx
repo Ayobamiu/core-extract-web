@@ -70,15 +70,52 @@ const FileUpload: React.FC<FileUploadProps> = ({
   };
 
   const handleFiles = (files: File[]) => {
-    // Filter for PDF files only
-    const pdfFiles = files.filter((file) => file.type === "application/pdf");
+    // Filter for allowed file types: PDF, DOC, DOCX, TXT, and images
+    const allowedTypes = [
+      "application/pdf",
+      "text/plain",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "image/png",
+      "image/jpeg",
+      "image/jpg",
+      "image/gif",
+      "image/bmp",
+      "image/tiff",
+      "image/tif",
+      "image/webp",
+    ];
 
-    if (pdfFiles.length !== files.length) {
-      setError("Only PDF files are allowed");
+    const allowedFiles = files.filter((file) => {
+      const ext = file.name.toLowerCase().split(".").pop();
+      const allowedExtensions = [
+        "pdf",
+        "doc",
+        "docx",
+        "txt",
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "bmp",
+        "tiff",
+        "tif",
+        "webp",
+      ];
+      return (
+        allowedTypes.includes(file.type || "") ||
+        allowedExtensions.includes(ext || "")
+      );
+    });
+
+    if (allowedFiles.length !== files.length) {
+      setError(
+        "Only PDF, DOC, DOCX, TXT, and image files (PNG, JPG, JPEG, GIF, BMP, TIFF, TIF, WEBP) are allowed"
+      );
       return;
     }
 
-    setSelectedFiles((prev) => [...prev, ...pdfFiles]);
+    setSelectedFiles((prev) => [...prev, ...allowedFiles]);
     setError(null);
   };
 
