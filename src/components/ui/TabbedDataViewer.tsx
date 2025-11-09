@@ -8,6 +8,11 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { jsonToCsv } from "@/lib/csvExport";
 import CompareDiffViewer from "./CompareDiffViewer";
+import { MessageSquare } from "lucide-react";
+import { Button, Input, message, Typography } from "antd";
+
+const { TextArea } = Input;
+const { Text } = Typography;
 import {
   useReactTable,
   getCoreRowModel,
@@ -29,9 +34,19 @@ interface TabbedDataViewerProps {
   markdown?: string;
   actual_result?: any;
   pages?: any; // Pages data from raw_data (array of page objects with markdown and sourceBlocks)
+  // Comments props
+  comments?: Array<{
+    id: string;
+    userId: string;
+    userEmail: string;
+    text: string;
+    createdAt: string;
+  }>;
+  onAddComment?: (text: string) => Promise<void>;
+  fileId?: string; // File ID for fetching comments if not provided
 }
 
-type TabType = "preview" | "json" | "csv" | "edit" | "markdown" | "compare";
+type TabType = "preview" | "json" | "csv" | "edit" | "markdown" | "compare" | "comments";
 type MarkdownViewType = "full" | "pages" | "chunks";
 
 const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
@@ -44,6 +59,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   markdown,
   actual_result,
   pages,
+  comments = [],
+  onAddComment,
+  fileId,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>("preview");
   const [markdownView, setMarkdownView] = useState<MarkdownViewType>("full");
@@ -53,6 +71,8 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const [editableJson, setEditableJson] = useState<string>("");
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [newComment, setNewComment] = useState("");
+  const [addingComment, setAddingComment] = useState(false);
 
   // Initialize editable JSON when data changes
   React.useEffect(() => {
@@ -236,6 +256,22 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  // Handle adding comment
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !onAddComment) return;
+
+    try {
+      setAddingComment(true);
+      await onAddComment(newComment.trim());
+      setNewComment("");
+      message.success("Comment added successfully");
+    } catch (err: any) {
+      message.error(err.message || "Failed to add comment");
+    } finally {
+      setAddingComment(false);
+    }
   };
 
   // Render preview data in a collapsible tree format
@@ -487,6 +523,19 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               }`}
             >
               Edit
+            </button>
+          )}
+          {(comments.length > 0 || onAddComment) && (
+            <button
+              onClick={() => setActiveTab("comments")}
+              className={`px-4 py-2 text-sm font-medium transition-colors duration-200 flex items-center space-x-1 ${
+                activeTab === "comments"
+                  ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <MessageSquare className="w-3 h-3" />
+              <span>Comments {comments.length > 0 ? `(${comments.length})` : ""}</span>
             </button>
           )}
         </div>
@@ -1064,6 +1113,65 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           {activeTab === "compare" && actual_result && (
             <div className="flex-1 overflow-hidden min-h-0">
               <CompareDiffViewer original={actual_result} current={data} />
+            </div>
+          )}
+
+          {activeTab === "comments" && (
+            <div className="flex-1 overflow-auto min-h-0 p-4">
+              <div className="space-y-4">
+                {/* Comments List */}
+                <div className="space-y-3">
+                  {comments.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <MessageSquare className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <Text type="secondary" className="text-sm">
+                        No comments yet. Be the first to add one!
+                      </Text>
+                    </div>
+                  ) : (
+                    comments.map((comment) => (
+                      <div
+                        key={comment.id}
+                        className="bg-gray-50 rounded-lg p-3 border border-gray-200"
+                      >
+                        <div className="flex items-start justify-between mb-1">
+                          <div>
+                            <Text strong className="text-xs">
+                              {comment.userEmail}
+                            </Text>
+                            <Text type="secondary" className="text-xs ml-2">
+                              {new Date(comment.createdAt).toLocaleString()}
+                            </Text>
+                          </div>
+                        </div>
+                        <Text className="text-sm">{comment.text}</Text>
+                      </div>
+                    ))
+                  )}
+                </div>
+                
+                {/* Add Comment Form */}
+                {onAddComment && (
+                  <div className="border-t border-gray-200 pt-4">
+                    <TextArea
+                      rows={3}
+                      placeholder="Add a comment..."
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      className="mb-2"
+                    />
+                    <Button
+                      type="primary"
+                      size="small"
+                      onClick={handleAddComment}
+                      loading={addingComment}
+                      disabled={!newComment.trim()}
+                    >
+                      Add Comment
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </motion.div>

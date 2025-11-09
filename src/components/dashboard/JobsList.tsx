@@ -6,17 +6,7 @@ import { motion } from "framer-motion";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import { CheckCircle, Clock, Loader, XCircle } from "lucide-react";
-import { apiClient } from "@/lib/api";
-
-interface Job {
-  id: string;
-  name: string;
-  status: string;
-  summary: any;
-  created_at: string;
-  updated_at: string;
-  file_count: string;
-}
+import { apiClient, Job } from "@/lib/api";
 
 interface JobsListProps {
   className?: string;

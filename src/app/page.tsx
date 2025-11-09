@@ -32,6 +32,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
 import { apiClient, QueueStats, QueueStatus, QueueAnalytics } from "@/lib/api";
 
 const { Title, Text } = Typography;
@@ -40,6 +41,7 @@ export default function Dashboard() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuth();
   const { currentOrganization, isLoadingOrganizations } = useOrganization();
+  const isAdmin = canPerformAdminActions(user);
   const organizationName = currentOrganization?.name;
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [queueAnalytics, setQueueAnalytics] = useState<QueueAnalytics | null>(
@@ -332,7 +334,9 @@ export default function Dashboard() {
                     You need to be part of an organization to access jobs and
                     files.
                   </p>
-                  <Button type="primary">Create Organization</Button>
+                  {isAdmin && (
+                    <Button type="primary">Create Organization</Button>
+                  )}
                 </div>
               </Empty>
             </Card>

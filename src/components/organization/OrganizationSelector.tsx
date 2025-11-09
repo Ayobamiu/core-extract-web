@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 
@@ -22,6 +23,7 @@ export default function OrganizationSelector({
     isLoadingOrganizations,
   } = useOrganization();
   const { user } = useAuth();
+  const isAdmin = canPerformAdminActions(user);
   const [isOpen, setIsOpen] = useState(false);
 
   if (isLoadingOrganizations) {
@@ -43,9 +45,11 @@ export default function OrganizationSelector({
             <p className="text-gray-600 mb-4">
               You need to be part of an organization to access jobs and files.
             </p>
-            <Button variant="primary" onClick={onCreateOrganization}>
-              Create Organization
-            </Button>
+            {isAdmin && (
+              <Button variant="primary" onClick={onCreateOrganization}>
+                Create Organization
+              </Button>
+            )}
           </div>
         </Card>
       </div>
@@ -117,30 +121,32 @@ export default function OrganizationSelector({
                 </button>
               ))}
 
-              <div className="border-t border-gray-200 mt-1 pt-1">
-                <button
-                  onClick={() => {
-                    setIsOpen(false);
-                    onCreateOrganization?.();
-                  }}
-                  className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-600 flex items-center space-x-2"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+              {isAdmin && (
+                <div className="border-t border-gray-200 mt-1 pt-1">
+                  <button
+                    onClick={() => {
+                      setIsOpen(false);
+                      onCreateOrganization?.();
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-600 flex items-center space-x-2"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                    />
-                  </svg>
-                  <span>Create New Organization</span>
-                </button>
-              </div>
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                      />
+                    </svg>
+                    <span>Create New Organization</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

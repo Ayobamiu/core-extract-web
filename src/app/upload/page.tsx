@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, Typography, Button, Empty } from "antd";
 import { Upload, Building2 } from "lucide-react";
@@ -9,6 +9,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
 
 const { Title, Text } = Typography;
 
@@ -16,9 +17,36 @@ export default function UploadPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
+  const isAdmin = canPerformAdminActions(user);
+
+  // Redirect reviewers
+  useEffect(() => {
+    if (!isAdmin && user) {
+      router.push("/");
+    }
+  }, [isAdmin, user, router]);
+
+  if (!isAdmin) {
+    return (
+      <ProtectedRoute>
+        <SidebarLayout>
+          <Card>
+            <Empty
+              description="Access Denied"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            >
+              <Text type="secondary">
+                Only administrators can create new jobs.
+              </Text>
+            </Empty>
+          </Card>
+        </SidebarLayout>
+      </ProtectedRoute>
+    );
+  }
 
   return (
-    <ProtectedRoute>
+    <ProtectedRoute requireAdmin={true}>
       <SidebarLayout>
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Header */}

@@ -21,6 +21,7 @@ import {
   Divider,
   Descriptions,
   Tag,
+  Input,
 } from "antd";
 import {
   FilePdfOutlined,
@@ -47,6 +48,7 @@ import { JobFile, ProcessingConfig } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import { apiClient } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
 import moment from "moment";
 import {
   checkPermitNumberMatch,
@@ -54,9 +56,11 @@ import {
   getViolationSeverityIcon,
 } from "@/lib/constraintUtils";
 import styles from "./FileTable.module.css";
-import { Loader } from "lucide-react";
+import { Loader, MessageSquare } from "lucide-react";
 import { SignalIcon } from "@heroicons/react/24/outline";
 import StatusIndicator from "@/components/ui/StatusIndicator";
+
+const { TextArea } = Input;
 
 const { Text } = Typography;
 
@@ -148,7 +152,7 @@ const FileTable: React.FC<FileTableProps> = ({
   getJobStatusColor,
 }) => {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = canPerformAdminActions(user);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [selectedFile, setSelectedFile] = useState<JobFile | null>(null);
@@ -183,6 +187,28 @@ const FileTable: React.FC<FileTableProps> = ({
   const splitPositionRef = React.useRef(50);
   const leftPaneRef = React.useRef<HTMLDivElement>(null);
   const rightPaneRef = React.useRef<HTMLDivElement>(null);
+
+  // Comments state for drawer
+  const [drawerComments, setDrawerComments] = useState<
+    Array<{
+      id: string;
+      userId: string;
+      userEmail: string;
+      text: string;
+      createdAt: string;
+    }>
+  >([]);
+
+  // Comments state for fullscreen modal
+  const [fullscreenComments, setFullscreenComments] = useState<
+    Array<{
+      id: string;
+      userId: string;
+      userEmail: string;
+      text: string;
+      createdAt: string;
+    }>
+  >([]);
 
   // Reprocess options state
   const [reprocessOptions, setReprocessOptions] = useState({
@@ -285,14 +311,42 @@ const FileTable: React.FC<FileTableProps> = ({
   };
 
   // Handle drawer functions
-  const handleOpenDrawer = (record: JobFile) => {
+  const handleOpenDrawer = async (record: JobFile) => {
     setSelectedFile(record);
     setDrawerVisible(true);
+    // Fetch comments for this file
+    try {
+      const commentsResponse = await apiClient.getFileComments(record.id);
+      if (commentsResponse.success && commentsResponse.data?.comments) {
+        setDrawerComments(commentsResponse.data.comments);
+      }
+    } catch (err) {
+      console.error("Failed to load comments:", err);
+      setDrawerComments([]);
+    }
   };
 
   const handleCloseDrawer = () => {
     setDrawerVisible(false);
     setSelectedFile(null);
+    setDrawerComments([]);
+  };
+
+  // Handle adding comment in drawer
+  const handleDrawerAddComment = async (text: string) => {
+    if (!selectedFile) return;
+
+    try {
+      const response = await apiClient.addFileComment(selectedFile.id, text);
+
+      if (response.success && response.data?.comment) {
+        setDrawerComments((prev) => [...prev, response.data!.comment]);
+      } else {
+        throw new Error(response.message || "Failed to add comment");
+      }
+    } catch (err: any) {
+      throw err; // Re-throw to let TabbedDataViewer handle the error message
+    }
   };
 
   // Handle file details drawer
@@ -324,6 +378,17 @@ const FileTable: React.FC<FileTableProps> = ({
       } finally {
         setPdfUrlLoading(false);
       }
+
+      // Fetch comments for this file
+      try {
+        const commentsResponse = await apiClient.getFileComments(record.id);
+        if (commentsResponse.success && commentsResponse.data?.comments) {
+          setFullscreenComments(commentsResponse.data.comments);
+        }
+      } catch (err) {
+        console.error("Failed to load comments:", err);
+        setFullscreenComments([]);
+      }
     }
   };
 
@@ -331,6 +396,27 @@ const FileTable: React.FC<FileTableProps> = ({
     setFullscreenModalVisible(false);
     setFullscreenFileIndex(0);
     setPdfUrl(null);
+    setFullscreenComments([]);
+  };
+
+  // Handle adding comment in fullscreen modal
+  const handleFullscreenAddComment = async (text: string) => {
+    if (!currentFullscreenFile) return;
+
+    try {
+      const response = await apiClient.addFileComment(
+        currentFullscreenFile.id,
+        text
+      );
+
+      if (response.success && response.data?.comment) {
+        setFullscreenComments((prev) => [...prev, response.data!.comment]);
+      } else {
+        throw new Error(response.message || "Failed to add comment");
+      }
+    } catch (err: any) {
+      throw err; // Re-throw to let TabbedDataViewer handle the error message
+    }
   };
 
   const handlePreviousFile = async () => {
@@ -526,6 +612,19 @@ const FileTable: React.FC<FileTableProps> = ({
       })
       .finally(() => {
         setPdfUrlLoading(false);
+      });
+
+    // Fetch comments when file changes
+    apiClient
+      .getFileComments(currentFullscreenFile.id)
+      .then((commentsResponse) => {
+        if (commentsResponse.success && commentsResponse.data?.comments) {
+          setFullscreenComments(commentsResponse.data.comments);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load comments:", err);
+        setFullscreenComments([]);
       });
   }, [fullscreenModalVisible, fullscreenFileIndex, currentFullscreenFile?.id]);
 
@@ -1361,31 +1460,34 @@ const FileTable: React.FC<FileTableProps> = ({
 
         // Show other actions only for completed files
         if (record.processing_status === "completed" && record.result) {
-          menuItems.push(
-            {
-              key: "show",
-              label: (
-                <a
-                  onClick={() => {
-                    onShowResults(record.id);
-                    handleOpenDrawer(record);
-                  }}
-                >
-                  Show Results
-                </a>
-              ),
-            },
-            {
+          menuItems.push({
+            key: "show",
+            label: (
+              <a
+                onClick={() => {
+                  onShowResults(record.id);
+                  handleOpenDrawer(record);
+                }}
+              >
+                Show Results
+              </a>
+            ),
+          });
+
+          // Add to Preview - only for admins
+          if (isAdmin) {
+            menuItems.push({
               key: "preview",
               label: (
                 <a onClick={() => onAddToPreview(record.id)}>Add to Preview</a>
               ),
-            },
-            {
-              key: "edit",
-              label: <a onClick={() => onEditResults(record)}>Edit Results</a>,
-            }
-          );
+            });
+          }
+
+          // {
+          //   key: "edit",
+          //   label: <a onClick={() => onEditResults(record)}>Edit Results</a>,
+          // }
         }
 
         // Add "View Details" option for all files
@@ -1396,8 +1498,9 @@ const FileTable: React.FC<FileTableProps> = ({
           ),
         });
 
-        // Add delete option for all files (except those currently processing)
+        // Add delete option for all files (except those currently processing) - only for admins
         if (
+          isAdmin &&
           record.processing_status !== "processing" &&
           record.extraction_status !== "processing"
         ) {
@@ -1444,17 +1547,19 @@ const FileTable: React.FC<FileTableProps> = ({
             </Text>
           </div>
           <div className="flex items-center space-x-1">
-            <Button
-              size="small"
-              type="primary"
-              style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
-              onClick={() => {
-                onBulkAddToPreview(selectedRowKeys as string[]);
-                setSelectedRowKeys([]);
-              }}
-            >
-              Add to Preview
-            </Button>
+            {isAdmin && (
+              <Button
+                size="small"
+                type="primary"
+                style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
+                onClick={() => {
+                  onBulkAddToPreview(selectedRowKeys as string[]);
+                  setSelectedRowKeys([]);
+                }}
+              >
+                Add to Preview
+              </Button>
+            )}
             {isAdmin && (
               <Button
                 size="small"
@@ -1468,12 +1573,16 @@ const FileTable: React.FC<FileTableProps> = ({
                 ✓ Verify
               </Button>
             )}
-            <Button size="small" type="primary" onClick={handleBulkReprocess}>
-              🔄 Reprocess
-            </Button>
-            <Button size="small" danger onClick={handleBulkDelete}>
-              🗑️ Delete
-            </Button>
+            {isAdmin && (
+              <Button size="small" type="primary" onClick={handleBulkReprocess}>
+                🔄 Reprocess
+              </Button>
+            )}
+            {isAdmin && (
+              <Button size="small" danger onClick={handleBulkDelete}>
+                🗑️ Delete
+              </Button>
+            )}
             <Button size="small" onClick={() => setSelectedRowKeys([])}>
               Clear
             </Button>
@@ -1569,7 +1678,7 @@ const FileTable: React.FC<FileTableProps> = ({
               Refresh
             </Button>
           )}
-          {onAddFiles && (
+          {onAddFiles && isAdmin && (
             <Button
               size="small"
               type="primary"
@@ -1583,7 +1692,7 @@ const FileTable: React.FC<FileTableProps> = ({
             <Dropdown
               menu={{
                 items: [
-                  ...(onEditConfig
+                  ...(onEditConfig && isAdmin
                     ? [
                         {
                           key: "config",
@@ -2114,6 +2223,9 @@ const FileTable: React.FC<FileTableProps> = ({
                     // );
                   }
                 }}
+                comments={drawerComments}
+                onAddComment={handleDrawerAddComment}
+                fileId={selectedFile.id}
               />
             )}
           </div>
@@ -2314,48 +2426,46 @@ const FileTable: React.FC<FileTableProps> = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="h-full overflow-hidden">
-                      <TabbedDataViewer
-                        data={currentFullscreenFile.result}
-                        filename={currentFullscreenFile.filename}
-                        schema={jobSchema}
-                        editable={true}
-                        markdown={currentFullscreenFile.markdown}
-                        actual_result={currentFullscreenFile.actual_result}
-                        pages={
-                          Array.isArray(currentFullscreenFile.pages)
-                            ? currentFullscreenFile.pages
-                            : undefined
-                        }
-                        onUpdate={async (updatedData) => {
-                          try {
-                            await apiClient.updateFileResults(
-                              currentFullscreenFile.id,
-                              updatedData
-                            );
+                    <TabbedDataViewer
+                      data={currentFullscreenFile.result}
+                      filename={currentFullscreenFile.filename}
+                      schema={jobSchema}
+                      editable={true}
+                      markdown={currentFullscreenFile.markdown}
+                      actual_result={currentFullscreenFile.actual_result}
+                      pages={
+                        Array.isArray(currentFullscreenFile.pages)
+                          ? currentFullscreenFile.pages
+                          : undefined
+                      }
+                      onUpdate={async (updatedData) => {
+                        try {
+                          await apiClient.updateFileResults(
+                            currentFullscreenFile.id,
+                            updatedData
+                          );
 
-                            // Refresh the data in the parent component
-                            if (onDataUpdate) {
-                              await onDataUpdate();
-                            }
-
-                            // Update the current file data
-                            setData((prevData) =>
-                              prevData.map((file) =>
-                                file.id === currentFullscreenFile.id
-                                  ? { ...file, result: updatedData }
-                                  : file
-                              )
-                            );
-                          } catch (error) {
-                            console.error(
-                              "Error updating file results:",
-                              error
-                            );
+                          // Refresh the data in the parent component
+                          if (onDataUpdate) {
+                            await onDataUpdate();
                           }
-                        }}
-                      />
-                    </div>
+
+                          // Update the current file data
+                          setData((prevData) =>
+                            prevData.map((file) =>
+                              file.id === currentFullscreenFile.id
+                                ? { ...file, result: updatedData }
+                                : file
+                            )
+                          );
+                        } catch (error) {
+                          console.error("Error updating file results:", error);
+                        }
+                      }}
+                      comments={fullscreenComments}
+                      onAddComment={handleFullscreenAddComment}
+                      fileId={currentFullscreenFile.id}
+                    />
                   )}
                 </div>
               </div>

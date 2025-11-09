@@ -42,6 +42,7 @@ import {
 import { apiClient, Job, QueueStats } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import { ArrowsPointingOutIcon } from "@heroicons/react/24/outline";
@@ -60,6 +61,7 @@ export default function JobsPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
+  const isAdmin = canPerformAdminActions(user);
   const [jobs, setJobs] = useState<JobWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -339,14 +341,16 @@ export default function JobsPage() {
               Refresh
             </Button>
             <div className="flex-1" />
-            <Button
-              type="primary"
-              size="small"
-              onClick={() => router.push("/upload")}
-            >
-              <FileText className="w-4 h-6 mr-2" />
-              New Job
-            </Button>
+            {isAdmin && (
+              <Button
+                type="primary"
+                size="small"
+                onClick={() => router.push("/upload")}
+              >
+                <FileText className="w-4 h-6 mr-2" />
+                New Job
+              </Button>
+            )}
           </div>
 
           {/* Jobs Table */}

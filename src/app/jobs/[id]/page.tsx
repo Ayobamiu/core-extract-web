@@ -11,6 +11,7 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
 import { apiClient, JobDetails, JobFile } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import PreviewSelector from "@/components/preview/PreviewSelector";
@@ -36,6 +37,7 @@ export default function JobDetailPage() {
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
   const jobId = params.id as string;
+  const isAdmin = canPerformAdminActions(user);
 
   const [job, setJob] = useState<JobDetails | null>(null);
   const [fileSummary, setFileSummary] = useState<{
@@ -601,31 +603,35 @@ export default function JobDetailPage() {
                         </div>
                       ),
                     },
-                    {
-                      key: "edit",
-                      label: "Edit Schema",
-                      children: (
-                        <InlineSchemaEditor
-                          jobId={job.id}
-                          currentSchema={
-                            typeof job.schema_data === "string"
-                              ? job.schema_data
-                              : job.schema_data?.schema || job.schema_data || {}
-                          }
-                          onSuccess={(updatedSchema) => {
-                            setJob((prev) =>
-                              prev
-                                ? {
-                                    ...prev,
-                                    schema_data: updatedSchema,
-                                  }
-                                : null
-                            );
-                            setSchemaDrawerActiveTab("view"); // Switch back to view tab
-                          }}
-                        />
-                      ),
-                    },
+                    ...(isAdmin
+                      ? [
+                          {
+                            key: "edit",
+                            label: "Edit Schema",
+                            children: (
+                              <InlineSchemaEditor
+                                jobId={job.id}
+                                currentSchema={
+                                  typeof job.schema_data === "string"
+                                    ? job.schema_data
+                                    : job.schema_data?.schema || job.schema_data || {}
+                                }
+                                onSuccess={(updatedSchema) => {
+                                  setJob((prev) =>
+                                    prev
+                                      ? {
+                                          ...prev,
+                                          schema_data: updatedSchema,
+                                        }
+                                      : null
+                                  );
+                                  setSchemaDrawerActiveTab("view"); // Switch back to view tab
+                                }}
+                              />
+                            ),
+                          },
+                        ]
+                      : []),
                   ]}
                 />
               )}

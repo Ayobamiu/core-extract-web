@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { apiClient, PreviewDataTable } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import { PlusIcon, CheckIcon } from "@heroicons/react/24/outline";
@@ -17,6 +19,8 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { user } = useAuth();
+  const isAdmin = canPerformAdminActions(user);
   const [previews, setPreviews] = useState<PreviewDataTable[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPreviewId, setSelectedPreviewId] = useState<string | null>(
@@ -272,26 +276,35 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
               </div>
 
               <div className="flex space-x-3">
-                <Button
-                  onClick={handleAddToPreview}
-                  disabled={
-                    !selectedPreviewId ||
-                    adding ||
-                    (!!selectedPreviewId && fileInPreviews[selectedPreviewId])
-                  }
-                  className="flex-1"
-                >
-                  {adding ? "Adding..." : "Add to Preview"}
-                </Button>
+                {isAdmin && (
+                  <>
+                    <Button
+                      onClick={handleAddToPreview}
+                      disabled={
+                        !selectedPreviewId ||
+                        adding ||
+                        (!!selectedPreviewId && fileInPreviews[selectedPreviewId])
+                      }
+                      className="flex-1"
+                    >
+                      {adding ? "Adding..." : "Add to Preview"}
+                    </Button>
 
-                <Button
-                  variant="secondary"
-                  onClick={() => setShowCreateForm(true)}
-                  className="flex items-center space-x-2"
-                >
-                  <PlusIcon className="h-4 w-4" />
-                  <span>New</span>
-                </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => setShowCreateForm(true)}
+                      className="flex items-center space-x-2"
+                    >
+                      <PlusIcon className="h-4 w-4" />
+                      <span>New</span>
+                    </Button>
+                  </>
+                )}
+                {!isAdmin && (
+                  <Button onClick={onClose} className="flex-1">
+                    Close
+                  </Button>
+                )}
               </div>
 
               {/* MGS Data Checkbox */}

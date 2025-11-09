@@ -12,6 +12,8 @@ import {
   Spin,
 } from "antd";
 import { apiClient, PreviewDataTable } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
 
 const { Text, Title } = Typography;
 
@@ -28,6 +30,8 @@ const PreviewDrawer: React.FC<PreviewDrawerProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { user } = useAuth();
+  const isAdmin = canPerformAdminActions(user);
   const [previews, setPreviews] = useState<PreviewDataTable[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedPreviewId, setSelectedPreviewId] = useState<string>("");
@@ -209,40 +213,46 @@ const PreviewDrawer: React.FC<PreviewDrawerProps> = ({
       open={open}
       onClose={onClose}
       footer={
-        <div className="flex justify-end space-x-2">
-          <Button onClick={onClose}>Cancel</Button>
-          {!showCreateForm ? (
-            <Button
-              type="primary"
-              onClick={handleAddToPreview}
-              disabled={
-                !selectedPreviewId ||
-                adding ||
-                mgsLoading ||
-                (!!selectedPreviewId &&
-                  isFileInPreview(
-                    previews.find((p) => p.id === selectedPreviewId)!
-                  ))
-              }
-              loading={adding}
-            >
-              {adding
-                ? "Adding..."
-                : `Add ${fileIds.length} File(s) to Preview`}
-            </Button>
-          ) : (
-            <Button
-              type="primary"
-              onClick={handleCreateAndAdd}
-              disabled={!newPreviewName.trim() || creating || mgsLoading}
-              loading={creating}
-            >
-              {creating
-                ? "Creating..."
-                : `Create & Add ${fileIds.length} File(s)`}
-            </Button>
-          )}
-        </div>
+        isAdmin ? (
+          <div className="flex justify-end space-x-2">
+            <Button onClick={onClose}>Cancel</Button>
+            {!showCreateForm ? (
+              <Button
+                type="primary"
+                onClick={handleAddToPreview}
+                disabled={
+                  !selectedPreviewId ||
+                  adding ||
+                  mgsLoading ||
+                  (!!selectedPreviewId &&
+                    isFileInPreview(
+                      previews.find((p) => p.id === selectedPreviewId)!
+                    ))
+                }
+                loading={adding}
+              >
+                {adding
+                  ? "Adding..."
+                  : `Add ${fileIds.length} File(s) to Preview`}
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                onClick={handleCreateAndAdd}
+                disabled={!newPreviewName.trim() || creating || mgsLoading}
+                loading={creating}
+              >
+                {creating
+                  ? "Creating..."
+                  : `Create & Add ${fileIds.length} File(s)`}
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="flex justify-end space-x-2">
+            <Button onClick={onClose}>Close</Button>
+          </div>
+        )
       }
     >
       <div className="space-y-6">
@@ -289,13 +299,15 @@ const PreviewDrawer: React.FC<PreviewDrawerProps> = ({
               <Title level={5} className="mb-0">
                 Select Existing Preview
               </Title>
-              <Button
-                type="link"
-                onClick={() => setShowCreateForm(true)}
-                className="p-0"
-              >
-                New
-              </Button>
+              {isAdmin && (
+                <Button
+                  type="link"
+                  onClick={() => setShowCreateForm(true)}
+                  className="p-0"
+                >
+                  New
+                </Button>
+              )}
             </div>
 
             {loading ? (

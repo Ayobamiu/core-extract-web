@@ -104,6 +104,10 @@ export interface Job {
     updated_at: string;
     file_count: string;
     files?: JobFile[];
+    collaborators?: Array<{
+        email: string;
+        role: string;
+    }>;
 }
 
 export interface JobFile {
@@ -150,6 +154,13 @@ export interface JobFile {
         id: string;
         name: string;
         created_at: string;
+    }>;
+    comments?: Array<{
+        id: string;
+        userId: string;
+        userEmail: string;
+        text: string;
+        createdAt: string;
     }>;
 }
 
@@ -869,6 +880,33 @@ class ApiClient {
         return this.request('/previews/files/bulk/enrich-with-mgs', {
             method: 'POST',
             body: JSON.stringify({ fileIds }),
+        });
+    }
+
+    async getFileComments(fileId: string): Promise<ApiResponse<{
+        comments: Array<{
+            id: string;
+            userId: string;
+            userEmail: string;
+            text: string;
+            createdAt: string;
+        }>;
+    }>> {
+        return this.request(`/files/${fileId}/comments`);
+    }
+
+    async addFileComment(fileId: string, text: string): Promise<ApiResponse<{
+        comment: {
+            id: string;
+            userId: string;
+            userEmail: string;
+            text: string;
+            createdAt: string;
+        };
+    }>> {
+        return this.request(`/files/${fileId}/comments`, {
+            method: 'POST',
+            body: JSON.stringify({ text }),
         });
     }
 

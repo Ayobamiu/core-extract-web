@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -69,6 +70,7 @@ export default function SidebarLayout({
 }: SidebarLayoutProps) {
   const { user, logout, isAuthenticated } = useAuth();
   const { currentOrganization } = useOrganization();
+  const isAdmin = canPerformAdminActions(user);
   const router = useRouter();
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Start with sidebar open
@@ -217,11 +219,13 @@ export default function SidebarLayout({
                 </label>
               </div>
               <OrganizationSelector
-                onCreateOrganization={() => setIsCreateOrgModalOpen(true)}
+                onCreateOrganization={
+                  isAdmin ? () => setIsCreateOrgModalOpen(true) : undefined
+                }
               />
             </div>
           )}
-          {isDesktop && isCollapsed && (
+          {isDesktop && isCollapsed && isAdmin && (
             <div className="px-3 py-4 border-b border-gray-200 flex-shrink-0 flex justify-center">
               <button
                 onClick={() => setIsCreateOrgModalOpen(true)}

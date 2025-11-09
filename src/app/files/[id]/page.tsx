@@ -11,6 +11,7 @@ import {
 import { apiClient, JobFile } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import { useAuth } from "@/contexts/AuthContext";
+import { canPerformAdminActions, isReviewer, canEdit } from "@/utils/roleUtils";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import SidebarLayout from "@/components/layout/SidebarLayout";
 import { Loader } from "lucide-react";
@@ -21,7 +22,8 @@ export default function FilePage() {
   const params = useParams();
   const fileId = params?.id as string;
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = canPerformAdminActions(user);
+  const canEditFile = canEdit(user);
 
   const [file, setFile] = useState<JobFile | null>(null);
   console.log({ fileId, file });
@@ -37,9 +39,23 @@ export default function FilePage() {
   const leftPaneRef = React.useRef<HTMLDivElement>(null);
   const rightPaneRef = React.useRef<HTMLDivElement>(null);
 
+  // Comments state
+  const [comments, setComments] = useState<
+    Array<{
+      id: string;
+      userId: string;
+      userEmail: string;
+      text: string;
+      createdAt: string;
+    }>
+  >([]);
+
   const pageCountDisplay = React.useMemo(() => {
     if (!file) return null;
-    if (typeof file.page_count === "number" && Number.isFinite(file.page_count)) {
+    if (
+      typeof file.page_count === "number" &&
+      Number.isFinite(file.page_count)
+    ) {
       return file.page_count;
     }
     if (typeof file.pages === "number" && Number.isFinite(file.pages)) {
@@ -76,6 +92,21 @@ export default function FilePage() {
 
           setFile(fileData);
           setJobSchema(fileData.schema_data || fileData.job?.schema_data);
+
+          // Load comments if available
+          if (fileData.comments && Array.isArray(fileData.comments)) {
+            setComments(fileData.comments);
+          } else {
+            // Fetch comments separately if not in file data
+            try {
+              const commentsResponse = await apiClient.getFileComments(fileId);
+              if (commentsResponse.success && commentsResponse.data?.comments) {
+                setComments(commentsResponse.data.comments);
+              }
+            } catch (err) {
+              console.error("Failed to load comments:", err);
+            }
+          }
         } else if (response.status === "error") {
           setError(response.message || response.error || "File not found");
         } else {
@@ -134,6 +165,22 @@ export default function FilePage() {
     } catch (err: any) {
       message.error(err.message || "Failed to update results");
       throw err;
+    }
+  };
+
+  const handleAddComment = async (text: string) => {
+    if (!file) return;
+
+    try {
+      const response = await apiClient.addFileComment(file.id, text);
+
+      if (response.success && response.data?.comment) {
+        setComments((prev) => [...prev, response.data!.comment]);
+      } else {
+        throw new Error(response.message || "Failed to add comment");
+      }
+    } catch (err: any) {
+      throw err; // Re-throw to let TabbedDataViewer handle the error message
     }
   };
 
@@ -330,7 +377,7 @@ export default function FilePage() {
                   Extracted Results
                 </Text>
               </div>
-              <div className="flex-1 overflow-auto min-h-0">
+              <div className="flex-1 overflow-auto min-h-0 flex flex-col">
                 {file.processing_status !== "completed" || !file.result ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center">
@@ -349,11 +396,14 @@ export default function FilePage() {
                     data={file.result}
                     filename={file.filename}
                     schema={jobSchema}
-                    editable={true}
+                    editable={canEditFile}
                     markdown={file.markdown}
                     actual_result={file.actual_result}
                     pages={Array.isArray(file.pages) ? file.pages : undefined}
                     onUpdate={handleUpdateResults}
+                    comments={comments}
+                    onAddComment={handleAddComment}
+                    fileId={file.id}
                   />
                 )}
               </div>

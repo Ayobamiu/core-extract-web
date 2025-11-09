@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
 import Button from "@/components/ui/Button";
 import OrganizationSelector from "@/components/organization/OrganizationSelector";
 import CreateOrganizationModal from "@/components/organization/CreateOrganizationModal";
@@ -15,6 +16,8 @@ export default function Navigation() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
   const router = useRouter();
+  
+  const isAdmin = canPerformAdminActions(user);
 
   const handleLogout = async () => {
     try {
@@ -55,12 +58,14 @@ export default function Navigation() {
                 >
                   Dashboard
                 </Link>
-                <Link
-                  href="/upload"
-                  className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-                >
-                  Upload Files
-                </Link>
+                {isAdmin && (
+                  <Link
+                    href="/upload"
+                    className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+                  >
+                    Upload Files
+                  </Link>
+                )}
                 <Link
                   href="/profile"
                   className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
@@ -71,7 +76,9 @@ export default function Navigation() {
                 {/* Organization Selector */}
                 <div className="w-64">
                   <OrganizationSelector
-                    onCreateOrganization={() => setIsCreateOrgModalOpen(true)}
+                    onCreateOrganization={
+                      isAdmin ? () => setIsCreateOrgModalOpen(true) : undefined
+                    }
                   />
                 </div>
 
@@ -155,13 +162,15 @@ export default function Navigation() {
                   >
                     Dashboard
                   </Link>
-                  <Link
-                    href="/upload"
-                    className="text-gray-700 hover:text-blue-600 block px-3 py-2 rounded-md text-base font-medium"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Upload Files
-                  </Link>
+                  {isAdmin && (
+                    <Link
+                      href="/upload"
+                      className="text-gray-700 hover:text-blue-600 block px-3 py-2 rounded-md text-base font-medium"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      Upload Files
+                    </Link>
+                  )}
                   <Link
                     href="/profile"
                     className="text-gray-700 hover:text-blue-600 block px-3 py-2 rounded-md text-base font-medium"
