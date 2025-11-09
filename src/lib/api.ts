@@ -134,6 +134,10 @@ export interface JobFile {
     processing_error?: string;
     admin_verified?: boolean;
     customer_verified?: boolean;
+    review_status?: 'pending' | 'in_review' | 'reviewed' | 'approved' | 'rejected';
+    reviewed_by?: string;
+    reviewed_at?: string;
+    review_notes?: string;
     created_at: string;
     processed_at?: string;
     extraction_time_seconds?: number;
@@ -273,7 +277,39 @@ class ApiClient {
 
         try {
             const response = await fetch(url, config);
-            const data = await response.json();
+
+            // Try to parse JSON, but handle non-JSON responses gracefully
+            let data;
+            const contentType = response.headers.get('content-type');
+            const responseClone = response.clone(); // Clone for potential text reading
+
+            if (contentType && contentType.includes('application/json')) {
+                try {
+                    data = await response.json();
+                } catch (jsonError) {
+                    // If JSON parsing fails, try to read as text from clone
+                    try {
+                        const text = await responseClone.text();
+                        return {
+                            status: 'error',
+                            success: false,
+                            message: `Invalid JSON response: ${text.substring(0, 100)}`,
+                            error: 'Invalid JSON response'
+                        };
+                    } catch (textError) {
+                        return {
+                            status: 'error',
+                            success: false,
+                            message: 'Failed to parse response',
+                            error: 'Response parsing failed'
+                        };
+                    }
+                }
+            } else {
+                // Non-JSON response
+                const text = await response.text();
+                data = { message: text };
+            }
 
             if (!response.ok) {
                 // Handle authentication errors
@@ -296,7 +332,17 @@ class ApiClient {
                 };
             }
 
-            return data;
+            // Normalize response to include success property for consistency
+            // Handle different response formats:
+            // 1. { status: 'success', ... } -> { status: 'success', success: true, ... }
+            // 2. { success: true, ... } -> keep as is
+            // 3. Other formats -> assume success if response.ok
+            const normalizedResponse = {
+                ...data,
+                success: data.status === 'success' || data.success === true || (data.status !== 'error' && response.ok)
+            };
+
+            return normalizedResponse;
         } catch (error) {
             console.error(`API request failed: ${endpoint}`, error);
             throw error;
@@ -907,6 +953,66 @@ class ApiClient {
         return this.request(`/files/${fileId}/comments`, {
             method: 'POST',
             body: JSON.stringify({ text }),
+        });
+    }
+
+    async updateFileReviewStatus(
+        fileId: string,
+        reviewStatus: 'pending' | 'in_review' | 'reviewed' | 'approved' | 'rejected',
+        reviewNotes?: string
+    ): Promise<ApiResponse<{
+        id: string;
+        filename: string;
+        review_status: string;
+        reviewed_by: string;
+        reviewed_at: string;
+        review_notes?: string;
+    }>> {
+        return this.request(`/files/${fileId}/review`, {
+            method: 'PUT',
+            body: JSON.stringify({ reviewStatus, reviewNotes }),
+        });
+    }
+
+    async bulkUpdateFileReviewStatus(
+        fileIds: string[],
+        reviewStatus: 'pending' | 'in_review' | 'reviewed' | 'approved' | 'rejected',
+        reviewNotes?: string
+    ): Promise<ApiResponse<{
+        updated: Array<{
+            id: string;
+            filename: string;
+            review_status: string;
+            reviewed_by: string;
+            reviewed_at: string;
+            review_notes?: string;
+            job_id: string;
+        }>;
+        denied?: Array<{ fileId: string; error: string }>;
+    }>> {
+        return this.request('/files/bulk/review', {
+            method: 'PUT',
+            body: JSON.stringify({ fileIds, reviewStatus, reviewNotes }),
+        });
+    }
+
+    async bulkVerifyFiles(
+        fileIds: string[],
+        adminVerified?: boolean,
+        customerVerified?: boolean
+    ): Promise<ApiResponse<{
+        updated: Array<{
+            id: string;
+            filename: string;
+            admin_verified: boolean;
+            customer_verified: boolean;
+            job_id: string;
+        }>;
+        denied?: Array<{ fileId: string; error: string }>;
+    }>> {
+        return this.request('/files/bulk/verify', {
+            method: 'PUT',
+            body: JSON.stringify({ fileIds, adminVerified, customerVerified }),
         });
     }
 

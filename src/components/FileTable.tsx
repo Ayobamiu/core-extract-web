@@ -168,6 +168,7 @@ const FileTable: React.FC<FileTableProps> = ({
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [bulkVerifyModalVisible, setBulkVerifyModalVisible] = useState(false);
   const [bulkVerifyLoading, setBulkVerifyLoading] = useState(false);
+  const [bulkReviewLoading, setBulkReviewLoading] = useState(false);
   const [reprocessModalVisible, setReprocessModalVisible] = useState(false);
   const [reprocessLoading, setReprocessLoading] = useState(false);
   const [showProcessingConfigInReprocess, setShowProcessingConfigInReprocess] =
@@ -490,6 +491,147 @@ const FileTable: React.FC<FileTableProps> = ({
     }
   };
 
+  // Handle file review status update
+  const [reviewingFileId, setReviewingFileId] = useState<string | null>(null);
+  const handleUpdateReviewStatus = async (
+    fileId: string,
+    reviewStatus:
+      | "pending"
+      | "in_review"
+      | "reviewed"
+      | "approved"
+      | "rejected",
+    reviewNotes?: string
+  ) => {
+    setReviewingFileId(fileId);
+    try {
+      const response = await apiClient.updateFileReviewStatus(
+        fileId,
+        reviewStatus,
+        reviewNotes
+      );
+      if (response.status === "success" && response.data) {
+        message.success(`File marked as ${reviewStatus}`);
+        // Refresh data
+        if (onDataUpdate) {
+          await onDataUpdate();
+        }
+        // Update local state
+        setData((prevData) =>
+          prevData.map((file) =>
+            file.id === fileId
+              ? {
+                  ...file,
+                  review_status: response.data!.review_status as
+                    | "pending"
+                    | "in_review"
+                    | "reviewed"
+                    | "approved"
+                    | "rejected"
+                    | undefined,
+                  reviewed_by: response.data!.reviewed_by,
+                  reviewed_at: response.data!.reviewed_at,
+                  review_notes: response.data!.review_notes,
+                }
+              : file
+          )
+        );
+      } else {
+        throw new Error(response.message || "Failed to update review status");
+      }
+    } catch (error: any) {
+      console.error("Error updating review status:", error);
+      message.error(error.message || "Failed to update review status");
+    } finally {
+      setReviewingFileId(null);
+    }
+  };
+
+  // Handle bulk review
+  const handleBulkReview = async (
+    reviewStatus:
+      | "pending"
+      | "in_review"
+      | "reviewed"
+      | "approved"
+      | "rejected" = "reviewed"
+  ) => {
+    if (selectedRowKeys.length === 0) {
+      return;
+    }
+
+    try {
+      setBulkReviewLoading(true);
+      const fileIds = selectedRowKeys.map((key) => key.toString());
+
+      // Use bulk endpoint
+      const response = await apiClient.bulkUpdateFileReviewStatus(
+        fileIds,
+        reviewStatus
+      );
+
+      if (response.success && response.data) {
+        const updatedCount = response.data.updated?.length || 0;
+        const deniedCount = response.data.denied?.length || 0;
+
+        if (updatedCount > 0) {
+          message.success(
+            `${updatedCount} file(s) marked as ${reviewStatus} successfully`
+          );
+        }
+        if (deniedCount > 0) {
+          message.warning(
+            `${deniedCount} file(s) could not be updated (access denied or not found)`
+          );
+        }
+
+        // Update local state for updated files
+        if (response.data.updated) {
+          setData((prevData) =>
+            prevData.map((file) => {
+              const updated = response.data!.updated.find(
+                (u) => u.id === file.id
+              );
+              if (updated) {
+                return {
+                  ...file,
+                  review_status: updated.review_status as
+                    | "pending"
+                    | "in_review"
+                    | "reviewed"
+                    | "approved"
+                    | "rejected"
+                    | undefined,
+                  reviewed_by: updated.reviewed_by,
+                  reviewed_at: updated.reviewed_at,
+                  review_notes: updated.review_notes,
+                };
+              }
+              return file;
+            })
+          );
+        }
+      } else {
+        throw new Error(response.message || "Failed to update review status");
+      }
+
+      // Clear selection and refresh data
+      setSelectedRowKeys([]);
+
+      // Trigger refresh
+      if (onDataUpdate) {
+        await onDataUpdate();
+      } else {
+        await fetchData();
+      }
+    } catch (error: any) {
+      console.error("Error updating review status for files:", error);
+      message.error(error.message || "Failed to update review status");
+    } finally {
+      setBulkReviewLoading(false);
+    }
+  };
+
   // Handle bulk verification
   const handleBulkVerify = () => {
     if (selectedRowKeys.length === 0) {
@@ -502,34 +644,51 @@ const FileTable: React.FC<FileTableProps> = ({
     try {
       setBulkVerifyLoading(true);
       const fileIds = selectedRowKeys.map((key) => key.toString());
-      const results = {
-        success: [] as string[],
-        failed: [] as Array<{ fileId: string; error: string }>,
-      };
 
-      // Verify each file
-      for (const fileId of fileIds) {
-        try {
-          await apiClient.verifyFile(fileId, adminVerified, undefined);
-          results.success.push(fileId);
-        } catch (error: any) {
-          results.failed.push({
-            fileId,
-            error: error.message || "Failed to verify file",
-          });
+      // Use bulk endpoint
+      const response = await apiClient.bulkVerifyFiles(
+        fileIds,
+        adminVerified,
+        undefined
+      );
+
+      if (response.success && response.data) {
+        const updatedCount = response.data.updated?.length || 0;
+        const deniedCount = response.data.denied?.length || 0;
+
+        if (updatedCount > 0) {
+          message.success(
+            `${updatedCount} file(s) ${
+              adminVerified ? "verified" : "unverified"
+            } successfully`
+          );
         }
-      }
+        if (deniedCount > 0) {
+          message.warning(
+            `${deniedCount} file(s) could not be verified (access denied or not found)`
+          );
+        }
 
-      // Show results
-      if (results.success.length > 0) {
-        message.success(
-          `${results.success.length} file(s) ${
-            adminVerified ? "verified" : "unverified"
-          } successfully`
-        );
-      }
-      if (results.failed.length > 0) {
-        message.error(`${results.failed.length} file(s) failed to verify`);
+        // Update local state for updated files
+        if (response.data.updated) {
+          setData((prevData) =>
+            prevData.map((file) => {
+              const updated = response.data!.updated.find(
+                (u) => u.id === file.id
+              );
+              if (updated) {
+                return {
+                  ...file,
+                  admin_verified: updated.admin_verified,
+                  customer_verified: updated.customer_verified,
+                };
+              }
+              return file;
+            })
+          );
+        }
+      } else {
+        throw new Error(response.message || "Failed to verify files");
       }
 
       // Clear selection and refresh data
@@ -543,9 +702,9 @@ const FileTable: React.FC<FileTableProps> = ({
         // Fallback: directly refetch data if onDataUpdate is not provided
         await fetchData();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error verifying files:", error);
-      message.error("Failed to verify files");
+      message.error(error.message || "Failed to verify files");
     } finally {
       setBulkVerifyLoading(false);
     }
@@ -1223,6 +1382,41 @@ const FileTable: React.FC<FileTableProps> = ({
       ),
     },
     {
+      title: "Review Status",
+      key: "review_status",
+      width: 130,
+      render: (_: any, record: JobFile) => {
+        const status = record.review_status || "pending";
+        const statusColors: Record<string, string> = {
+          pending: "default",
+          in_review: "processing",
+          reviewed: "success",
+          approved: "success",
+          rejected: "error",
+        };
+        const statusLabels: Record<string, string> = {
+          pending: "Pending",
+          in_review: "In Review",
+          reviewed: "Reviewed",
+          approved: "Approved",
+          rejected: "Rejected",
+        };
+        return (
+          <Tooltip
+            title={
+              record.reviewed_at
+                ? `Reviewed at: ${moment(record.reviewed_at).format(
+                    "YYYY-MM-DD HH:mm"
+                  )}`
+                : statusLabels[status]
+            }
+          >
+            <Tag color={statusColors[status]}>{statusLabels[status]}</Tag>
+          </Tooltip>
+        );
+      },
+    },
+    {
       title: "Config",
       key: "config",
       width: 150,
@@ -1488,6 +1682,39 @@ const FileTable: React.FC<FileTableProps> = ({
           //   key: "edit",
           //   label: <a onClick={() => onEditResults(record)}>Edit Results</a>,
           // }
+
+          // Mark as Reviewed - for reviewers (non-admins) and admins
+          if (record.processing_status === "completed" && record.result) {
+            const isReviewed =
+              record.review_status === "reviewed" ||
+              record.review_status === "approved";
+            const isUpdating = reviewingFileId === record.id;
+            menuItems.push({
+              key: "mark_reviewed",
+              label: (
+                <a
+                  onClick={() => {
+                    if (!isUpdating) {
+                      handleUpdateReviewStatus(
+                        record.id,
+                        isReviewed ? "pending" : "reviewed"
+                      );
+                    }
+                  }}
+                  style={{
+                    cursor: isUpdating ? "not-allowed" : "pointer",
+                    opacity: isUpdating ? 0.5 : 1,
+                  }}
+                >
+                  {isUpdating
+                    ? "Updating..."
+                    : isReviewed
+                    ? "Mark as Pending"
+                    : "Mark as Reviewed"}
+                </a>
+              ),
+            });
+          }
         }
 
         // Add "View Details" option for all files
@@ -1547,6 +1774,15 @@ const FileTable: React.FC<FileTableProps> = ({
             </Text>
           </div>
           <div className="flex items-center space-x-1">
+            <Button
+              size="small"
+              type="primary"
+              style={{ backgroundColor: "#1890ff", borderColor: "#1890ff" }}
+              onClick={() => handleBulkReview("reviewed")}
+              loading={bulkReviewLoading}
+            >
+              ✓ Mark as Reviewed
+            </Button>
             {isAdmin && (
               <Button
                 size="small"
