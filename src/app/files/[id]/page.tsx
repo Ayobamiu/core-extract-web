@@ -10,6 +10,7 @@ import {
 } from "@ant-design/icons";
 import { apiClient, JobFile } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
+import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import { useAuth } from "@/contexts/AuthContext";
 import { canPerformAdminActions, isReviewer, canEdit } from "@/utils/roleUtils";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -372,10 +373,11 @@ export default function FilePage() {
               className="bg-white flex flex-col min-w-0 overflow-hidden"
               style={{ width: `${100 - splitPosition}%`, minWidth: "200px" }}
             >
-              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0 flex items-center justify-between">
                 <Text strong className="text-sm">
                   Extracted Results
                 </Text>
+                <ConstraintErrorIcon file={file} />
               </div>
               <div className="flex-1 overflow-auto min-h-0 flex flex-col">
                 {file.processing_status !== "completed" || !file.result ? (

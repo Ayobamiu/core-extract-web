@@ -55,6 +55,8 @@ import {
   getViolationSeverityColor,
   getViolationSeverityIcon,
 } from "@/lib/constraintUtils";
+import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
+import ConstraintList from "@/components/ui/ConstraintList";
 import styles from "./FileTable.module.css";
 import { Loader, MessageSquare } from "lucide-react";
 import { SignalIcon } from "@heroicons/react/24/outline";
@@ -2379,9 +2381,12 @@ const FileTable: React.FC<FileTableProps> = ({
       <Drawer
         title={
           selectedFile ? (
-            <div className="flex items-center space-x-2">
-              <FilePdfOutlined className="text-blue-500" />
-              <span className="font-medium">{selectedFile.filename}</span>
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center space-x-2">
+                <FilePdfOutlined className="text-blue-500" />
+                <span className="font-medium">{selectedFile.filename}</span>
+              </div>
+              <ConstraintErrorIcon file={selectedFile} />
             </div>
           ) : (
             "File Results"
@@ -2640,10 +2645,11 @@ const FileTable: React.FC<FileTableProps> = ({
                 className="bg-white flex flex-col min-w-0 overflow-hidden"
                 style={{ width: `${100 - splitPosition}%`, minWidth: "200px" }}
               >
-                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0 flex items-center justify-between">
                   <Text strong className="text-sm">
                     Extracted Results
                   </Text>
+                  <ConstraintErrorIcon file={currentFullscreenFile} />
                 </div>
                 <div className="flex-1 overflow-hidden min-h-0">
                   {currentFullscreenFile.processing_status !== "completed" ||
@@ -3128,6 +3134,9 @@ const FileTable: React.FC<FileTableProps> = ({
                 </Descriptions.Item>
               </Descriptions>
             </div>
+
+            {/* Constraints */}
+            <ConstraintList file={selectedFileForDetails} />
           </div>
         )}
       </Drawer>

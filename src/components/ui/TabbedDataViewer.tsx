@@ -46,7 +46,14 @@ interface TabbedDataViewerProps {
   fileId?: string; // File ID for fetching comments if not provided
 }
 
-type TabType = "preview" | "json" | "csv" | "edit" | "markdown" | "compare" | "comments";
+type TabType =
+  | "preview"
+  | "json"
+  | "csv"
+  | "edit"
+  | "markdown"
+  | "compare"
+  | "comments";
 type MarkdownViewType = "full" | "pages" | "chunks";
 
 const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
@@ -535,7 +542,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               }`}
             >
               <MessageSquare className="w-3 h-3" />
-              <span>Comments {comments.length > 0 ? `(${comments.length})` : ""}</span>
+              <span>
+                Comments {comments.length > 0 ? `(${comments.length})` : ""}
+              </span>
             </button>
           )}
         </div>
@@ -1149,7 +1158,6 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                     ))
                   )}
                 </div>
-                
                 {/* Add Comment Form */}
                 {onAddComment && (
                   <div className="border-t border-gray-200 pt-4">

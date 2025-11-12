@@ -148,3 +148,122 @@ export function getViolationSeverityIcon(severity: string): string {
             return '🔍';
     }
 }
+
+/**
+ * Constraint validation result
+ */
+export interface ConstraintCheck {
+    name: string;
+    passed: boolean;
+    message: string;
+    severity: 'error' | 'warning' | 'info';
+    details?: any;
+}
+
+/**
+ * Check all constraints for a file (same logic as in FileTable Constraints column)
+ */
+export function checkFileConstraints(file: JobFile): ConstraintCheck[] {
+    const checks: ConstraintCheck[] = [];
+
+    // Only check constraints for specific job and completed files
+    if (
+        file.processing_status !== 'completed' ||
+        file.job_id !== '5667fe82-63e1-47fa-a640-b182b5c5d034' ||
+        !file.result
+    ) {
+        return checks;
+    }
+
+    // 1. Permit number mismatch check
+    const permitCheck = checkPermitNumberMatch(file);
+    if (permitCheck.hasViolation) {
+        checks.push({
+            name: 'Permit Number Match',
+            passed: false,
+            message: permitCheck.message,
+            severity: 'warning',
+            details: {
+                filenamePermit: permitCheck.filenamePermit,
+                dataPermit: permitCheck.dataPermit,
+            },
+        });
+    } else if (permitCheck.filenamePermit && permitCheck.dataPermit) {
+        checks.push({
+            name: 'Permit Number Match',
+            passed: true,
+            message: 'Permit numbers match',
+            severity: 'info',
+            details: {
+                filenamePermit: permitCheck.filenamePermit,
+                dataPermit: permitCheck.dataPermit,
+            },
+        });
+    }
+
+    // 2. API number check
+    const hasApiNumber = !!file.result?.api_number;
+    if (!hasApiNumber) {
+        checks.push({
+            name: 'API Number',
+            passed: false,
+            message: 'API number not found in extracted data',
+            severity: 'error',
+        });
+    } else {
+        checks.push({
+            name: 'API Number',
+            passed: true,
+            message: `API number: ${file.result.api_number}`,
+            severity: 'info',
+        });
+    }
+
+    // 3. Elevation check
+    const elevation = file.result?.elevation;
+    const correctElevation = elevation && elevation > 100;
+    if (!correctElevation) {
+        checks.push({
+            name: 'Elevation',
+            passed: false,
+            message: elevation
+                ? `Elevation (${elevation}) is too low or missing. Expected > 100`
+                : 'Elevation is missing',
+            severity: 'error',
+            details: {
+                elevation: elevation || null,
+            },
+        });
+    } else {
+        checks.push({
+            name: 'Elevation',
+            passed: true,
+            message: `Elevation: ${elevation}`,
+            severity: 'info',
+        });
+    }
+
+    // 4. Formation count check
+    const formationCount = file.result?.formations?.length || 0;
+    const correctFormationCount = formationCount >= 10;
+    if (!correctFormationCount) {
+        checks.push({
+            name: 'Formation Count',
+            passed: false,
+            message: `Formation count (${formationCount}) is too low. Expected >= 10`,
+            severity: 'error',
+            details: {
+                count: formationCount,
+            },
+        });
+    } else {
+        checks.push({
+            name: 'Formation Count',
+            passed: true,
+            message: `Formation count: ${formationCount}`,
+            severity: 'info',
+        });
+    }
+
+    return checks;
+}
