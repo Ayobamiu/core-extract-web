@@ -2398,9 +2398,50 @@ const FileTable: React.FC<FileTableProps> = ({
         open={drawerVisible}
         width={800}
         extra={
-          <Button type="text" onClick={handleCloseDrawer}>
-            Close
-          </Button>
+          <div className="flex items-center space-x-2">
+            {selectedFile && (
+              <Button
+                type={
+                  selectedFile.review_status === "reviewed"
+                    ? "default"
+                    : "primary"
+                }
+                icon={
+                  reviewingFileId === selectedFile.id ? (
+                    <Loader className="w-4 h-4 animate-spin" />
+                  ) : selectedFile.review_status === "reviewed" ? (
+                    <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                  ) : (
+                    <FileTextOutlined />
+                  )
+                }
+                onClick={() =>
+                  handleUpdateReviewStatus(
+                    selectedFile.id,
+                    selectedFile.review_status === "reviewed"
+                      ? "pending"
+                      : "reviewed"
+                  )
+                }
+                disabled={reviewingFileId === selectedFile.id}
+                loading={reviewingFileId === selectedFile.id}
+                style={
+                  selectedFile.review_status === "reviewed"
+                    ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
+                    : {}
+                }
+              >
+                {reviewingFileId === selectedFile.id
+                  ? "Updating..."
+                  : selectedFile.review_status === "reviewed"
+                  ? "Reviewed"
+                  : "Mark as Reviewed"}
+              </Button>
+            )}
+            <Button type="text" onClick={handleCloseDrawer}>
+              Close
+            </Button>
+          </div>
         }
       >
         {selectedFile && (
@@ -2542,6 +2583,43 @@ const FileTable: React.FC<FileTableProps> = ({
                 </div>
               </div>
               <div className="flex items-center space-x-2">
+                <Button
+                  type={
+                    currentFullscreenFile.review_status === "reviewed"
+                      ? "default"
+                      : "primary"
+                  }
+                  icon={
+                    reviewingFileId === currentFullscreenFile.id ? (
+                      <Loader className="w-4 h-4 animate-spin" />
+                    ) : currentFullscreenFile.review_status === "reviewed" ? (
+                      <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                    ) : (
+                      <FileTextOutlined />
+                    )
+                  }
+                  onClick={() =>
+                    handleUpdateReviewStatus(
+                      currentFullscreenFile.id,
+                      currentFullscreenFile.review_status === "reviewed"
+                        ? "pending"
+                        : "reviewed"
+                    )
+                  }
+                  disabled={reviewingFileId === currentFullscreenFile.id}
+                  loading={reviewingFileId === currentFullscreenFile.id}
+                  style={
+                    currentFullscreenFile.review_status === "reviewed"
+                      ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
+                      : {}
+                  }
+                >
+                  {reviewingFileId === currentFullscreenFile.id
+                    ? "Updating..."
+                    : currentFullscreenFile.review_status === "reviewed"
+                    ? "Reviewed"
+                    : "Mark as Reviewed"}
+                </Button>
                 {isAdmin && (
                   <Button
                     type={

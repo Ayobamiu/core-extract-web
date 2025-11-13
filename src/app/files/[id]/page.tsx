@@ -7,6 +7,7 @@ import {
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   FilePdfOutlined,
+  FileTextOutlined,
 } from "@ant-design/icons";
 import { apiClient, JobFile } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
@@ -34,6 +35,7 @@ export default function FilePage() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfUrlLoading, setPdfUrlLoading] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
   const [splitPosition, setSplitPosition] = useState(50); // Percentage
   const [isResizing, setIsResizing] = useState(false);
   const splitPositionRef = React.useRef(50);
@@ -153,6 +155,45 @@ export default function FilePage() {
       message.error(err.message || "Failed to update verification status");
     } finally {
       setIsVerifying(false);
+    }
+  };
+
+  const handleUpdateReviewStatus = async (
+    fileId: string,
+    reviewStatus: "pending" | "in_review" | "reviewed" | "approved" | "rejected"
+  ) => {
+    setIsReviewing(true);
+    try {
+      const response = await apiClient.updateFileReviewStatus(
+        fileId,
+        reviewStatus
+      );
+      if (response.status === "success" && response.data) {
+        setFile((prev) =>
+          prev
+            ? {
+                ...prev,
+                review_status: response.data!.review_status as
+                  | "pending"
+                  | "in_review"
+                  | "reviewed"
+                  | "approved"
+                  | "rejected"
+                  | undefined,
+                reviewed_by: response.data!.reviewed_by,
+                reviewed_at: response.data!.reviewed_at,
+                review_notes: response.data!.review_notes,
+              }
+            : null
+        );
+        message.success(`File marked as ${reviewStatus}`);
+      } else {
+        throw new Error(response.message || "Failed to update review status");
+      }
+    } catch (err: any) {
+      message.error(err.message || "Failed to update review status");
+    } finally {
+      setIsReviewing(false);
     }
   };
 
@@ -284,34 +325,67 @@ export default function FilePage() {
           </div>
         }
         headerActions={
-          isAdmin ? (
+          <div className="flex items-center space-x-2">
             <Button
-              type={file.admin_verified ? "default" : "primary"}
+              type={file.review_status === "reviewed" ? "default" : "primary"}
               icon={
-                isVerifying ? (
+                isReviewing ? (
                   <Loader className="w-4 h-4 animate-spin" />
-                ) : file.admin_verified ? (
+                ) : file.review_status === "reviewed" ? (
                   <CheckCircleOutlined style={{ color: "#52c41a" }} />
                 ) : (
-                  <CheckCircleOutlined />
+                  <FileTextOutlined />
                 )
               }
-              onClick={() => handleVerifyFile(file.id, !file.admin_verified)}
-              disabled={file.admin_verified || isVerifying}
-              loading={isVerifying}
+              onClick={() =>
+                handleUpdateReviewStatus(
+                  file.id,
+                  file.review_status === "reviewed" ? "pending" : "reviewed"
+                )
+              }
+              disabled={isReviewing}
+              loading={isReviewing}
               style={
-                file.admin_verified
+                file.review_status === "reviewed"
                   ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
                   : {}
               }
             >
-              {isVerifying
-                ? "Verifying..."
-                : file.admin_verified
-                ? "Verified"
-                : "Verify"}
+              {isReviewing
+                ? "Updating..."
+                : file.review_status === "reviewed"
+                ? "Reviewed"
+                : "Mark as Reviewed"}
             </Button>
-          ) : undefined
+            {isAdmin && (
+              <Button
+                type={file.admin_verified ? "default" : "primary"}
+                icon={
+                  isVerifying ? (
+                    <Loader className="w-4 h-4 animate-spin" />
+                  ) : file.admin_verified ? (
+                    <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                  ) : (
+                    <CheckCircleOutlined />
+                  )
+                }
+                onClick={() => handleVerifyFile(file.id, !file.admin_verified)}
+                disabled={file.admin_verified || isVerifying}
+                loading={isVerifying}
+                style={
+                  file.admin_verified
+                    ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
+                    : {}
+                }
+              >
+                {isVerifying
+                  ? "Verifying..."
+                  : file.admin_verified
+                  ? "Verified"
+                  : "Verify"}
+              </Button>
+            )}
+          </div>
         }
       >
         <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden -m-6 bg-white">
