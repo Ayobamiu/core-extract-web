@@ -144,16 +144,29 @@ export default function JobDetailPage() {
         console.error("Failed to refresh file summary:", err);
       }
 
-      // Trigger FileTable refresh - FileTable will fetch updated file data itself
-      // Use a small delay to ensure database has been updated
-      setTimeout(() => {
-        console.log("🔄 Triggering FileTable refresh...");
-        setFileTableRefreshTrigger((prev) => {
-          const newValue = prev + 1;
-          console.log(`📊 Refresh trigger updated: ${prev} -> ${newValue}`);
-          return newValue;
-        });
-      }, 100);
+      // Trigger FileTable refresh with retry logic to handle race conditions
+      // Try immediate refresh first, then retry if needed
+      const triggerRefresh = (attempt = 1, maxAttempts = 3) => {
+        const delay = attempt === 1 ? 50 : attempt === 2 ? 200 : 500; // Progressive delays
+
+        setTimeout(() => {
+          console.log(
+            `🔄 Triggering FileTable refresh (attempt ${attempt}/${maxAttempts})...`
+          );
+          setFileTableRefreshTrigger((prev) => {
+            const newValue = prev + 1;
+            console.log(`📊 Refresh trigger updated: ${prev} -> ${newValue}`);
+            return newValue;
+          });
+
+          // If not the last attempt, schedule a retry to catch late database updates
+          if (attempt < maxAttempts) {
+            triggerRefresh(attempt + 1, maxAttempts);
+          }
+        }, delay);
+      };
+
+      triggerRefresh();
 
       // Clear message after 5 seconds
       setTimeout(() => {
@@ -260,6 +273,10 @@ export default function JobDetailPage() {
         }
         // Close modal
         setShowFilePreviewModal(false);
+        // Trigger immediate refresh of FileTable and summary after upload
+        // This ensures files appear immediately even if socket event is delayed
+        console.log("🔄 Triggering immediate refresh after file upload");
+        setFileTableRefreshTrigger((prev) => prev + 1);
       } else {
         throw new Error(response.message || "Failed to add files to job");
       }
@@ -614,7 +631,9 @@ export default function JobDetailPage() {
                                 currentSchema={
                                   typeof job.schema_data === "string"
                                     ? job.schema_data
-                                    : job.schema_data?.schema || job.schema_data || {}
+                                    : job.schema_data?.schema ||
+                                      job.schema_data ||
+                                      {}
                                 }
                                 onSuccess={(updatedSchema) => {
                                   setJob((prev) =>
