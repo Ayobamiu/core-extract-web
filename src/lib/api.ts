@@ -218,6 +218,8 @@ export interface PreviewJobFile {
     processing_status: string;
     created_at: string;
     job_name: string;
+    admin_verified?: boolean;
+    review_status?: 'pending' | 'in_review' | 'reviewed' | 'approved' | 'rejected';
 }
 
 class ApiClient {

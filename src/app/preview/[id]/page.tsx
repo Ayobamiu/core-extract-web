@@ -4,9 +4,9 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiClient, PreviewDataTable, PreviewJobFile } from "@/lib/api";
 import Button from "@/components/ui/Button";
-import { Table, Input, Modal, Button as AntButton, Dropdown } from "antd";
+import { Table, Input, Modal, Button as AntButton, Dropdown, Tag, Tooltip } from "antd";
 import { ChevronLeftIcon } from "@heroicons/react/24/outline";
-import { SearchOutlined, DownloadOutlined } from "@ant-design/icons";
+import { SearchOutlined, DownloadOutlined, CheckCircleOutlined, ClockCircleOutlined, InfoCircleOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 
 // Styles for truncation and proper spacing
@@ -234,6 +234,7 @@ const PreviewPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [arrayPopup, setArrayPopup] = useState<ArrayPopupData | null>(null);
+  const [qualityScoreModalVisible, setQualityScoreModalVisible] = useState(false);
 
   // Extract columns from schema
   const columns: TableColumn[] = useMemo(() => {
@@ -338,7 +339,85 @@ const PreviewPage: React.FC = () => {
       ),
     }));
 
-    return [...baseColumns, ...dynamicColumns];
+    // QA Status column - fixed on the right
+    const qaStatusColumn: ColumnsType<any>[0] = {
+      title: "QA Status",
+      key: "_qaStatus",
+      width: 150,
+      fixed: "right" as const,
+      ellipsis: true,
+      sorter: (a: any, b: any) => {
+        // Sort: Human Verified first, then by review status
+        const aIsVerified = a._adminVerified ? 0 : 1;
+        const bIsVerified = b._adminVerified ? 0 : 1;
+        if (aIsVerified !== bIsVerified) return aIsVerified - bIsVerified;
+        
+        const aStatus = a._reviewStatus || "pending";
+        const bStatus = b._reviewStatus || "pending";
+        const statusOrder: Record<string, number> = {
+          "reviewed": 0,
+          "approved": 1,
+          "in_review": 2,
+          "pending": 3,
+          "rejected": 4,
+        };
+        return (statusOrder[aStatus] || 99) - (statusOrder[bStatus] || 99);
+      },
+      render: (_: any, record: any) => {
+        const isHumanVerified = record._adminVerified;
+        const reviewStatus = record._reviewStatus || "pending";
+
+        if (isHumanVerified) {
+          return (
+            <Tooltip title="This data has been verified by a human expert">
+              <div className="flex items-center space-x-2">
+                <CheckCircleOutlined className="text-green-600" style={{ fontSize: "16px" }} />
+                <span className="text-green-700 font-medium">Human Verified</span>
+              </div>
+            </Tooltip>
+          );
+        }
+
+        // Map review status to display
+        const statusConfig: Record<string, { label: string; color: string; icon?: React.ReactNode }> = {
+          reviewed: {
+            label: "Reviewed",
+            color: "success",
+            icon: <CheckCircleOutlined />,
+          },
+          approved: {
+            label: "Approved",
+            color: "success",
+            icon: <CheckCircleOutlined />,
+          },
+          in_review: {
+            label: "In Review",
+            color: "processing",
+            icon: <ClockCircleOutlined />,
+          },
+          pending: {
+            label: "Pending Review",
+            color: "default",
+          },
+          rejected: {
+            label: "Rejected",
+            color: "error",
+          },
+        };
+
+        const config = statusConfig[reviewStatus] || statusConfig.pending;
+
+        return (
+          <Tooltip title={`Review status: ${config.label}`}>
+            <Tag color={config.color} icon={config.icon} className="flex items-center">
+              {config.label}
+            </Tag>
+          </Tooltip>
+        );
+      },
+    };
+
+    return [...baseColumns, ...dynamicColumns, qaStatusColumn];
   }, [columns, handleArrayClick]);
 
   // Process and filter data
@@ -350,6 +429,8 @@ const PreviewPage: React.FC = () => {
       _fileId: file.id,
       _jobName: file.job_name,
       _createdAt: file.created_at,
+      _adminVerified: file.admin_verified || false,
+      _reviewStatus: file.review_status || "pending",
       ...file.result,
     }));
 
@@ -364,6 +445,68 @@ const PreviewPage: React.FC = () => {
 
     return data;
   }, [previewData?.jobFiles, searchTerm]);
+
+  // Calculate QA statistics
+  const qaStats = useMemo(() => {
+    if (!processedData.length) {
+      return {
+        total: 0,
+        humanVerified: 0,
+        reviewed: 0,
+        approved: 0,
+        inReview: 0,
+        pending: 0,
+        rejected: 0,
+        humanVerifiedPercentage: 0,
+        qualityScore: 0,
+        allVerified: false,
+      };
+    }
+
+    const stats = {
+      total: processedData.length,
+      humanVerified: 0,
+      reviewed: 0,
+      approved: 0,
+      inReview: 0,
+      pending: 0,
+      rejected: 0,
+    };
+
+    processedData.forEach((item) => {
+      if (item._adminVerified) {
+        stats.humanVerified++;
+      } else {
+        const status = item._reviewStatus || "pending";
+        if (status === "reviewed") stats.reviewed++;
+        else if (status === "approved") stats.approved++;
+        else if (status === "in_review") stats.inReview++;
+        else if (status === "rejected") stats.rejected++;
+        else stats.pending++;
+      }
+    });
+
+    const humanVerifiedPercentage = Math.round(
+      (stats.humanVerified / stats.total) * 100
+    );
+
+    // Quality score: Human Verified = 100%, Reviewed/Approved = 80%, In Review = 50%, Pending = 30%, Rejected = 0%
+    const qualityScore = Math.round(
+      (stats.humanVerified * 100 +
+        (stats.reviewed + stats.approved) * 80 +
+        stats.inReview * 50 +
+        stats.pending * 30 +
+        stats.rejected * 0) /
+        stats.total
+    );
+
+    return {
+      ...stats,
+      humanVerifiedPercentage,
+      qualityScore,
+      allVerified: stats.humanVerified === stats.total,
+    };
+  }, [processedData]);
 
   useEffect(() => {
     const fetchPreviewData = async () => {
@@ -611,6 +754,62 @@ const PreviewPage: React.FC = () => {
                 {processedData.length} items • {columns.length} columns
               </p>
             </div>
+
+            {/* QA Summary Badge */}
+            {qaStats.total > 0 && (
+              <>
+                <div className="h-6 w-px bg-gray-300"></div>
+                <Tooltip
+                  title={`${qaStats.humanVerified} of ${qaStats.total} items are Human Verified`}
+                >
+                  <div className="flex items-center space-x-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg">
+                    <CheckCircleOutlined className="text-green-600" />
+                    <span className="text-sm font-medium text-green-700">
+                      {qaStats.humanVerified}/{qaStats.total} Verified
+                    </span>
+                    <span className="text-xs text-green-600">
+                      ({qaStats.humanVerifiedPercentage}%)
+                    </span>
+                  </div>
+                </Tooltip>
+
+                {/* Quality Score Indicator */}
+                <div className="flex items-center space-x-2">
+                  <Tooltip
+                    title={`Quality Score: ${qaStats.qualityScore}% (based on verification and review status)`}
+                  >
+                    <div
+                      className={`flex items-center space-x-2 px-3 py-1.5 border rounded-lg ${
+                        qaStats.qualityScore >= 80
+                          ? "bg-blue-50 border-blue-200"
+                          : qaStats.qualityScore >= 50
+                          ? "bg-yellow-50 border-yellow-200"
+                          : "bg-orange-50 border-orange-200"
+                      }`}
+                    >
+                      <span
+                        className={`text-sm font-semibold ${
+                          qaStats.qualityScore >= 80
+                            ? "text-blue-700"
+                            : qaStats.qualityScore >= 50
+                            ? "text-yellow-700"
+                            : "text-orange-700"
+                        }`}
+                      >
+                        Quality: {qaStats.qualityScore}%
+                      </span>
+                    </div>
+                  </Tooltip>
+                  <Tooltip title="Learn how Quality Score is calculated">
+                    <InfoCircleOutlined
+                      className="text-gray-400 hover:text-blue-600 cursor-pointer transition-colors"
+                      style={{ fontSize: "16px" }}
+                      onClick={() => setQualityScoreModalVisible(true)}
+                    />
+                  </Tooltip>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex items-center space-x-4">
@@ -650,6 +849,21 @@ const PreviewPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Bulk Verification Indicator */}
+      {qaStats.allVerified && qaStats.total > 0 && (
+        <div className="bg-green-50 border-b border-green-200 px-6 py-3 flex-shrink-0">
+          <div className="flex items-center space-x-2">
+            <CheckCircleOutlined className="text-green-600 text-lg" />
+            <span className="text-sm font-medium text-green-800">
+              All {qaStats.total} items in this preview are Human Verified
+            </span>
+            <span className="text-xs text-green-600 ml-2">
+              ✓ Quality assured by expert review
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Scrollable Content */}
       <div className="flex-1 overflow-hidden">
         <Table
@@ -675,6 +889,98 @@ const PreviewPage: React.FC = () => {
           className="ant-table-custom h-full"
         />
       </div>
+
+      {/* Quality Score Info Modal */}
+      <Modal
+        title={
+          <div className="flex items-center space-x-2">
+            <InfoCircleOutlined className="text-blue-600" />
+            <span>Quality Score Calculation</span>
+          </div>
+        }
+        open={qualityScoreModalVisible}
+        onCancel={() => setQualityScoreModalVisible(false)}
+        footer={[
+          <AntButton key="close" onClick={() => setQualityScoreModalVisible(false)}>
+            Close
+          </AntButton>,
+        ]}
+        width={600}
+      >
+        <div className="space-y-4">
+          <div>
+            <p className="text-gray-700 mb-4">
+              The Quality Score is a weighted average that reflects the verification and review status of all items in this preview. It helps you quickly assess the overall data quality and trustworthiness.
+            </p>
+          </div>
+
+          <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+            <h4 className="font-semibold text-gray-900 mb-3">Score Breakdown:</h4>
+            
+            <div className="space-y-2">
+              <div className="flex items-center justify-between py-2 border-b border-gray-200">
+                <div className="flex items-center space-x-2">
+                  <CheckCircleOutlined className="text-green-600" />
+                  <span className="font-medium text-gray-900">Human Verified</span>
+                </div>
+                <Tag color="success" className="font-semibold">100 points</Tag>
+              </div>
+
+              <div className="flex items-center justify-between py-2 border-b border-gray-200">
+                <div className="flex items-center space-x-2">
+                  <CheckCircleOutlined className="text-blue-600" />
+                  <span className="font-medium text-gray-900">Reviewed / Approved</span>
+                </div>
+                <Tag color="processing" className="font-semibold">80 points</Tag>
+              </div>
+
+              <div className="flex items-center justify-between py-2 border-b border-gray-200">
+                <div className="flex items-center space-x-2">
+                  <ClockCircleOutlined className="text-yellow-600" />
+                  <span className="font-medium text-gray-900">In Review</span>
+                </div>
+                <Tag color="warning" className="font-semibold">50 points</Tag>
+              </div>
+
+              <div className="flex items-center justify-between py-2 border-b border-gray-200">
+                <div className="flex items-center space-x-2">
+                  <span className="text-gray-500">⏳</span>
+                  <span className="font-medium text-gray-900">Pending Review</span>
+                </div>
+                <Tag className="font-semibold">30 points</Tag>
+              </div>
+
+              <div className="flex items-center justify-between py-2">
+                <div className="flex items-center space-x-2">
+                  <span className="text-red-500">✗</span>
+                  <span className="font-medium text-gray-900">Rejected</span>
+                </div>
+                <Tag color="error" className="font-semibold">0 points</Tag>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="font-semibold text-blue-900 mb-2">How It Works:</h4>
+            <p className="text-sm text-blue-800">
+              Each item contributes points based on its status. The total score is calculated by summing all points and dividing by the total number of items, then converting to a percentage.
+            </p>
+            <p className="text-sm text-blue-800 mt-2">
+              <strong>Example:</strong> If you have 10 items (5 Human Verified, 3 Reviewed, 2 Pending), 
+              the score would be: (5×100 + 3×80 + 2×30) ÷ 10 = <strong>74%</strong>
+            </p>
+          </div>
+
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <h4 className="font-semibold text-green-900 mb-2">What This Means:</h4>
+            <ul className="text-sm text-green-800 space-y-1 list-disc list-inside">
+              <li><strong>80-100%:</strong> High quality - Most items are verified or reviewed</li>
+              <li><strong>50-79%:</strong> Medium quality - Some items need review</li>
+              <li><strong>Below 50%:</strong> Needs attention - Many items are pending or rejected</li>
+            </ul>
+          </div>
+        </div>
+      </Modal>
 
       {/* Array Items Popup */}
       <Modal
