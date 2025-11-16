@@ -4,9 +4,23 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiClient, PreviewDataTable, PreviewJobFile } from "@/lib/api";
 import Button from "@/components/ui/Button";
-import { Table, Input, Modal, Button as AntButton, Dropdown, Tag, Tooltip } from "antd";
+import {
+  Table,
+  Input,
+  Modal,
+  Button as AntButton,
+  Dropdown,
+  Tag,
+  Tooltip,
+} from "antd";
 import { ChevronLeftIcon } from "@heroicons/react/24/outline";
-import { SearchOutlined, DownloadOutlined, CheckCircleOutlined, ClockCircleOutlined, InfoCircleOutlined } from "@ant-design/icons";
+import {
+  SearchOutlined,
+  DownloadOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  InfoCircleOutlined,
+} from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 
 // Styles for truncation and proper spacing
@@ -234,7 +248,8 @@ const PreviewPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [arrayPopup, setArrayPopup] = useState<ArrayPopupData | null>(null);
-  const [qualityScoreModalVisible, setQualityScoreModalVisible] = useState(false);
+  const [qualityScoreModalVisible, setQualityScoreModalVisible] =
+    useState(false);
 
   // Extract columns from schema
   const columns: TableColumn[] = useMemo(() => {
@@ -257,23 +272,6 @@ const PreviewPage: React.FC = () => {
   const tableColumns: ColumnsType<any> = useMemo(() => {
     const baseColumns: ColumnsType<any> = [
       {
-        title: "File ID",
-        dataIndex: "_fileId",
-        key: "_fileId",
-        width: 120,
-        fixed: "left",
-        ellipsis: true,
-        sorter: (a, b) => a._fileId.localeCompare(b._fileId),
-        render: (text: string) => (
-          <span
-            className="text-gray-500 font-mono text-sm truncate block"
-            title={text}
-          >
-            {text}
-          </span>
-        ),
-      },
-      {
         title: "File",
         dataIndex: "_filename",
         key: "_filename",
@@ -284,33 +282,6 @@ const PreviewPage: React.FC = () => {
         render: (text: string) => (
           <span className="text-gray-900 truncate block" title={text}>
             {text}
-          </span>
-        ),
-      },
-      {
-        title: "Job",
-        dataIndex: "_jobName",
-        key: "_jobName",
-        width: 150,
-        ellipsis: true,
-        sorter: (a, b) => a._jobName.localeCompare(b._jobName),
-        render: (text: string) => (
-          <span className="text-gray-900 truncate block" title={text}>
-            {text}
-          </span>
-        ),
-      },
-      {
-        title: "Created",
-        dataIndex: "_createdAt",
-        key: "_createdAt",
-        width: 120,
-        ellipsis: true,
-        sorter: (a, b) =>
-          new Date(a._createdAt).getTime() - new Date(b._createdAt).getTime(),
-        render: (text: string) => (
-          <span className="text-gray-500 text-sm truncate block" title={text}>
-            {new Date(text).toLocaleDateString()}
           </span>
         ),
       },
@@ -351,15 +322,15 @@ const PreviewPage: React.FC = () => {
         const aIsVerified = a._adminVerified ? 0 : 1;
         const bIsVerified = b._adminVerified ? 0 : 1;
         if (aIsVerified !== bIsVerified) return aIsVerified - bIsVerified;
-        
+
         const aStatus = a._reviewStatus || "pending";
         const bStatus = b._reviewStatus || "pending";
         const statusOrder: Record<string, number> = {
-          "reviewed": 0,
-          "approved": 1,
-          "in_review": 2,
-          "pending": 3,
-          "rejected": 4,
+          reviewed: 0,
+          approved: 1,
+          in_review: 2,
+          pending: 3,
+          rejected: 4,
         };
         return (statusOrder[aStatus] || 99) - (statusOrder[bStatus] || 99);
       },
@@ -371,15 +342,23 @@ const PreviewPage: React.FC = () => {
           return (
             <Tooltip title="This data has been verified by a human expert">
               <div className="flex items-center space-x-2">
-                <CheckCircleOutlined className="text-green-600" style={{ fontSize: "16px" }} />
-                <span className="text-green-700 font-medium">Human Verified</span>
+                <CheckCircleOutlined
+                  className="text-green-600"
+                  style={{ fontSize: "16px" }}
+                />
+                <span className="text-green-700 font-medium">
+                  Human Verified
+                </span>
               </div>
             </Tooltip>
           );
         }
 
         // Map review status to display
-        const statusConfig: Record<string, { label: string; color: string; icon?: React.ReactNode }> = {
+        const statusConfig: Record<
+          string,
+          { label: string; color: string; icon?: React.ReactNode }
+        > = {
           reviewed: {
             label: "Reviewed",
             color: "success",
@@ -409,7 +388,11 @@ const PreviewPage: React.FC = () => {
 
         return (
           <Tooltip title={`Review status: ${config.label}`}>
-            <Tag color={config.color} icon={config.icon} className="flex items-center">
+            <Tag
+              color={config.color}
+              icon={config.icon}
+              className="flex items-center"
+            >
               {config.label}
             </Tag>
           </Tooltip>
@@ -901,7 +884,10 @@ const PreviewPage: React.FC = () => {
         open={qualityScoreModalVisible}
         onCancel={() => setQualityScoreModalVisible(false)}
         footer={[
-          <AntButton key="close" onClick={() => setQualityScoreModalVisible(false)}>
+          <AntButton
+            key="close"
+            onClick={() => setQualityScoreModalVisible(false)}
+          >
             Close
           </AntButton>,
         ]}
@@ -910,28 +896,41 @@ const PreviewPage: React.FC = () => {
         <div className="space-y-4">
           <div>
             <p className="text-gray-700 mb-4">
-              The Quality Score is a weighted average that reflects the verification and review status of all items in this preview. It helps you quickly assess the overall data quality and trustworthiness.
+              The Quality Score is a weighted average that reflects the
+              verification and review status of all items in this preview. It
+              helps you quickly assess the overall data quality and
+              trustworthiness.
             </p>
           </div>
 
           <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-            <h4 className="font-semibold text-gray-900 mb-3">Score Breakdown:</h4>
-            
+            <h4 className="font-semibold text-gray-900 mb-3">
+              Score Breakdown:
+            </h4>
+
             <div className="space-y-2">
               <div className="flex items-center justify-between py-2 border-b border-gray-200">
                 <div className="flex items-center space-x-2">
                   <CheckCircleOutlined className="text-green-600" />
-                  <span className="font-medium text-gray-900">Human Verified</span>
+                  <span className="font-medium text-gray-900">
+                    Human Verified
+                  </span>
                 </div>
-                <Tag color="success" className="font-semibold">100 points</Tag>
+                <Tag color="success" className="font-semibold">
+                  100 points
+                </Tag>
               </div>
 
               <div className="flex items-center justify-between py-2 border-b border-gray-200">
                 <div className="flex items-center space-x-2">
                   <CheckCircleOutlined className="text-blue-600" />
-                  <span className="font-medium text-gray-900">Reviewed / Approved</span>
+                  <span className="font-medium text-gray-900">
+                    Reviewed / Approved
+                  </span>
                 </div>
-                <Tag color="processing" className="font-semibold">80 points</Tag>
+                <Tag color="processing" className="font-semibold">
+                  80 points
+                </Tag>
               </div>
 
               <div className="flex items-center justify-between py-2 border-b border-gray-200">
@@ -939,13 +938,17 @@ const PreviewPage: React.FC = () => {
                   <ClockCircleOutlined className="text-yellow-600" />
                   <span className="font-medium text-gray-900">In Review</span>
                 </div>
-                <Tag color="warning" className="font-semibold">50 points</Tag>
+                <Tag color="warning" className="font-semibold">
+                  50 points
+                </Tag>
               </div>
 
               <div className="flex items-center justify-between py-2 border-b border-gray-200">
                 <div className="flex items-center space-x-2">
                   <span className="text-gray-500">⏳</span>
-                  <span className="font-medium text-gray-900">Pending Review</span>
+                  <span className="font-medium text-gray-900">
+                    Pending Review
+                  </span>
                 </div>
                 <Tag className="font-semibold">30 points</Tag>
               </div>
@@ -955,7 +958,9 @@ const PreviewPage: React.FC = () => {
                   <span className="text-red-500">✗</span>
                   <span className="font-medium text-gray-900">Rejected</span>
                 </div>
-                <Tag color="error" className="font-semibold">0 points</Tag>
+                <Tag color="error" className="font-semibold">
+                  0 points
+                </Tag>
               </div>
             </div>
           </div>
@@ -963,20 +968,33 @@ const PreviewPage: React.FC = () => {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <h4 className="font-semibold text-blue-900 mb-2">How It Works:</h4>
             <p className="text-sm text-blue-800">
-              Each item contributes points based on its status. The total score is calculated by summing all points and dividing by the total number of items, then converting to a percentage.
+              Each item contributes points based on its status. The total score
+              is calculated by summing all points and dividing by the total
+              number of items, then converting to a percentage.
             </p>
             <p className="text-sm text-blue-800 mt-2">
-              <strong>Example:</strong> If you have 10 items (5 Human Verified, 3 Reviewed, 2 Pending), 
-              the score would be: (5×100 + 3×80 + 2×30) ÷ 10 = <strong>74%</strong>
+              <strong>Example:</strong> If you have 10 items (5 Human Verified,
+              3 Reviewed, 2 Pending), the score would be: (5×100 + 3×80 + 2×30)
+              ÷ 10 = <strong>74%</strong>
             </p>
           </div>
 
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <h4 className="font-semibold text-green-900 mb-2">What This Means:</h4>
+            <h4 className="font-semibold text-green-900 mb-2">
+              What This Means:
+            </h4>
             <ul className="text-sm text-green-800 space-y-1 list-disc list-inside">
-              <li><strong>80-100%:</strong> High quality - Most items are verified or reviewed</li>
-              <li><strong>50-79%:</strong> Medium quality - Some items need review</li>
-              <li><strong>Below 50%:</strong> Needs attention - Many items are pending or rejected</li>
+              <li>
+                <strong>80-100%:</strong> High quality - Most items are verified
+                or reviewed
+              </li>
+              <li>
+                <strong>50-79%:</strong> Medium quality - Some items need review
+              </li>
+              <li>
+                <strong>Below 50%:</strong> Needs attention - Many items are
+                pending or rejected
+              </li>
             </ul>
           </div>
         </div>
