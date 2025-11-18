@@ -171,6 +171,7 @@ const FileTable: React.FC<FileTableProps> = ({
   const [bulkVerifyModalVisible, setBulkVerifyModalVisible] = useState(false);
   const [bulkVerifyLoading, setBulkVerifyLoading] = useState(false);
   const [bulkReviewLoading, setBulkReviewLoading] = useState(false);
+  const [bulkReviewAndVerifyLoading, setBulkReviewAndVerifyLoading] = useState(false);
   const [reprocessModalVisible, setReprocessModalVisible] = useState(false);
   const [reprocessLoading, setReprocessLoading] = useState(false);
   const [showProcessingConfigInReprocess, setShowProcessingConfigInReprocess] =
@@ -499,6 +500,59 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // Handle file review status update
   const [reviewingFileId, setReviewingFileId] = useState<string | null>(null);
+  
+  const handleReviewAndVerifyFile = async (fileId: string) => {
+    setReviewingFileId(fileId);
+    setVerifyingFileId(fileId);
+    try {
+      const response = await apiClient.bulkReviewAndVerifyFiles(
+        [fileId],
+        "reviewed",
+        true // adminVerified
+      );
+
+      if (response.success && response.data && response.data.updated?.length > 0) {
+        const updated = response.data.updated[0];
+        message.success("File marked as reviewed and verified successfully");
+        
+        // Refresh data
+        if (onDataUpdate) {
+          await onDataUpdate();
+        }
+        
+        // Update local state
+        setData((prevData) =>
+          prevData.map((file) =>
+            file.id === fileId
+              ? {
+                  ...file,
+                  review_status: updated.review_status as
+                    | "pending"
+                    | "in_review"
+                    | "reviewed"
+                    | "approved"
+                    | "rejected"
+                    | undefined,
+                  reviewed_by: updated.reviewed_by,
+                  reviewed_at: updated.reviewed_at,
+                  admin_verified: updated.admin_verified,
+                  customer_verified: updated.customer_verified,
+                }
+              : file
+          )
+        );
+      } else {
+        throw new Error(response.message || "Failed to update file");
+      }
+    } catch (error: any) {
+      console.error("Error reviewing and verifying file:", error);
+      message.error(error.message || "Failed to update file");
+    } finally {
+      setReviewingFileId(null);
+      setVerifyingFileId(null);
+    }
+  };
+
   const handleUpdateReviewStatus = async (
     fileId: string,
     reviewStatus:
@@ -639,6 +693,88 @@ const FileTable: React.FC<FileTableProps> = ({
   };
 
   // Handle bulk verification
+  const handleBulkReviewAndVerify = async () => {
+    if (selectedRowKeys.length === 0) {
+      return;
+    }
+    try {
+      setBulkReviewAndVerifyLoading(true);
+      const fileIds = selectedRowKeys.map((key) => key.toString());
+
+      // Use combined endpoint
+      const response = await apiClient.bulkReviewAndVerifyFiles(
+        fileIds,
+        "reviewed",
+        true // adminVerified
+      );
+
+      if (response.success && response.data) {
+        const updatedCount = response.data.updated?.length || 0;
+        const deniedCount = response.data.denied?.length || 0;
+
+        if (updatedCount > 0) {
+          message.success(
+            `${updatedCount} file(s) marked as reviewed and verified successfully`
+          );
+        }
+
+        if (deniedCount > 0) {
+          message.warning(
+            `${deniedCount} file(s) could not be updated (access denied or not found)`
+          );
+        }
+
+        // Update local state for updated files immediately
+        if (response.data.updated) {
+          setData((prevData) =>
+            prevData.map((file) => {
+              const updated = response.data!.updated.find(
+                (u) => u.id === file.id
+              );
+              if (updated) {
+                return {
+                  ...file,
+                  review_status: updated.review_status as
+                    | "pending"
+                    | "in_review"
+                    | "reviewed"
+                    | "approved"
+                    | "rejected"
+                    | undefined,
+                  reviewed_by: updated.reviewed_by,
+                  reviewed_at: updated.reviewed_at,
+                  admin_verified: updated.admin_verified,
+                  customer_verified: updated.customer_verified,
+                };
+              }
+              return file;
+            })
+          );
+        }
+
+        // Clear selection and refresh data
+        setSelectedRowKeys([]);
+        
+        // Trigger refresh - both via callback and by refetching data
+        if (onDataUpdate) {
+          await onDataUpdate();
+        } else {
+          // Fallback: directly refetch data if onDataUpdate is not provided
+          await fetchData();
+        }
+      } else {
+        message.error(response.message || "Failed to update files");
+      }
+    } catch (error: any) {
+      console.error("Error bulk reviewing and verifying files:", error);
+      message.error(
+        error.message || "Failed to update files. Please try again."
+      );
+    } finally {
+      setBulkReviewAndVerifyLoading(false);
+    }
+  };
+
   const handleBulkVerify = () => {
     if (selectedRowKeys.length === 0) {
       return;
@@ -1823,12 +1959,29 @@ const FileTable: React.FC<FileTableProps> = ({
                   color: "white",
                 }}
                 onClick={handleBulkVerify}
+                loading={bulkVerifyLoading}
               >
                 ✓ Verify
               </Button>
             )}
             {isAdmin && (
-              <Button size="small" type="primary" onClick={handleBulkReprocess}>
+              <Button
+                size="small"
+                type="primary"
+                style={{ backgroundColor: "#fa8c16", borderColor: "#fa8c16" }}
+                onClick={handleBulkReviewAndVerify}
+                loading={bulkReviewAndVerifyLoading}
+              >
+                ✓✓ Review & Verify
+              </Button>
+            )}
+            {isAdmin && (
+              <Button
+                size="small"
+                type="primary"
+                onClick={handleBulkReprocess}
+                loading={reprocessLoading}
+              >
                 🔄 Reprocess
               </Button>
             )}
@@ -2508,6 +2661,34 @@ const FileTable: React.FC<FileTableProps> = ({
                       : "Verify"}
                   </Button>
                 )}
+                {isAdmin && (
+                  <Button
+                    type="primary"
+                    style={{ backgroundColor: "#fa8c16", borderColor: "#fa8c16" }}
+                    icon={
+                      (reviewingFileId === selectedFile.id ||
+                        verifyingFileId === selectedFile.id) ? (
+                        <Loader className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCircleOutlined />
+                      )
+                    }
+                    onClick={() => handleReviewAndVerifyFile(selectedFile.id)}
+                    disabled={
+                      reviewingFileId === selectedFile.id ||
+                      verifyingFileId === selectedFile.id
+                    }
+                    loading={
+                      reviewingFileId === selectedFile.id ||
+                      verifyingFileId === selectedFile.id
+                    }
+                  >
+                    {(reviewingFileId === selectedFile.id ||
+                      verifyingFileId === selectedFile.id)
+                      ? "Updating..."
+                      : "Review & Verify"}
+                  </Button>
+                )}
                 <Button
                   type="default"
                   icon={
@@ -2759,6 +2940,36 @@ const FileTable: React.FC<FileTableProps> = ({
                       : currentFullscreenFile.admin_verified
                       ? "Verified"
                       : "Verify"}
+                  </Button>
+                )}
+                {isAdmin && (
+                  <Button
+                    type="primary"
+                    style={{ backgroundColor: "#fa8c16", borderColor: "#fa8c16" }}
+                    icon={
+                      (reviewingFileId === currentFullscreenFile.id ||
+                        verifyingFileId === currentFullscreenFile.id) ? (
+                        <Loader className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCircleOutlined />
+                      )
+                    }
+                    onClick={() =>
+                      handleReviewAndVerifyFile(currentFullscreenFile.id)
+                    }
+                    disabled={
+                      reviewingFileId === currentFullscreenFile.id ||
+                      verifyingFileId === currentFullscreenFile.id
+                    }
+                    loading={
+                      reviewingFileId === currentFullscreenFile.id ||
+                      verifyingFileId === currentFullscreenFile.id
+                    }
+                  >
+                    {(reviewingFileId === currentFullscreenFile.id ||
+                      verifyingFileId === currentFullscreenFile.id)
+                      ? "Updating..."
+                      : "Review & Verify"}
                   </Button>
                 )}
                 <Button

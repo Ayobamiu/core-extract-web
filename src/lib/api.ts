@@ -1018,6 +1018,30 @@ class ApiClient {
         });
     }
 
+    async bulkReviewAndVerifyFiles(
+        fileIds: string[],
+        reviewStatus: 'pending' | 'in_review' | 'reviewed' | 'approved' | 'rejected',
+        adminVerified: boolean,
+        reviewNotes?: string
+    ): Promise<ApiResponse<{
+        updated: Array<{
+            id: string;
+            filename: string;
+            review_status: string;
+            reviewed_by: string;
+            reviewed_at: string;
+            admin_verified: boolean;
+            customer_verified: boolean;
+            job_id: string;
+        }>;
+        denied?: Array<{ fileId: string; error: string }>;
+    }>> {
+        return this.request('/files/bulk/review-and-verify', {
+            method: 'PUT',
+            body: JSON.stringify({ fileIds, reviewStatus, adminVerified, reviewNotes }),
+        });
+    }
+
     async reprocessFiles(fileIds: string[], priority: number = 0, processingConfig?: ProcessingConfig): Promise<ApiResponse<{
         queuedFiles?: Array<{
             fileId: string;

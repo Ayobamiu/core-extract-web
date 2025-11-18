@@ -275,6 +275,49 @@ export default function FilePage() {
     }
   };
 
+  const handleReviewAndVerifyFile = async () => {
+    if (!file) return;
+    setIsReviewing(true);
+    setIsVerifying(true);
+    try {
+      const response = await apiClient.bulkReviewAndVerifyFiles(
+        [file.id],
+        "reviewed",
+        true // adminVerified
+      );
+
+      if (response.success && response.data && response.data.updated?.length > 0) {
+        const updated = response.data.updated[0];
+        setFile((prev) =>
+          prev
+            ? {
+                ...prev,
+                review_status: updated.review_status as
+                  | "pending"
+                  | "in_review"
+                  | "reviewed"
+                  | "approved"
+                  | "rejected"
+                  | undefined,
+                reviewed_by: updated.reviewed_by,
+                reviewed_at: updated.reviewed_at,
+                admin_verified: updated.admin_verified,
+                customer_verified: updated.customer_verified,
+              }
+            : null
+        );
+        message.success("File marked as reviewed and verified successfully");
+      } else {
+        throw new Error(response.message || "Failed to update file");
+      }
+    } catch (err: any) {
+      message.error(err.message || "Failed to update file");
+    } finally {
+      setIsReviewing(false);
+      setIsVerifying(false);
+    }
+  };
+
   const handleUpdateResults = async (updatedData: any) => {
     if (!file) return;
 
@@ -461,6 +504,26 @@ export default function FilePage() {
                   : file.admin_verified
                   ? "Verified"
                   : "Verify"}
+              </Button>
+            )}
+            {isAdmin && (
+              <Button
+                type="primary"
+                style={{ backgroundColor: "#fa8c16", borderColor: "#fa8c16" }}
+                icon={
+                  (isReviewing || isVerifying) ? (
+                    <Loader className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircleOutlined />
+                  )
+                }
+                onClick={handleReviewAndVerifyFile}
+                disabled={isReviewing || isVerifying}
+                loading={isReviewing || isVerifying}
+              >
+                {(isReviewing || isVerifying)
+                  ? "Updating..."
+                  : "Review & Verify"}
               </Button>
             )}
             <Button
