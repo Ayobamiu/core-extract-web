@@ -2,14 +2,24 @@
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { Typography, Button, Spin, Empty, message } from "antd";
+import {
+  Typography,
+  Button,
+  Spin,
+  Empty,
+  message,
+  Modal,
+  Checkbox,
+  Space,
+} from "antd";
 import {
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   FilePdfOutlined,
   FileTextOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
-import { apiClient, JobFile } from "@/lib/api";
+import { apiClient, JobFile, ProcessingConfig } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import { useAuth } from "@/contexts/AuthContext";
@@ -36,6 +46,14 @@ export default function FilePage() {
   const [pdfUrlLoading, setPdfUrlLoading] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
+  const [isReprocessing, setIsReprocessing] = useState(false);
+  const [reprocessModalVisible, setReprocessModalVisible] = useState(false);
+  const [reprocessOptions, setReprocessOptions] = useState({
+    reExtract: true,
+    reProcess: true,
+    forceExtraction: false,
+    preview: false,
+  });
   const [splitPosition, setSplitPosition] = useState(50); // Percentage
   const [isResizing, setIsResizing] = useState(false);
   const splitPositionRef = React.useRef(50);
@@ -155,6 +173,66 @@ export default function FilePage() {
       message.error(err.message || "Failed to update verification status");
     } finally {
       setIsVerifying(false);
+    }
+  };
+
+  const getReprocessConfig = (): ProcessingConfig | undefined => {
+    if (!reprocessOptions.reExtract && !reprocessOptions.reProcess) {
+      return undefined;
+    }
+    return {
+      extraction: {
+        method: "paddleocr",
+        options: {},
+      },
+      processing: {
+        method: "openai",
+        model: "gpt-4o",
+        options: {},
+      },
+      reprocess: {
+        reExtract: reprocessOptions.reExtract,
+        reProcess: reprocessOptions.reProcess,
+        forceExtraction: reprocessOptions.forceExtraction,
+        preview: reprocessOptions.preview,
+      },
+    };
+  };
+
+  const handleReprocess = async () => {
+    if (!file) return;
+
+    setIsReprocessing(true);
+    try {
+      const processingConfig = getReprocessConfig();
+      const response = await apiClient.reprocessFiles(
+        [file.id],
+        0,
+        processingConfig
+      );
+
+      if (response.status === "success") {
+        if (reprocessOptions.preview) {
+          const previewCount = response.data?.preview?.length || 0;
+          message.success(`Preview generated for ${previewCount} files`);
+        } else {
+          const queuedCount = response.data?.queuedFiles?.length || 0;
+          message.success(`${queuedCount} file queued for reprocessing`);
+        }
+        setReprocessModalVisible(false);
+        // Refresh file data
+        const fileResponse = await apiClient.getFileResult(file.id);
+        if (fileResponse.status === "success" && fileResponse.data) {
+          setFile(fileResponse.data.file);
+        }
+      } else {
+        message.error(response.message || "Failed to reprocess file");
+      }
+    } catch (error: any) {
+      console.error("Error reprocessing file:", error);
+      message.error(error.message || "Failed to reprocess file");
+    } finally {
+      setIsReprocessing(false);
     }
   };
 
@@ -385,6 +463,35 @@ export default function FilePage() {
                   : "Verify"}
               </Button>
             )}
+            <Button
+              type="default"
+              icon={
+                isReprocessing ||
+                file.extraction_status === "processing" ||
+                file.processing_status === "processing" ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ReloadOutlined />
+                )
+              }
+              onClick={() => setReprocessModalVisible(true)}
+              disabled={
+                isReprocessing ||
+                file.extraction_status === "processing" ||
+                file.processing_status === "processing"
+              }
+              loading={
+                isReprocessing ||
+                file.extraction_status === "processing" ||
+                file.processing_status === "processing"
+              }
+            >
+              {isReprocessing ||
+              file.extraction_status === "processing" ||
+              file.processing_status === "processing"
+                ? "Processing..."
+                : "Reprocess"}
+            </Button>
           </div>
         }
       >
@@ -487,6 +594,175 @@ export default function FilePage() {
           </div>
         </div>
       </SidebarLayout>
+
+      {/* Reprocess Confirmation Modal */}
+      <Modal
+        title="Reprocess File"
+        open={reprocessModalVisible}
+        onCancel={() => {
+          setReprocessModalVisible(false);
+          setReprocessOptions({
+            reExtract: true,
+            reProcess: true,
+            forceExtraction: false,
+            preview: false,
+          });
+        }}
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => {
+              setReprocessModalVisible(false);
+              setReprocessOptions({
+                reExtract: true,
+                reProcess: true,
+                forceExtraction: false,
+                preview: false,
+              });
+            }}
+          >
+            Cancel
+          </Button>,
+          <Button
+            key="preview"
+            onClick={() => {
+              setReprocessOptions((prev) => ({ ...prev, preview: true }));
+              handleReprocess();
+            }}
+            loading={isReprocessing}
+          >
+            Preview
+          </Button>,
+          <Button
+            key="reprocess"
+            type="primary"
+            loading={isReprocessing}
+            onClick={() => {
+              setReprocessOptions((prev) => ({ ...prev, preview: false }));
+              handleReprocess();
+            }}
+          >
+            Reprocess File
+          </Button>,
+        ]}
+        width={700}
+      >
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex items-center space-x-3">
+            <div className="text-blue-500 text-2xl">🔄</div>
+            <div>
+              <p className="text-lg font-medium text-gray-900">
+                Reprocess this file?
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                Choose what operations to perform on this file.
+              </p>
+            </div>
+          </div>
+
+          {/* Operation Selection */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-gray-900 mb-3">
+              Operations
+            </h4>
+            <Space direction="vertical" size="small" className="w-full">
+              <Checkbox
+                checked={reprocessOptions.reExtract}
+                onChange={(e) =>
+                  setReprocessOptions((prev) => ({
+                    ...prev,
+                    reExtract: e.target.checked,
+                  }))
+                }
+              >
+                <span className="font-medium">Re-run Text Extraction</span>
+                <div className="text-xs text-gray-600 ml-6">
+                  Extract text from PDF files again
+                </div>
+              </Checkbox>
+
+              <Checkbox
+                checked={reprocessOptions.reProcess}
+                onChange={(e) =>
+                  setReprocessOptions((prev) => ({
+                    ...prev,
+                    reProcess: e.target.checked,
+                  }))
+                }
+              >
+                <span className="font-medium">Re-run AI Processing</span>
+                <div className="text-xs text-gray-600 ml-6">
+                  Process extracted text with AI using current schema
+                </div>
+              </Checkbox>
+            </Space>
+          </div>
+
+          {/* Advanced Options */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <h4 className="text-sm font-medium text-yellow-900 mb-3">
+              Advanced Options
+            </h4>
+            <Space direction="vertical" size="small" className="w-full">
+              <Checkbox
+                checked={reprocessOptions.forceExtraction}
+                onChange={(e) =>
+                  setReprocessOptions((prev) => ({
+                    ...prev,
+                    forceExtraction: e.target.checked,
+                  }))
+                }
+                disabled={!reprocessOptions.reExtract}
+              >
+                <span className="font-medium">Force Extraction</span>
+                <div className="text-xs text-yellow-700 ml-6">
+                  Re-extract even if extraction is already completed
+                </div>
+              </Checkbox>
+            </Space>
+          </div>
+
+          {/* What Will Happen */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800 font-medium mb-2">
+              What will happen:
+            </p>
+            <ul className="text-sm text-blue-800 list-disc list-inside space-y-1">
+              {reprocessOptions.reExtract && (
+                <li>
+                  {reprocessOptions.forceExtraction
+                    ? "Force re-extract text from PDF file"
+                    : "Re-extract text from PDF file (if not already completed)"}
+                </li>
+              )}
+              {reprocessOptions.reProcess && (
+                <li>
+                  {reprocessOptions.reExtract
+                    ? "Process newly extracted text with AI"
+                    : "Process existing extracted text with AI"}
+                </li>
+              )}
+              {!reprocessOptions.reExtract && !reprocessOptions.reProcess && (
+                <li className="text-red-600">
+                  No operations selected - please choose at least one
+                </li>
+              )}
+              <li>File will show as "processing" until complete</li>
+              <li>Existing results will be overwritten</li>
+            </ul>
+          </div>
+
+          {/* Validation Warning */}
+          {!reprocessOptions.reExtract && !reprocessOptions.reProcess && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm text-red-800">
+                <strong>Error:</strong> At least one operation must be selected.
+              </p>
+            </div>
+          )}
+        </div>
+      </Modal>
     </ProtectedRoute>
   );
 }

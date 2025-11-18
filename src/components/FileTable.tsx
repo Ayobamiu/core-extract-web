@@ -175,6 +175,10 @@ const FileTable: React.FC<FileTableProps> = ({
   const [reprocessLoading, setReprocessLoading] = useState(false);
   const [showProcessingConfigInReprocess, setShowProcessingConfigInReprocess] =
     useState(false);
+  const [reprocessingFileId, setReprocessingFileId] = useState<string | null>(
+    null
+  );
+  const [singleFileReprocessMode, setSingleFileReprocessMode] = useState(false);
   const [fullscreenModalVisible, setFullscreenModalVisible] = useState(false);
   const [fullscreenFileIndex, setFullscreenFileIndex] = useState<number>(0);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -1079,10 +1083,19 @@ const FileTable: React.FC<FileTableProps> = ({
     setReprocessModalVisible(true);
   };
 
+  const handleSingleFileReprocess = (fileId: string) => {
+    setReprocessingFileId(fileId);
+    setSingleFileReprocessMode(true);
+    setReprocessModalVisible(true);
+  };
+
   const confirmBulkReprocess = async () => {
     try {
       setReprocessLoading(true);
-      const fileIds = selectedRowKeys.map((key) => key.toString());
+      const fileIds =
+        singleFileReprocessMode && reprocessingFileId
+          ? [reprocessingFileId]
+          : selectedRowKeys.map((key) => key.toString());
 
       // Use the reprocess config from state
       const processingConfig = getReprocessConfig();
@@ -1125,8 +1138,12 @@ const FileTable: React.FC<FileTableProps> = ({
           }
 
           // Clear selection and refresh data
-          setSelectedRowKeys([]);
+          if (!singleFileReprocessMode) {
+            setSelectedRowKeys([]);
+          }
           setReprocessModalVisible(false);
+          setSingleFileReprocessMode(false);
+          setReprocessingFileId(null);
           if (onDataUpdate) {
             await onDataUpdate();
           }
@@ -1968,7 +1985,12 @@ const FileTable: React.FC<FileTableProps> = ({
       dataSource={data}
       rowKey="id"
       rowSelection={rowSelection}
-      pagination={tableParams.pagination}
+      pagination={{
+        ...tableParams.pagination,
+        showQuickJumper: true,
+        showTotal: (total, range) =>
+          `${range[0]}-${range[1]} of ${total} items`,
+      }}
       loading={loading}
       onChange={handleTableChange}
       size="small"
@@ -2206,11 +2228,13 @@ const FileTable: React.FC<FileTableProps> = ({
 
       {/* Reprocess Confirmation Modal */}
       <Modal
-        title="Reprocess Files"
+        title={singleFileReprocessMode ? "Reprocess File" : "Reprocess Files"}
         open={reprocessModalVisible}
         onCancel={() => {
           setReprocessModalVisible(false);
           setShowProcessingConfigInReprocess(false);
+          setSingleFileReprocessMode(false);
+          setReprocessingFileId(null);
           // Reset options to defaults
           setReprocessOptions({
             reExtract: true,
@@ -2225,6 +2249,8 @@ const FileTable: React.FC<FileTableProps> = ({
             onClick={() => {
               setReprocessModalVisible(false);
               setShowProcessingConfigInReprocess(false);
+              setSingleFileReprocessMode(false);
+              setReprocessingFileId(null);
               // Reset options to defaults
               setReprocessOptions({
                 reExtract: true,
@@ -2255,7 +2281,10 @@ const FileTable: React.FC<FileTableProps> = ({
               confirmBulkReprocess();
             }}
           >
-            Reprocess {selectedRowKeys.length} Files
+            Reprocess{" "}
+            {singleFileReprocessMode
+              ? "File"
+              : `${selectedRowKeys.length} Files`}
           </Button>,
         ]}
         width={700}
@@ -2266,10 +2295,15 @@ const FileTable: React.FC<FileTableProps> = ({
             <div className="text-blue-500 text-2xl">🔄</div>
             <div>
               <p className="text-lg font-medium text-gray-900">
-                Reprocess {selectedRowKeys.length} files?
+                Reprocess{" "}
+                {singleFileReprocessMode
+                  ? "this file"
+                  : `${selectedRowKeys.length} files`}
+                ?
               </p>
               <p className="text-sm text-gray-600 mt-1">
-                Choose what operations to perform on the selected files.
+                Choose what operations to perform on{" "}
+                {singleFileReprocessMode ? "this file" : "the selected files"}.
               </p>
             </div>
           </div>
@@ -2400,43 +2434,110 @@ const FileTable: React.FC<FileTableProps> = ({
         extra={
           <div className="flex items-center space-x-2">
             {selectedFile && (
-              <Button
-                type={
-                  selectedFile.review_status === "reviewed"
-                    ? "default"
-                    : "primary"
-                }
-                icon={
-                  reviewingFileId === selectedFile.id ? (
-                    <Loader className="w-4 h-4 animate-spin" />
-                  ) : selectedFile.review_status === "reviewed" ? (
-                    <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                  ) : (
-                    <FileTextOutlined />
-                  )
-                }
-                onClick={() =>
-                  handleUpdateReviewStatus(
-                    selectedFile.id,
+              <>
+                <Button
+                  type={
                     selectedFile.review_status === "reviewed"
-                      ? "pending"
-                      : "reviewed"
-                  )
-                }
-                disabled={reviewingFileId === selectedFile.id}
-                loading={reviewingFileId === selectedFile.id}
-                style={
-                  selectedFile.review_status === "reviewed"
-                    ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
-                    : {}
-                }
-              >
-                {reviewingFileId === selectedFile.id
-                  ? "Updating..."
-                  : selectedFile.review_status === "reviewed"
-                  ? "Reviewed"
-                  : "Mark as Reviewed"}
-              </Button>
+                      ? "default"
+                      : "primary"
+                  }
+                  icon={
+                    reviewingFileId === selectedFile.id ? (
+                      <Loader className="w-4 h-4 animate-spin" />
+                    ) : selectedFile.review_status === "reviewed" ? (
+                      <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                    ) : (
+                      <FileTextOutlined />
+                    )
+                  }
+                  onClick={() =>
+                    handleUpdateReviewStatus(
+                      selectedFile.id,
+                      selectedFile.review_status === "reviewed"
+                        ? "pending"
+                        : "reviewed"
+                    )
+                  }
+                  disabled={reviewingFileId === selectedFile.id}
+                  loading={reviewingFileId === selectedFile.id}
+                  style={
+                    selectedFile.review_status === "reviewed"
+                      ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
+                      : {}
+                  }
+                >
+                  {reviewingFileId === selectedFile.id
+                    ? "Updating..."
+                    : selectedFile.review_status === "reviewed"
+                    ? "Reviewed"
+                    : "Mark as Reviewed"}
+                </Button>
+                {isAdmin && (
+                  <Button
+                    type={selectedFile.admin_verified ? "default" : "primary"}
+                    icon={
+                      verifyingFileId === selectedFile.id ? (
+                        <Loader className="w-4 h-4 animate-spin" />
+                      ) : selectedFile.admin_verified ? (
+                        <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                      ) : (
+                        <CheckCircleOutlined />
+                      )
+                    }
+                    onClick={() =>
+                      handleVerifyFile(
+                        selectedFile.id,
+                        !selectedFile.admin_verified
+                      )
+                    }
+                    disabled={
+                      selectedFile.admin_verified ||
+                      verifyingFileId === selectedFile.id
+                    }
+                    loading={verifyingFileId === selectedFile.id}
+                    style={
+                      selectedFile.admin_verified
+                        ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
+                        : {}
+                    }
+                  >
+                    {verifyingFileId === selectedFile.id
+                      ? "Verifying..."
+                      : selectedFile.admin_verified
+                      ? "Verified"
+                      : "Verify"}
+                  </Button>
+                )}
+                <Button
+                  type="default"
+                  icon={
+                    reprocessingFileId === selectedFile.id ||
+                    selectedFile.extraction_status === "processing" ||
+                    selectedFile.processing_status === "processing" ? (
+                      <Loader className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ReloadOutlined />
+                    )
+                  }
+                  onClick={() => handleSingleFileReprocess(selectedFile.id)}
+                  disabled={
+                    reprocessingFileId === selectedFile.id ||
+                    selectedFile.extraction_status === "processing" ||
+                    selectedFile.processing_status === "processing"
+                  }
+                  loading={
+                    reprocessingFileId === selectedFile.id ||
+                    selectedFile.extraction_status === "processing" ||
+                    selectedFile.processing_status === "processing"
+                  }
+                >
+                  {reprocessingFileId === selectedFile.id ||
+                  selectedFile.extraction_status === "processing" ||
+                  selectedFile.processing_status === "processing"
+                    ? "Processing..."
+                    : "Reprocess"}
+                </Button>
+              </>
             )}
             <Button type="text" onClick={handleCloseDrawer}>
               Close
@@ -2660,6 +2761,37 @@ const FileTable: React.FC<FileTableProps> = ({
                       : "Verify"}
                   </Button>
                 )}
+                <Button
+                  type="default"
+                  icon={
+                    reprocessingFileId === currentFullscreenFile.id ||
+                    currentFullscreenFile.extraction_status === "processing" ||
+                    currentFullscreenFile.processing_status === "processing" ? (
+                      <Loader className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ReloadOutlined />
+                    )
+                  }
+                  onClick={() =>
+                    handleSingleFileReprocess(currentFullscreenFile.id)
+                  }
+                  disabled={
+                    reprocessingFileId === currentFullscreenFile.id ||
+                    currentFullscreenFile.extraction_status === "processing" ||
+                    currentFullscreenFile.processing_status === "processing"
+                  }
+                  loading={
+                    reprocessingFileId === currentFullscreenFile.id ||
+                    currentFullscreenFile.extraction_status === "processing" ||
+                    currentFullscreenFile.processing_status === "processing"
+                  }
+                >
+                  {reprocessingFileId === currentFullscreenFile.id ||
+                  currentFullscreenFile.extraction_status === "processing" ||
+                  currentFullscreenFile.processing_status === "processing"
+                    ? "Processing..."
+                    : "Reprocess"}
+                </Button>
                 <Button
                   type="text"
                   icon={<ShrinkOutlined />}
