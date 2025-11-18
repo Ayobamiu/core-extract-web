@@ -54,6 +54,7 @@ import {
   checkPermitNumberMatch,
   getViolationSeverityColor,
   getViolationSeverityIcon,
+  checkFileConstraints,
 } from "@/lib/constraintUtils";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import ConstraintList from "@/components/ui/ConstraintList";
@@ -171,7 +172,8 @@ const FileTable: React.FC<FileTableProps> = ({
   const [bulkVerifyModalVisible, setBulkVerifyModalVisible] = useState(false);
   const [bulkVerifyLoading, setBulkVerifyLoading] = useState(false);
   const [bulkReviewLoading, setBulkReviewLoading] = useState(false);
-  const [bulkReviewAndVerifyLoading, setBulkReviewAndVerifyLoading] = useState(false);
+  const [bulkReviewAndVerifyLoading, setBulkReviewAndVerifyLoading] =
+    useState(false);
   const [reprocessModalVisible, setReprocessModalVisible] = useState(false);
   const [reprocessLoading, setReprocessLoading] = useState(false);
   const [showProcessingConfigInReprocess, setShowProcessingConfigInReprocess] =
@@ -500,7 +502,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // Handle file review status update
   const [reviewingFileId, setReviewingFileId] = useState<string | null>(null);
-  
+
   const handleReviewAndVerifyFile = async (fileId: string) => {
     setReviewingFileId(fileId);
     setVerifyingFileId(fileId);
@@ -511,15 +513,19 @@ const FileTable: React.FC<FileTableProps> = ({
         true // adminVerified
       );
 
-      if (response.success && response.data && response.data.updated?.length > 0) {
+      if (
+        response.success &&
+        response.data &&
+        response.data.updated?.length > 0
+      ) {
         const updated = response.data.updated[0];
         message.success("File marked as reviewed and verified successfully");
-        
+
         // Refresh data
         if (onDataUpdate) {
           await onDataUpdate();
         }
-        
+
         // Update local state
         setData((prevData) =>
           prevData.map((file) =>
@@ -754,7 +760,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
         // Clear selection and refresh data
         setSelectedRowKeys([]);
-        
+
         // Trigger refresh - both via callback and by refetching data
         if (onDataUpdate) {
           await onDataUpdate();
@@ -1643,6 +1649,13 @@ const FileTable: React.FC<FileTableProps> = ({
       title: "Constraints",
       key: "constraints",
       width: 120,
+      sorter: (a: JobFile, b: JobFile) => {
+        const aConstraints = checkFileConstraints(a);
+        const bConstraints = checkFileConstraints(b);
+        const aFailedCount = aConstraints.filter((c) => !c.passed).length;
+        const bFailedCount = bConstraints.filter((c) => !c.passed).length;
+        return aFailedCount - bFailedCount;
+      },
       render: (_: any, record: JobFile) => {
         // Only check for permit number mismatch using client-side logic
         const permitCheck = checkPermitNumberMatch(record);
@@ -2664,10 +2677,13 @@ const FileTable: React.FC<FileTableProps> = ({
                 {isAdmin && (
                   <Button
                     type="primary"
-                    style={{ backgroundColor: "#fa8c16", borderColor: "#fa8c16" }}
+                    style={{
+                      backgroundColor: "#fa8c16",
+                      borderColor: "#fa8c16",
+                    }}
                     icon={
-                      (reviewingFileId === selectedFile.id ||
-                        verifyingFileId === selectedFile.id) ? (
+                      reviewingFileId === selectedFile.id ||
+                      verifyingFileId === selectedFile.id ? (
                         <Loader className="w-4 h-4 animate-spin" />
                       ) : (
                         <CheckCircleOutlined />
@@ -2683,8 +2699,8 @@ const FileTable: React.FC<FileTableProps> = ({
                       verifyingFileId === selectedFile.id
                     }
                   >
-                    {(reviewingFileId === selectedFile.id ||
-                      verifyingFileId === selectedFile.id)
+                    {reviewingFileId === selectedFile.id ||
+                    verifyingFileId === selectedFile.id
                       ? "Updating..."
                       : "Review & Verify"}
                   </Button>
@@ -2945,10 +2961,13 @@ const FileTable: React.FC<FileTableProps> = ({
                 {isAdmin && (
                   <Button
                     type="primary"
-                    style={{ backgroundColor: "#fa8c16", borderColor: "#fa8c16" }}
+                    style={{
+                      backgroundColor: "#fa8c16",
+                      borderColor: "#fa8c16",
+                    }}
                     icon={
-                      (reviewingFileId === currentFullscreenFile.id ||
-                        verifyingFileId === currentFullscreenFile.id) ? (
+                      reviewingFileId === currentFullscreenFile.id ||
+                      verifyingFileId === currentFullscreenFile.id ? (
                         <Loader className="w-4 h-4 animate-spin" />
                       ) : (
                         <CheckCircleOutlined />
@@ -2966,8 +2985,8 @@ const FileTable: React.FC<FileTableProps> = ({
                       verifyingFileId === currentFullscreenFile.id
                     }
                   >
-                    {(reviewingFileId === currentFullscreenFile.id ||
-                      verifyingFileId === currentFullscreenFile.id)
+                    {reviewingFileId === currentFullscreenFile.id ||
+                    verifyingFileId === currentFullscreenFile.id
                       ? "Updating..."
                       : "Review & Verify"}
                   </Button>

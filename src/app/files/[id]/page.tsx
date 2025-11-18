@@ -286,7 +286,11 @@ export default function FilePage() {
         true // adminVerified
       );
 
-      if (response.success && response.data && response.data.updated?.length > 0) {
+      if (
+        response.success &&
+        response.data &&
+        response.data.updated?.length > 0
+      ) {
         const updated = response.data.updated[0];
         setFile((prev) =>
           prev
@@ -511,7 +515,7 @@ export default function FilePage() {
                 type="primary"
                 style={{ backgroundColor: "#fa8c16", borderColor: "#fa8c16" }}
                 icon={
-                  (isReviewing || isVerifying) ? (
+                  isReviewing || isVerifying ? (
                     <Loader className="w-4 h-4 animate-spin" />
                   ) : (
                     <CheckCircleOutlined />
@@ -521,9 +525,7 @@ export default function FilePage() {
                 disabled={isReviewing || isVerifying}
                 loading={isReviewing || isVerifying}
               >
-                {(isReviewing || isVerifying)
-                  ? "Updating..."
-                  : "Review & Verify"}
+                {isReviewing || isVerifying ? "Updating..." : "Review & Verify"}
               </Button>
             )}
             <Button
