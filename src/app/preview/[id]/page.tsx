@@ -20,8 +20,10 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   InfoCircleOutlined,
+  ExpandOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { WellboreDiagramDrawer } from "@/components/well/WellboreDiagramModal";
 
 // Styles for truncation and proper spacing
 const tableStyles = `
@@ -250,6 +252,9 @@ const PreviewPage: React.FC = () => {
   const [arrayPopup, setArrayPopup] = useState<ArrayPopupData | null>(null);
   const [qualityScoreModalVisible, setQualityScoreModalVisible] =
     useState(false);
+  const [wellboreModalOpen, setWellboreModalOpen] = useState(false);
+  const [selectedWellData, setSelectedWellData] = useState<any>(null);
+  const [selectedFilename, setSelectedFilename] = useState<string>("");
 
   // Extract columns from schema
   const columns: TableColumn[] = useMemo(() => {
@@ -279,11 +284,38 @@ const PreviewPage: React.FC = () => {
         fixed: "left",
         ellipsis: true,
         sorter: (a, b) => a._filename.localeCompare(b._filename),
-        render: (text: string) => (
-          <span className="text-gray-900 truncate block" title={text}>
-            {text}
-          </span>
-        ),
+        render: (text: string, record: any) => {
+          // Check if record has well data (formations, casing, etc.)
+          const hasWellData =
+            record.formations ||
+            record.casing ||
+            record.perforation_intervals ||
+            record.pluggings ||
+            record.shows_depths ||
+            record.true_depth ||
+            record.measured_depth;
+
+          return (
+            <div className="flex items-center space-x-2">
+              {hasWellData && (
+                <Tooltip title="View wellbore diagram">
+                  <ExpandOutlined
+                    className="text-blue-500 hover:text-blue-700 cursor-pointer flex-shrink-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedWellData(record);
+                      setSelectedFilename(text);
+                      setWellboreModalOpen(true);
+                    }}
+                  />
+                </Tooltip>
+              )}
+              <span className="text-gray-900 truncate block" title={text}>
+                {text}
+              </span>
+            </div>
+          );
+        },
       },
     ];
 
@@ -1048,6 +1080,18 @@ const PreviewPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      {/* Wellbore Diagram Drawer */}
+      <WellboreDiagramDrawer
+        open={wellboreModalOpen}
+        onClose={() => {
+          setWellboreModalOpen(false);
+          setSelectedWellData(null);
+          setSelectedFilename("");
+        }}
+        data={selectedWellData}
+        filename={selectedFilename}
+      />
 
       {/* Core Extract Footer Signature */}
       <div className="border-t border-gray-100 px-6 py-3 flex-shrink-0">
