@@ -583,10 +583,10 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
           const showY = depthToY(depth);
           const showsTextMargin = 120;
           const iconX = width - marginRight - showsTextMargin + 20;
+          const isGas = show.oil_or_gas === "gas";
           const iconColor = show.oil_or_gas === "oil" ? "#ffa500" : "#00ff00";
-          const showText = `${show.oil_or_gas === "oil" ? "🛢️" : "⛽"} ${
-            show.formation || ""
-          }`;
+          const showType = isGas ? "Gas Show" : "Oil Show";
+          const showText = show.formation || "Unknown Formation";
 
           return (
             <g key={idx}>
@@ -615,6 +615,13 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
               >
                 {showText}
               </text>
+              <title>
+                {showType} detected at {depth}ft
+                {show.formation ? ` in ${show.formation} formation` : ""}
+                {isGas
+                  ? " - Green dot indicates gas show"
+                  : " - Orange dot indicates oil show"}
+              </title>
             </g>
           );
         })}
@@ -696,6 +703,44 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Shows Legend */}
+        {(data.shows_depths || []).length > 0 && (
+          <div
+            className="flex-shrink-0 bg-white border border-gray-300 rounded p-4 mt-4"
+            style={{ minWidth: "200px" }}
+          >
+            <h3 className="text-sm font-bold text-gray-800 mb-3">Shows</h3>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex-shrink-0 border border-gray-400 rounded-full"
+                  style={{
+                    width: "12px",
+                    height: "12px",
+                    backgroundColor: "#00ff00",
+                    borderColor: "#333",
+                    borderWidth: "1px",
+                  }}
+                />
+                <span className="text-xs text-gray-700">Gas Show</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex-shrink-0 border border-gray-400 rounded-full"
+                  style={{
+                    width: "12px",
+                    height: "12px",
+                    backgroundColor: "#ffa500",
+                    borderColor: "#333",
+                    borderWidth: "1px",
+                  }}
+                />
+                <span className="text-xs text-gray-700">Oil Show</span>
+              </div>
             </div>
           </div>
         )}
