@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Drawer, Button } from "antd";
-import { ExportOutlined } from "@ant-design/icons";
+import { ExportOutlined, FullscreenOutlined } from "@ant-design/icons";
 import { useParams } from "next/navigation";
 import { WellboreDiagram } from "./WellboreDiagram";
 
@@ -84,13 +84,13 @@ export const WellboreDiagramDrawer: React.FC<WellboreDiagramDrawerProps> = ({
             Wellbore Diagram{filename ? ` - ${filename}` : ""}
           </span>
           <Button
-            type="primary"
-            icon={<ExportOutlined />}
+            type="text"
+            icon={<FullscreenOutlined />}
             onClick={handleOpenInNewWindow}
             size="small"
             className="ml-4 flex-shrink-0"
           >
-            New Window
+            Open in new tab
           </Button>
         </div>
       }
