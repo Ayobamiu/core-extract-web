@@ -172,6 +172,28 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
     }
   };
 
+  // Get casing width based on type and size (industry standard sizes)
+  const getCasingWidth = (type: string | null, size: number | null): number => {
+    // If size provided, use proportional scaling (1 inch = 2px)
+    if (size !== null && size > 0) {
+      return size * 2;
+    }
+
+    // Default industry standard sizes if size not provided
+    switch (type) {
+      case "Surface":
+        return 40; // ~20" typical
+      case "Intermediate":
+        return 27; // ~13.375" typical
+      case "Production":
+        return 14; // ~7" typical
+      case "Drive":
+        return 30; // ~15" typical
+      default:
+        return 25;
+    }
+  };
+
   // Check if formation is target zone
   const isTargetZone = (formationName: string | null): boolean => {
     return (
@@ -228,6 +250,49 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
             <stop offset="0%" stopColor="#ffd700" stopOpacity="0.3" />
             <stop offset="100%" stopColor="#ffd700" stopOpacity="0.1" />
           </linearGradient>
+          {/* Plug patterns */}
+          <pattern
+            id="mudPattern"
+            patternUnits="userSpaceOnUse"
+            width="8"
+            height="8"
+          >
+            <rect width="8" height="8" fill="#8b4513" />
+            <circle cx="2" cy="2" r="1" fill="#654321" />
+            <circle cx="6" cy="6" r="1" fill="#654321" />
+          </pattern>
+          <pattern
+            id="cementPattern"
+            patternUnits="userSpaceOnUse"
+            width="4"
+            height="4"
+          >
+            <rect width="4" height="4" fill="#8b4513" />
+          </pattern>
+          <pattern
+            id="bridgePattern"
+            patternUnits="userSpaceOnUse"
+            width="10"
+            height="10"
+          >
+            <rect width="10" height="10" fill="#8b4513" />
+            <line
+              x1="0"
+              y1="0"
+              x2="10"
+              y2="10"
+              stroke="#654321"
+              strokeWidth="1"
+            />
+            <line
+              x1="10"
+              y1="0"
+              x2="0"
+              y2="10"
+              stroke="#654321"
+              strokeWidth="1"
+            />
+          </pattern>
         </defs>
 
         {/* Depth markers */}
@@ -279,17 +344,25 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                 strokeWidth={isTarget ? 2 : 1.5}
                 opacity={isTarget ? 0.9 : 0.85}
               />
+              <title>
+                Formation: {formation.name || "Unknown"}
+                {formation.from !== null && formation.to !== null
+                  ? ` (${formation.from}ft - ${formation.to}ft)`
+                  : ""}
+                {isTarget ? " - Target Zone" : ""}
+              </title>
             </g>
           );
         })}
 
-        {/* Casing strings */}
+        {/* Casing strings - rendered as nested tubes */}
         {sortedCasing.map((casing, idx) => {
           if (casing.Interval === null) return null;
           const casingDepth = casing.Interval;
           const casingY = depthToY(casingDepth);
-          const casingWidth = casing.size ? (casing.size / 20) * 30 : 40; // Scale casing width
+          const casingWidth = getCasingWidth(casing.type, casing.size);
           const color = getCasingColor(casing.type);
+          const casingHeight = casingY - marginTop;
 
           return (
             <g key={idx}>
@@ -297,11 +370,23 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                 x={wellCenterX - casingWidth / 2}
                 y={marginTop}
                 width={casingWidth}
-                height={casingY - marginTop}
+                height={casingHeight}
                 fill={color}
                 stroke="#333"
+                strokeWidth="1.5"
+                opacity={0.85}
+                rx="2"
+              />
+              {/* Inner highlight for tubular effect */}
+              <rect
+                x={wellCenterX - casingWidth / 2 + 2}
+                y={marginTop + 2}
+                width={casingWidth - 4}
+                height={casingHeight - 4}
+                fill="none"
+                stroke="rgba(255,255,255,0.3)"
                 strokeWidth="1"
-                opacity={0.8}
+                rx="1"
               />
               {casing.type && (
                 <text
@@ -315,6 +400,17 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                   {casing.type}
                 </text>
               )}
+              <title>
+                Casing: {casing.type || "Unknown"}
+                {casing.size !== null ? ` - ${casing.size}"` : ""}
+                {casing.Interval !== null
+                  ? ` - Depth: ${casing.Interval}ft`
+                  : ""}
+                {casing.cement_type ? ` - Cement: ${casing.cement_type}` : ""}
+                {casing.bags_of_cement !== null
+                  ? ` - Bags: ${casing.bags_of_cement}`
+                  : ""}
+              </title>
             </g>
           );
         })}
@@ -352,14 +448,14 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
           );
         })}
 
-        {/* Pluggings - render as horizontal blocks spanning wellbore */}
+        {/* Pluggings - render as horizontal blocks with patterns based on type */}
         {(data.pluggings || []).map((plug, idx) => {
           if (plug.depth === null) return null;
 
           // Parse interval if available (e.g., "0-200 ft" or "surface to bridge")
           let plugFromY = depthToY(plug.depth);
           let plugToY = plugFromY;
-          let plugHeight = 30; // Default height for single depth plugs
+          let plugHeight = 0;
 
           if (plug.interval) {
             const intervalMatch = plug.interval.match(/(\d+)\s*[-–]\s*(\d+)/i);
@@ -378,8 +474,57 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
             }
           }
 
-          const plugWidth = maxCasingWidth * 1.2; // Wider to span wellbore
+          // If no interval, use small visual thickness (equivalent to 5-10ft)
+          if (plugHeight === 0) {
+            const visualThickness =
+              (10 / maxDepth) * (height - marginTop - marginBottom);
+            plugHeight = Math.max(visualThickness, 8); // Minimum 8px for visibility
+            plugFromY = depthToY(plug.depth) - plugHeight / 2;
+            plugToY = depthToY(plug.depth) + plugHeight / 2;
+          }
+
+          // Find the casing at this depth (the innermost casing that extends to or past this depth)
+          let plugWidth = 20; // Default open hole width if below all casing
+          const plugDepth = plug.depth;
+
+          // Find all casings that extend to or past this depth, then use the innermost (smallest width)
+          const casingsAtDepth = sortedCasing.filter(
+            (casing) => casing.Interval !== null && casing.Interval >= plugDepth
+          );
+
+          if (casingsAtDepth.length > 0) {
+            // Use the innermost casing (smallest width)
+            const innermostCasing = casingsAtDepth.reduce(
+              (innermost, current) => {
+                const currentWidth = getCasingWidth(current.type, current.size);
+                const innermostWidth = getCasingWidth(
+                  innermost.type,
+                  innermost.size
+                );
+                return currentWidth < innermostWidth ? current : innermost;
+              }
+            );
+            plugWidth = getCasingWidth(
+              innermostCasing.type,
+              innermostCasing.size
+            );
+          }
+
           const plugCenterY = plugFromY + plugHeight / 2;
+
+          // Determine pattern based on plug type
+          const plugTypeLower = (plug.type || "").toLowerCase();
+          let plugPattern = "url(#cementPattern)"; // Default solid
+          if (plugTypeLower.includes("mud")) {
+            plugPattern = "url(#mudPattern)";
+          } else if (
+            plugTypeLower.includes("bridge") ||
+            plugTypeLower.includes("mechanical")
+          ) {
+            plugPattern = "url(#bridgePattern)";
+          } else {
+            plugPattern = "#8b4513"; // Solid cement
+          }
 
           return (
             <g key={idx}>
@@ -388,12 +533,12 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                 y={plugFromY}
                 width={plugWidth}
                 height={plugHeight}
-                fill="#8b4513"
+                fill={plugPattern}
                 stroke="#654321"
                 strokeWidth="2"
                 opacity={0.95}
               />
-              {plug.type && (
+              {plug.type && plugHeight > 15 && (
                 <text
                   x={wellCenterX}
                   y={plugCenterY}
@@ -407,7 +552,10 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                 </text>
               )}
               <title>
-                {plug.type || "Plug"} - {plug.interval || `${plug.depth}ft`}
+                Plugging: {plug.type || "Plug"}
+                {plug.depth !== null ? ` - Depth: ${plug.depth}ft` : ""}
+                {plug.interval ? ` - Interval: ${plug.interval}` : ""}
+                {plug.details ? ` - ${plug.details}` : ""}
               </title>
             </g>
           );
