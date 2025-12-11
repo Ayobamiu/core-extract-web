@@ -225,3 +225,42 @@ body {
     @apply bg-gray-800 border-gray-700;
   }
 }
+
+/* Print Styles for Wellbore Diagram */
+@media print {
+  /* Force all colors to print, especially for wellbore diagram legends */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Ensure wellbore diagram and legends print with colors */
+  .wellbore-diagram,
+  .wellbore-diagram * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Force background colors on legend color swatches */
+  .wellbore-diagram div[style*="backgroundColor"] {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Ensure SVG colors print */
+  .wellbore-diagram svg,
+  .wellbore-diagram svg * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Prevent page breaks inside diagram */
+  .wellbore-diagram {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+}

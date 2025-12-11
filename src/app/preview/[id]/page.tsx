@@ -1091,6 +1091,7 @@ const PreviewPage: React.FC = () => {
         }}
         data={selectedWellData}
         filename={selectedFilename}
+        previewId={previewId}
       />
 
       {/* Core Extract Footer Signature */}

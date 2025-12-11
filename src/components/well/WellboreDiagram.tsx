@@ -203,7 +203,16 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
 
   return (
     <div className={`wellbore-diagram ${className} flex items-start gap-4`}>
-      <svg width={width} height={height} className="bg-white">
+      <svg
+        width={width}
+        height={height}
+        className="bg-white"
+        style={{
+          WebkitPrintColorAdjust: "exact",
+          printColorAdjust: "exact",
+          colorAdjust: "exact",
+        }}
+      >
         <defs>
           <pattern
             id="sandstone"
@@ -667,7 +676,12 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
         {sortedFormations.length > 0 && (
           <div
             className="flex-shrink-0 bg-white border border-gray-300 rounded p-4"
-            style={{ minWidth: "200px" }}
+            style={{
+              minWidth: "200px",
+              WebkitPrintColorAdjust: "exact",
+              printColorAdjust: "exact",
+              colorAdjust: "exact",
+            }}
           >
             <h3 className="text-sm font-bold text-gray-800 mb-3">Formations</h3>
             <div className="space-y-2">
@@ -688,6 +702,9 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                         opacity: isTarget ? 0.9 : 0.85,
                         borderColor: isTarget ? "#ffd700" : "#999",
                         borderWidth: isTarget ? "2px" : "1px",
+                        WebkitPrintColorAdjust: "exact",
+                        printColorAdjust: "exact",
+                        colorAdjust: "exact",
                       }}
                     />
                     {/* Formation name */}
@@ -711,7 +728,12 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
         {(data.shows_depths || []).length > 0 && (
           <div
             className="flex-shrink-0 bg-white border border-gray-300 rounded p-4 mt-4"
-            style={{ minWidth: "200px" }}
+            style={{
+              minWidth: "200px",
+              WebkitPrintColorAdjust: "exact",
+              printColorAdjust: "exact",
+              colorAdjust: "exact",
+            }}
           >
             <h3 className="text-sm font-bold text-gray-800 mb-3">Shows</h3>
             <div className="space-y-2">
@@ -724,6 +746,9 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                     backgroundColor: "#00ff00",
                     borderColor: "#333",
                     borderWidth: "1px",
+                    WebkitPrintColorAdjust: "exact",
+                    printColorAdjust: "exact",
+                    colorAdjust: "exact",
                   }}
                 />
                 <span className="text-xs text-gray-700">Gas Show</span>
@@ -737,6 +762,9 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                     backgroundColor: "#ffa500",
                     borderColor: "#333",
                     borderWidth: "1px",
+                    WebkitPrintColorAdjust: "exact",
+                    printColorAdjust: "exact",
+                    colorAdjust: "exact",
                   }}
                 />
                 <span className="text-xs text-gray-700">Oil Show</span>
