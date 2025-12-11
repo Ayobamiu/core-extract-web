@@ -180,8 +180,8 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
   };
 
   return (
-    <div className={`wellbore-diagram ${className}`}>
-      <svg width={width} height={height} className="bg-white border rounded-lg">
+    <div className={`wellbore-diagram ${className} flex items-start gap-4`}>
+      <svg width={width} height={height} className="bg-white">
         <defs>
           <pattern
             id="sandstone"
@@ -266,7 +266,6 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
           const formationHeight = toY - fromY;
           const color = getFormationColor(formation.name);
           const isTarget = isTargetZone(formation.name);
-          const centerY = fromY + formationHeight / 2;
 
           return (
             <g key={idx}>
@@ -280,19 +279,6 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                 strokeWidth={isTarget ? 2 : 1.5}
                 opacity={isTarget ? 0.9 : 0.85}
               />
-              {formation.name && formationHeight > 20 && (
-                <text
-                  x={marginLeft + 5}
-                  y={centerY}
-                  fontSize={size === "small" ? "10" : "12"}
-                  fill="#333"
-                  fontWeight={isTarget ? "bold" : "500"}
-                  dominantBaseline="middle"
-                >
-                  {formation.name}
-                  {isTarget && " (Target)"}
-                </text>
-              )}
             </g>
           );
         })}
@@ -447,8 +433,12 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
               : show.depth;
           if (isNaN(depth)) return null;
           const showY = depthToY(depth);
-          const iconX = width - marginRight - 20;
+          const showsTextMargin = 120;
+          const iconX = width - marginRight - showsTextMargin + 20;
           const iconColor = show.oil_or_gas === "oil" ? "#ffa500" : "#00ff00";
+          const showText = `${show.oil_or_gas === "oil" ? "🛢️" : "⛽"} ${
+            show.formation || ""
+          }`;
 
           return (
             <g key={idx}>
@@ -475,7 +465,7 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                 fontSize={size === "small" ? "9" : "11"}
                 fill="#333"
               >
-                {show.oil_or_gas === "oil" ? "🛢️" : "⛽"} {show.formation || ""}
+                {showText}
               </text>
             </g>
           );
@@ -516,6 +506,52 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
           strokeWidth="2"
         />
       </svg>
+
+      <div className="h-full flex flex-col justify-end">
+        {/* Formation Legend - Beside the diagram */}
+        {sortedFormations.length > 0 && (
+          <div
+            className="flex-shrink-0 bg-white border border-gray-300 rounded p-4"
+            style={{ minWidth: "200px" }}
+          >
+            <h3 className="text-sm font-bold text-gray-800 mb-3">Formations</h3>
+            <div className="space-y-2">
+              {sortedFormations.map((formation, idx) => {
+                if (!formation.name) return null;
+                const color = getFormationColor(formation.name);
+                const isTarget = isTargetZone(formation.name);
+
+                return (
+                  <div key={idx} className="flex items-center gap-2">
+                    {/* Color swatch */}
+                    <div
+                      className="flex-shrink-0 border border-gray-400"
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        backgroundColor: isTarget ? "#ffd700" : color,
+                        opacity: isTarget ? 0.9 : 0.85,
+                        borderColor: isTarget ? "#ffd700" : "#999",
+                        borderWidth: isTarget ? "2px" : "1px",
+                      }}
+                    />
+                    {/* Formation name */}
+                    <span
+                      className="text-xs text-gray-700"
+                      style={{
+                        fontWeight: isTarget ? "bold" : "normal",
+                      }}
+                    >
+                      {formation.name}
+                      {isTarget && " (Target)"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
