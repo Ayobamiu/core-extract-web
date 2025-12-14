@@ -265,5 +265,66 @@ export function checkFileConstraints(file: JobFile): ConstraintCheck[] {
         });
     }
 
+    // 5. Measured depth vs last formation depth check
+    const measuredDepth = file.result?.measured_depth;
+    const formations = file.result?.formations || [];
+
+    if (measuredDepth != null && formations.length > 0) {
+        // Find the last formation (the one with the deepest 'to' depth)
+        // Sort formations by 'to' depth descending to get the deepest one
+        const sortedFormations = [...formations]
+            .filter(f => f.to != null)
+            .sort((a, b) => (b.to || 0) - (a.to || 0));
+        console.log('sortedFormations', sortedFormations);
+        const lastFormation = sortedFormations[0];
+
+        if (lastFormation && lastFormation.to != null) {
+            const depthDifference = Math.abs(measuredDepth - lastFormation.to);
+            const isWithinLimit = depthDifference <= 10;
+
+            if (!isWithinLimit) {
+                checks.push({
+                    name: 'Formation Depth Coverage',
+                    passed: false,
+                    message: `Difference between measured depth (${measuredDepth}) and last formation depth (${lastFormation.to}) is ${depthDifference.toFixed(1)}. Expected <= 10. Formations may not be captured well.`,
+                    severity: 'error',
+                    details: {
+                        measuredDepth,
+                        lastFormationDepth: lastFormation.to,
+                        lastFormationName: lastFormation.name,
+                        difference: depthDifference,
+                    },
+                });
+            } else {
+                checks.push({
+                    name: 'Formation Depth Coverage',
+                    passed: true,
+                    message: `Measured depth (${measuredDepth}) and last formation depth (${lastFormation.to}) difference: ${depthDifference.toFixed(1)}`,
+                    severity: 'info',
+                    details: {
+                        measuredDepth,
+                        lastFormationDepth: lastFormation.to,
+                        lastFormationName: lastFormation.name,
+                        difference: depthDifference,
+                    },
+                });
+            }
+        }
+    } else if (measuredDepth == null) {
+        checks.push({
+            name: 'Formation Depth Coverage',
+            passed: false,
+            message: 'Cannot check formation depth coverage - measured depth is missing',
+            severity: 'warning',
+        });
+    } else if (formations.length === 0) {
+        checks.push({
+            name: 'Formation Depth Coverage',
+            passed: false,
+            message: 'Cannot check formation depth coverage - no formations found',
+            severity: 'warning',
+        });
+    }
+
     return checks;
 }
