@@ -6,38 +6,11 @@ import { ExportOutlined, FullscreenOutlined } from "@ant-design/icons";
 import { useParams } from "next/navigation";
 import { WellboreDiagram } from "./WellboreDiagram";
 
-interface MGSWellData {
-  formations?: Array<{
-    from: number | null;
-    to: number | null;
-    name: string | null;
-  }>;
-  casing?: Array<{
-    type: "Drive" | "Surface" | "Intermediate" | "Production" | null;
-    size: number | null;
-    Interval: number | null;
-    cement_type?: string | null;
-    bags_of_cement?: number | null;
-  }>;
-  perforation_intervals?: Array<{ from: number | null; to: number | null }>;
-  pluggings?: Array<{
-    depth: number | null;
-    interval: string | null;
-    type: string | null;
-    details?: string | null;
-  }>;
-  shows_depths?: Array<{
-    depth: number | string | null;
-    formation: string | null;
-    oil_or_gas: "oil" | "gas" | null;
-  }>;
-  target_zone?: string | null;
-  true_depth?: number | null;
-  measured_depth?: number | null;
-  deviation?: "Straight" | "Deviated" | "Horizontal" | null;
-  elevation?: number | null;
-  elevation_datum?: string | null;
-}
+// Import the interface from WellboreDiagram to ensure consistency
+import type { MGSWellData } from "./WellboreDiagram";
+
+// Re-export for backward compatibility
+export type { MGSWellData };
 
 interface WellboreDiagramDrawerProps {
   open: boolean;
@@ -97,7 +70,7 @@ export const WellboreDiagramDrawer: React.FC<WellboreDiagramDrawerProps> = ({
       placement="right"
       onClose={onClose}
       open={open}
-      width={900}
+      width="90vw"
       mask={true}
       maskClosable={true}
       destroyOnClose
