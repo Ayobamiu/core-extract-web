@@ -7,7 +7,7 @@ export interface MGSWellData {
   formations?: Array<{
     from: number | null;
     to: number | null;
-    name: string | null;
+    formation: string | null;
   }>;
   casing?: Array<{
     type: "Drive" | "Surface" | "Intermediate" | "Production" | null;
@@ -201,14 +201,15 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
   const uniqueFormations = useMemo(() => {
     const seen = new Set<string>();
     return sortedFormations.filter((formation) => {
-      if (!formation.name) return false;
-      const name = formation.name.toLowerCase();
+      if (!formation.formation || formation.formation.trim() === "")
+        return false;
+      const name = formation.formation.toLowerCase().trim();
       if (seen.has(name)) return false;
       seen.add(name);
       return true;
     });
   }, [sortedFormations]);
-
+  console.log({ sortedFormations, uniqueFormations, data });
   // Sort casing by depth
   const sortedCasing = useMemo(() => {
     return [...(data.casing || [])].sort(
@@ -465,8 +466,8 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
               const fromY = depthToY(formation.from);
               const toY = depthToY(formation.to);
               const formationHeight = Math.abs(toY - fromY);
-              const color = getFormationColor(formation.name);
-              const isTarget = isTargetZone(formation.name);
+              const color = getFormationColor(formation.formation);
+              const isTarget = isTargetZone(formation.formation);
 
               return (
                 <g key={idx}>
@@ -495,7 +496,7 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                     />
                   ) : null}
                   {/* Formation name label at top - only show if height > 40px */}
-                  {formation.name && formationHeight > 40 && (
+                  {formation.formation && formationHeight > 40 && (
                     <text
                       x={marginLeft + 5}
                       y={fromY + 15}
@@ -503,11 +504,11 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                       fill="#333"
                       fontWeight="500"
                     >
-                      {formation.name}
+                      {formation.formation}
                     </text>
                   )}
                   <title>
-                    Formation: {formation.name || "Unknown"}
+                    Formation: {formation.formation || "Unknown"}
                     {formation.from !== null && formation.to !== null
                       ? ` (${formation.from}ft - ${formation.to}ft MD)`
                       : ""}
@@ -1145,7 +1146,8 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
         {/* Legend - Directly beside the diagram */}
         <div className="flex flex-col gap-2">
           {/* Formation Legend */}
-          {uniqueFormations.length > 0 && (
+          {(uniqueFormations.length > 0 ||
+            (data.formations && data.formations.length > 0)) && (
             <div
               className="flex-shrink-0 bg-white border border-gray-300 rounded p-2"
               style={{
@@ -1160,13 +1162,13 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
               </h3>
               <div className="space-y-1.5">
                 {uniqueFormations.map((formation, idx) => {
-                  if (!formation.name) return null;
-                  const color = getFormationColor(formation.name);
-                  const isTarget = isTargetZone(formation.name);
+                  if (!formation.formation) return null;
+                  const color = getFormationColor(formation.formation);
+                  const isTarget = isTargetZone(formation.formation);
 
                   return (
                     <div
-                      key={`${formation.name}-${idx}`}
+                      key={`${formation.formation}-${idx}`}
                       className="flex items-center gap-2"
                     >
                       {/* Color swatch */}
@@ -1191,7 +1193,7 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                           fontWeight: isTarget ? "bold" : "normal",
                         }}
                       >
-                        {formation.name}
+                        {formation.formation}
                         {isTarget && " (Target)"}
                       </span>
                     </div>

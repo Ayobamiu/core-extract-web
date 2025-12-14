@@ -304,7 +304,7 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
     .sort((a, b) => (a.from || 0) - (b.from || 0))
     .map((formation, idx) => ({
       key: idx,
-      name: formation.name || "—",
+      name: formation.formation || "—",
       top: formation.from,
       bottom: formation.to,
     }));
