@@ -12,11 +12,15 @@ export type { MGSWellData };
 interface WellboreSummaryTablesProps {
   data: MGSWellData;
   size?: "small" | "medium" | "large";
+  showFormationTops?: boolean;
+  showFormationTopsOnly?: boolean;
 }
 
 export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
   data,
   size = "medium",
+  showFormationTops = true,
+  showFormationTopsOnly = false,
 }) => {
   const tableSize =
     size === "small" ? "small" : size === "large" ? "middle" : "small";
@@ -300,14 +304,55 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
     },
   ];
 
-  const formationTopsData = (data.formations || [])
-    .sort((a, b) => (a.from || 0) - (b.from || 0))
-    .map((formation, idx) => ({
-      key: idx,
-      name: formation.formation || "—",
-      top: formation.from,
-      bottom: formation.to,
-    }));
+  // Merge consecutive formations with the same name
+  const mergedFormations = (() => {
+    const sorted = [...(data.formations || [])].sort(
+      (a, b) => (a.from || 0) - (b.from || 0)
+    );
+
+    const merged: typeof sorted = [];
+
+    for (let i = 0; i < sorted.length; i++) {
+      const current = sorted[i];
+
+      if (merged.length === 0) {
+        // First formation, just add it
+        merged.push({ ...current });
+      } else {
+        const last = merged[merged.length - 1];
+        const currentName = (current.formation || "").toLowerCase().trim();
+        const lastName = (last.formation || "").toLowerCase().trim();
+
+        // Check if consecutive and same name
+        const lastTo = last.to ?? null;
+        const currentFrom = current.from ?? null;
+        const isConsecutive =
+          lastTo != null &&
+          currentFrom != null &&
+          Math.abs(lastTo - currentFrom) < 1; // Allow up to 1 foot difference for consecutive formations
+        const isSameName = currentName === lastName && currentName !== "";
+
+        if (isConsecutive && isSameName) {
+          // Merge: keep the first formation's 'from', use current formation's 'to'
+          last.to = current.to;
+          // Preserve other properties from the current formation if needed
+          if (current.formation) last.formation = current.formation;
+        } else {
+          // Different formation or not consecutive, add as new
+          merged.push({ ...current });
+        }
+      }
+    }
+
+    return merged;
+  })();
+
+  const formationTopsData = mergedFormations.map((formation, idx) => ({
+    key: idx,
+    name: formation.formation || "—",
+    top: formation.from,
+    bottom: formation.to,
+  }));
 
   // Tools/Equipment Summary Table
   const toolsColumns: ColumnsType<any> = [
@@ -384,10 +429,43 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
     status: tool.status,
   }));
 
+  // If only showing formation tops, return early with just that section
+  if (showFormationTopsOnly) {
+    return (
+      <div className="wellbore-summary-tables">
+        <style jsx global>{`
+          .wellbore-summary-tables .ant-table-thead > tr > th {
+            font-size: 10px !important;
+            padding: 4px 8px !important;
+            font-weight: 600 !important;
+          }
+          .wellbore-summary-tables .ant-table-tbody > tr > td {
+            font-size: 10px !important;
+            padding: 4px 8px !important;
+          }
+        `}</style>
+        {formationTopsData.length > 0 && (
+          <div>
+            <h3 className="text-xs font-bold text-gray-800 mb-1.5">
+              Formation Tops Summary
+            </h3>
+            <Table
+              columns={formationTopsColumns}
+              dataSource={formationTopsData}
+              pagination={false}
+              size="small"
+              className="text-[10px]"
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       className="wellbore-summary-tables space-y-2"
-      style={{ minWidth: "280px", maxWidth: "400px" }}
+      style={{ minWidth: "280px", maxWidth: "100%" }}
     >
       <style jsx global>{`
         .wellbore-summary-tables .ant-table-thead > tr > th {
@@ -400,18 +478,17 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
           padding: 4px 8px !important;
         }
       `}</style>
-      {/* Title */}
-      <div className="mb-3">
-        <h2 className="text-sm font-bold text-gray-800">CURRENT COMPLETION</h2>
-        {data.last_updated && (
+      {/* Last Updated - if available */}
+      {data.last_updated && (
+        <div className="mb-2">
           <p className="text-[10px] text-gray-600">
             Last Updated: {data.last_updated}
           </p>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Well Information - Using Ant Design Descriptions */}
-      <div className="bg-white border border-gray-300 rounded p-2">
+      <div className="bg-white border border-gray-200 rounded p-2">
         <h3 className="text-xs font-bold text-gray-800 mb-1.5">
           Well Information
         </h3>
@@ -449,8 +526,11 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
 
       {/* Tubular Summary */}
       {tubularData.length > 0 && (
-        <div className="bg-white border border-gray-300 rounded p-2">
-          <h3 className="text-xs font-bold text-gray-800 mb-1.5">
+        <div className="bg-white border border-gray-200 rounded p-2">
+          <h3
+            className="text-xs font-bold text-gray-800 mb-1.5"
+            style={{ whiteSpace: "nowrap", overflow: "visible" }}
+          >
             Tubular Summary
           </h3>
           <Table
@@ -466,8 +546,11 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
 
       {/* Cement Summary */}
       {cementData.length > 0 && (
-        <div className="bg-white border border-gray-300 rounded p-2">
-          <h3 className="text-xs font-bold text-gray-800 mb-1.5">
+        <div className="bg-white border border-gray-200 rounded p-2">
+          <h3
+            className="text-xs font-bold text-gray-800 mb-1.5"
+            style={{ whiteSpace: "nowrap", overflow: "visible" }}
+          >
             Casing Cement Summary
           </h3>
           <Table
@@ -483,7 +566,7 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
 
       {/* Perforation Summary */}
       {perforationData.length > 0 && (
-        <div className="bg-white border border-gray-300 rounded p-2">
+        <div className="bg-white border border-gray-200 rounded p-2">
           <h3 className="text-xs font-bold text-gray-800 mb-1.5">
             Perforation Summary
           </h3>
@@ -498,9 +581,9 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
         </div>
       )}
 
-      {/* Formation Tops Summary */}
-      {formationTopsData.length > 0 && (
-        <div className="bg-white border border-gray-300 rounded p-2">
+      {/* Formation Tops Summary - Only show if showFormationTops is true */}
+      {showFormationTops && formationTopsData.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded p-2">
           <h3 className="text-xs font-bold text-gray-800 mb-1.5">
             Formation Tops Summary
           </h3>
@@ -509,7 +592,7 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
             dataSource={formationTopsData}
             pagination={false}
             size="small"
-            scroll={{ y: 150 }}
+            // scroll={{ y: 150 }}
             className="text-[10px]"
           />
         </div>
@@ -517,7 +600,7 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
 
       {/* Tools/Equipment Summary */}
       {toolsData.length > 0 && (
-        <div className="bg-white border border-gray-300 rounded p-2">
+        <div className="bg-white border border-gray-200 rounded p-2">
           <h3 className="text-xs font-bold text-gray-800 mb-1.5">
             Tools/Equipment Summary
           </h3>
@@ -534,7 +617,7 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
 
       {/* Audit Trail */}
       {(data.prepared_by || data.updated_by || data.last_updated) && (
-        <div className="bg-gray-50 border border-gray-300 rounded p-2">
+        <div className="bg-gray-50 border border-gray-200 rounded p-2">
           <h3 className="text-xs font-bold text-gray-800 mb-1.5">
             Audit Trail
           </h3>

@@ -147,9 +147,9 @@ const WellborePreviewContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Fullscreen Diagram Container */}
-      <div className="flex-1 overflow-auto p-8 flex items-center justify-center">
-        <div className="w-full max-w-7xl">
-          <WellboreDiagram data={wellData} size="large" />
+      <div className="flex-1 overflow-auto p-8">
+        <div className="w-full max-w-7xl mx-auto">
+          <WellboreDiagram data={wellData} size="medium" />
         </div>
       </div>
     </div>

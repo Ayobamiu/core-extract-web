@@ -75,8 +75,10 @@ export const WellboreDiagramDrawer: React.FC<WellboreDiagramDrawerProps> = ({
       maskClosable={true}
       destroyOnClose
     >
-      <div className="flex justify-center py-4 overflow-auto">
-        <WellboreDiagram data={data} size="large" />
+      <div className="py-4 overflow-auto">
+        <div className="flex justify-center">
+          <WellboreDiagram data={data} size="medium" />
+        </div>
       </div>
     </Drawer>
   );

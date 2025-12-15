@@ -283,7 +283,8 @@ const PreviewSelector: React.FC<PreviewSelectorProps> = ({
                       disabled={
                         !selectedPreviewId ||
                         adding ||
-                        (!!selectedPreviewId && fileInPreviews[selectedPreviewId])
+                        (!!selectedPreviewId &&
+                          fileInPreviews[selectedPreviewId])
                       }
                       className="flex-1"
                     >
