@@ -53,6 +53,11 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
       value: data.api_number || "—",
     },
     {
+      key: "permit_number",
+      label: "Permit No.",
+      value: data.permit_number || "—",
+    },
+    {
       key: "location",
       label: "Location",
       value: data.township_range_section || "—",
@@ -500,11 +505,13 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
             label: item.label,
             children: item.value,
           }))}
-          labelStyle={{
-            fontSize: "10px",
-            fontWeight: 600,
-            color: "#374151",
-            padding: "2px 8px",
+          styles={{
+            label: {
+              fontSize: "10px",
+              fontWeight: 600,
+              color: "#374151",
+              padding: "2px 8px",
+            },
           }}
           contentStyle={{
             fontSize: "10px",

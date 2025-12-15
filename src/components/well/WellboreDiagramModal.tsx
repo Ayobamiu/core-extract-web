@@ -2,12 +2,17 @@
 
 import React from "react";
 import { Drawer, Button } from "antd";
-import { ExportOutlined, FullscreenOutlined } from "@ant-design/icons";
+import {
+  ExportOutlined,
+  FullscreenOutlined,
+  PrinterOutlined,
+} from "@ant-design/icons";
 import { useParams } from "next/navigation";
 import { WellboreDiagram } from "./WellboreDiagram";
 
 // Import the interface from WellboreDiagram to ensure consistency
 import type { MGSWellData } from "./WellboreDiagram";
+import Link from "next/link";
 
 // Re-export for backward compatibility
 export type { MGSWellData };
@@ -65,6 +70,16 @@ export const WellboreDiagramDrawer: React.FC<WellboreDiagramDrawerProps> = ({
           >
             Open in new tab
           </Button>
+          <Link
+            href={`/wellbore/${previewId}/print?filename=${encodeURIComponent(
+              filename || ""
+            )}`}
+            target="_blank"
+          >
+            <Button type="link" icon={<PrinterOutlined />} size="small">
+              Print View
+            </Button>
+          </Link>
         </div>
       }
       placement="right"

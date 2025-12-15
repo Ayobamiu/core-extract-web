@@ -48,6 +48,7 @@ export interface MGSWellData {
   elevation_datum?: string | null;
   // Well Header Information
   api_number?: string | null;
+  permit_number?: string | null;
   lease_name?: string | null;
   well_number?: string | null;
   county?: string | null;
@@ -331,6 +332,20 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
     );
   };
 
+  // Helper function to truncate formation text to fit within available width
+  const truncateFormationText = (
+    text: string,
+    maxWidth: number,
+    fontSize: number
+  ): string => {
+    if (!text) return "";
+    // Approximate character width: fontSize * 0.6 (average for most fonts)
+    const avgCharWidth = fontSize * 0.6;
+    const maxChars = Math.floor((maxWidth - 10) / avgCharWidth); // -10 for padding
+    if (text.length <= maxChars) return text;
+    return text.substring(0, maxChars - 3) + "...";
+  };
+
   return (
     <div className={`wellbore-diagram ${className} flex flex-col gap-4`}>
       {/* Three Column Layout: Diagram (3) | Legend (2) | Summary Tables (3) */}
@@ -592,7 +607,11 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
                           fill="#333"
                           fontWeight="500"
                         >
-                          {formation.formation}
+                          {truncateFormationText(
+                            formation.formation,
+                            formationWidth - 10,
+                            size === "small" ? 10 : 12
+                          )}
                         </text>
                       )}
                       <title>
