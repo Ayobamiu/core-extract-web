@@ -2,42 +2,20 @@
 
 import React from "react";
 import { Drawer, Button } from "antd";
-import { ExportOutlined, FullscreenOutlined } from "@ant-design/icons";
+import {
+  ExportOutlined,
+  FullscreenOutlined,
+  PrinterOutlined,
+} from "@ant-design/icons";
 import { useParams } from "next/navigation";
 import { WellboreDiagram } from "./WellboreDiagram";
 
-interface MGSWellData {
-  formations?: Array<{
-    from: number | null;
-    to: number | null;
-    name: string | null;
-  }>;
-  casing?: Array<{
-    type: "Drive" | "Surface" | "Intermediate" | "Production" | null;
-    size: number | null;
-    Interval: number | null;
-    cement_type?: string | null;
-    bags_of_cement?: number | null;
-  }>;
-  perforation_intervals?: Array<{ from: number | null; to: number | null }>;
-  pluggings?: Array<{
-    depth: number | null;
-    interval: string | null;
-    type: string | null;
-    details?: string | null;
-  }>;
-  shows_depths?: Array<{
-    depth: number | string | null;
-    formation: string | null;
-    oil_or_gas: "oil" | "gas" | null;
-  }>;
-  target_zone?: string | null;
-  true_depth?: number | null;
-  measured_depth?: number | null;
-  deviation?: "Straight" | "Deviated" | "Horizontal" | null;
-  elevation?: number | null;
-  elevation_datum?: string | null;
-}
+// Import the interface from WellboreDiagram to ensure consistency
+import type { MGSWellData } from "./WellboreDiagram";
+import Link from "next/link";
+
+// Re-export for backward compatibility
+export type { MGSWellData };
 
 interface WellboreDiagramDrawerProps {
   open: boolean;
@@ -92,18 +70,30 @@ export const WellboreDiagramDrawer: React.FC<WellboreDiagramDrawerProps> = ({
           >
             Open in new tab
           </Button>
+          <Link
+            href={`/wellbore/${previewId}/print?filename=${encodeURIComponent(
+              filename || ""
+            )}`}
+            target="_blank"
+          >
+            <Button type="link" icon={<PrinterOutlined />} size="small">
+              Print View
+            </Button>
+          </Link>
         </div>
       }
       placement="right"
       onClose={onClose}
       open={open}
-      width={900}
+      width="90vw"
       mask={true}
       maskClosable={true}
       destroyOnClose
     >
-      <div className="flex justify-center py-4 overflow-auto">
-        <WellboreDiagram data={data} size="large" />
+      <div className="py-4 overflow-auto">
+        <div className="flex justify-center">
+          <WellboreDiagram data={data} size="medium" />
+        </div>
       </div>
     </Drawer>
   );
