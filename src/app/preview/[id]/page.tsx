@@ -463,7 +463,7 @@ const PreviewPage: React.FC = () => {
   const processedData = useMemo(() => {
     if (!previewData?.jobFiles) return [];
 
-    return previewData.jobFiles.map((file) => ({
+    const data = previewData.jobFiles.map((file) => ({
       _filename: file.filename,
       _fileId: file.id,
       _jobName: file.job_name,
@@ -472,7 +472,12 @@ const PreviewPage: React.FC = () => {
       _reviewStatus: file.review_status || "pending",
       ...file.result,
     }));
-  }, [previewData?.jobFiles]);
+
+    // Ensure data length matches pageSize for server-side pagination
+    // This prevents Ant Design warnings when dataSource length doesn't match pageSize
+    // On the last page, data.length may be less than pageSize, which is fine
+    return data.slice(0, pageSize);
+  }, [previewData?.jobFiles, pageSize]);
 
   // Fetch preview statistics (for all items, not just current page)
   const fetchPreviewStatistics = useCallback(async () => {
@@ -998,27 +1003,33 @@ const PreviewPage: React.FC = () => {
           rowKey={(record) => `${record._fileId}-${record._filename}`}
           scroll={{ x: "max-content", y: "calc(100vh - 200px)" }}
           loading={loading}
-          pagination={{
-            current: currentPage,
-            total: totalItems,
-            pageSize: pageSize,
-            showSizeChanger: true,
-            showQuickJumper: false,
-            showTotal: (total, range) =>
-              `${range[0]}-${range[1]} of ${total} items`,
-            onChange: (page, size) => {
-              setCurrentPage(page);
-              setPageSize(size);
-            },
-            onShowSizeChange: (current, size) => {
-              setCurrentPage(1);
-              setPageSize(size);
-            },
-            size: "small",
-            hideOnSinglePage: totalPages <= 1,
-            position: ["bottomCenter"],
-            pageSizeOptions: ["10", "20", "50", "100"],
-          }}
+          pagination={
+            totalItems > 0 && !loading && processedData.length <= pageSize
+              ? {
+                  current: currentPage,
+                  total: totalItems,
+                  pageSize: pageSize,
+                  showSizeChanger: true,
+                  showQuickJumper: false,
+                  showTotal: (total, range) =>
+                    `${range[0]}-${range[1]} of ${total} items`,
+                  onChange: (page, size) => {
+                    setCurrentPage(page);
+                    if (size !== pageSize) {
+                      setPageSize(size);
+                    }
+                  },
+                  onShowSizeChange: (current, size) => {
+                    setCurrentPage(1);
+                    setPageSize(size);
+                  },
+                  size: "small",
+                  hideOnSinglePage: totalPages <= 1,
+                  position: ["bottomCenter"],
+                  pageSizeOptions: ["10", "20", "50", "100"],
+                }
+              : false
+          }
           size="small"
           className="ant-table-custom h-full"
         />
