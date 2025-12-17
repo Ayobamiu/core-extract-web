@@ -807,7 +807,7 @@ const PreviewPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="flex items-center justify-center h-96">
-          <Spin size="large" tip="Loading preview..." />
+          <Spin size="large" />
         </div>
       </div>
     );
