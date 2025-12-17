@@ -512,11 +512,11 @@ export const WellboreSummaryTables: React.FC<WellboreSummaryTablesProps> = ({
               color: "#374151",
               padding: "2px 8px",
             },
-          }}
-          contentStyle={{
-            fontSize: "10px",
-            color: "#111827",
-            padding: "2px 8px",
+            content: {
+              fontSize: "10px",
+              color: "#111827",
+              padding: "2px 8px",
+            },
           }}
         />
       </div>
