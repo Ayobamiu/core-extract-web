@@ -1,8 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiClient, PreviewDataTable, PreviewJobFile } from "@/lib/api";
+import {
+  getCachedPreviewData,
+  setCachedPreviewData,
+  clearPreviewCache,
+} from "@/lib/previewCache";
 import Button from "@/components/ui/Button";
 import {
   Table,
@@ -12,6 +17,8 @@ import {
   Dropdown,
   Tag,
   Tooltip,
+  notification,
+  Spin,
 } from "antd";
 import { ChevronLeftIcon } from "@heroicons/react/24/outline";
 import {
@@ -21,6 +28,7 @@ import {
   ClockCircleOutlined,
   InfoCircleOutlined,
   ExpandOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { WellboreDiagramDrawer } from "@/components/well/WellboreDiagramModal";
@@ -244,11 +252,27 @@ const PreviewPage: React.FC = () => {
   const previewId = params.id as string;
 
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
-  console.log("previewData", previewData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [searchInput, setSearchInput] = useState("");
+  const [qaStats, setQaStats] = useState({
+    total: 0,
+    humanVerified: 0,
+    reviewed: 0,
+    approved: 0,
+    inReview: 0,
+    pending: 0,
+    rejected: 0,
+    humanVerifiedPercentage: 0,
+    qualityScore: 0,
+    allVerified: false,
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
   const [arrayPopup, setArrayPopup] = useState<ArrayPopupData | null>(null);
   const [qualityScoreModalVisible, setQualityScoreModalVisible] =
     useState(false);
@@ -435,11 +459,11 @@ const PreviewPage: React.FC = () => {
     return [...baseColumns, ...dynamicColumns, qaStatusColumn];
   }, [columns, handleArrayClick]);
 
-  // Process and filter data
+  // Process data (no client-side filtering since we use server-side search)
   const processedData = useMemo(() => {
     if (!previewData?.jobFiles) return [];
 
-    let data = previewData.jobFiles.map((file) => ({
+    return previewData.jobFiles.map((file) => ({
       _filename: file.filename,
       _fileId: file.id,
       _jobName: file.job_name,
@@ -448,89 +472,104 @@ const PreviewPage: React.FC = () => {
       _reviewStatus: file.review_status || "pending",
       ...file.result,
     }));
+  }, [previewData?.jobFiles]);
 
-    // Apply search filter
-    if (searchTerm) {
-      data = data.filter((item) =>
-        Object.values(item).some((value) =>
-          String(value).toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      );
-    }
+  // Fetch preview statistics (for all items, not just current page)
+  const fetchPreviewStatistics = useCallback(async () => {
+    if (!previewId) return;
 
-    return data;
-  }, [previewData?.jobFiles, searchTerm]);
+    try {
+      setStatsLoading(true);
+      const response = await apiClient.getPreviewStatistics(previewId);
 
-  // Calculate QA statistics
-  const qaStats = useMemo(() => {
-    if (!processedData.length) {
-      return {
-        total: 0,
-        humanVerified: 0,
-        reviewed: 0,
-        approved: 0,
-        inReview: 0,
-        pending: 0,
-        rejected: 0,
-        humanVerifiedPercentage: 0,
-        qualityScore: 0,
-        allVerified: false,
-      };
-    }
-
-    const stats = {
-      total: processedData.length,
-      humanVerified: 0,
-      reviewed: 0,
-      approved: 0,
-      inReview: 0,
-      pending: 0,
-      rejected: 0,
-    };
-
-    processedData.forEach((item) => {
-      if (item._adminVerified) {
-        stats.humanVerified++;
-      } else {
-        const status = item._reviewStatus || "pending";
-        if (status === "reviewed") stats.reviewed++;
-        else if (status === "approved") stats.approved++;
-        else if (status === "in_review") stats.inReview++;
-        else if (status === "rejected") stats.rejected++;
-        else stats.pending++;
+      if (response.success && response.data) {
+        setQaStats(response.data);
       }
-    });
+    } catch (err) {
+      console.error("Error fetching preview statistics:", err);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [previewId]);
 
-    const humanVerifiedPercentage = Math.round(
-      (stats.humanVerified / stats.total) * 100
-    );
+  // Debounced search function
+  const debouncedSearch = useCallback(
+    (() => {
+      let timeoutId: NodeJS.Timeout;
+      return (value: string) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          setSearchTerm(value);
+          setCurrentPage(1); // Reset to first page on search
+        }, 500);
+      };
+    })(),
+    []
+  );
 
-    // Quality score: Human Verified = 100%, Reviewed/Approved = 80%, In Review = 50%, Pending = 30%, Rejected = 0%
-    const qualityScore = Math.round(
-      (stats.humanVerified * 100 +
-        (stats.reviewed + stats.approved) * 80 +
-        stats.inReview * 50 +
-        stats.pending * 30 +
-        stats.rejected * 0) /
-        stats.total
-    );
+  // Fetch preview data with pagination and caching
+  const fetchPreviewData = useCallback(
+    async (forceRefresh = false) => {
+      if (!previewId) return;
 
-    return {
-      ...stats,
-      humanVerifiedPercentage,
-      qualityScore,
-      allVerified: stats.humanVerified === stats.total,
-    };
-  }, [processedData]);
-
-  useEffect(() => {
-    const fetchPreviewData = async () => {
       try {
         setLoading(true);
-        const response = await apiClient.getPreviewData(previewId);
+        setError(null);
+
+        // If force refresh, clear cache for current page
+        if (forceRefresh) {
+          clearPreviewCache(previewId);
+        }
+
+        // Check cache first (unless forcing refresh)
+        if (!forceRefresh) {
+          const cached = getCachedPreviewData(
+            previewId,
+            currentPage,
+            pageSize,
+            searchTerm || undefined
+          );
+
+          if (cached) {
+            setPreviewData({
+              preview: cached.preview,
+              jobFiles: cached.jobFiles,
+            });
+            setTotalItems(cached.pagination.total);
+            setTotalPages(cached.pagination.totalPages);
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Fetch from API
+        const response = await apiClient.getPreviewDataPaginated(
+          previewId,
+          currentPage,
+          pageSize,
+          searchTerm || undefined
+        );
 
         if (response.success && response.data) {
-          setPreviewData(response.data);
+          setPreviewData({
+            preview: response.data.preview,
+            jobFiles: response.data.jobFiles,
+          });
+          setTotalItems(response.data.pagination.total);
+          setTotalPages(response.data.pagination.totalPages);
+
+          // Cache the result
+          setCachedPreviewData(
+            previewId,
+            currentPage,
+            pageSize,
+            {
+              preview: response.data.preview,
+              jobFiles: response.data.jobFiles,
+              pagination: response.data.pagination,
+            },
+            searchTerm || undefined
+          );
         } else {
           setError("Failed to load preview data");
         }
@@ -540,12 +579,46 @@ const PreviewPage: React.FC = () => {
       } finally {
         setLoading(false);
       }
-    };
+    },
+    [previewId, currentPage, pageSize, searchTerm]
+  );
 
-    if (previewId) {
-      fetchPreviewData();
+  // Force refresh function
+  const handleRefresh = useCallback(async () => {
+    await fetchPreviewData(true);
+    // Also refresh statistics
+    await fetchPreviewStatistics();
+  }, [fetchPreviewData, fetchPreviewStatistics]);
+
+  // Fetch data when dependencies change
+  useEffect(() => {
+    fetchPreviewData();
+  }, [fetchPreviewData]);
+
+  // Fetch statistics separately (once, not on pagination changes)
+  useEffect(() => {
+    fetchPreviewStatistics();
+  }, [fetchPreviewStatistics]);
+
+  // Handle search input change with debouncing
+  useEffect(() => {
+    debouncedSearch(searchInput);
+  }, [searchInput, debouncedSearch]);
+
+  // Show notification when all items are verified
+  useEffect(() => {
+    if (qaStats.allVerified && qaStats.total > 0) {
+      notification.success({
+        message: "All Items Verified",
+        description: `All ${qaStats.total} items in this preview are Human Verified. Quality assured by expert review.`,
+        icon: <CheckCircleOutlined className="text-green-600" />,
+        placement: "bottomRight",
+        duration: 4.5,
+        key: `all-verified-${previewId}`, // Prevent duplicate notifications
+        type: "success",
+      });
     }
-  }, [previewId]);
+  }, [qaStats.allVerified, qaStats.total, previewId]);
 
   const closeArrayPopup = () => {
     setArrayPopup(null);
@@ -672,7 +745,11 @@ const PreviewPage: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${previewData?.preview.name || "preview"}.csv`;
+      const filename =
+        processedData.length < totalItems
+          ? `${previewData?.preview.name || "preview"}_page${currentPage}.csv`
+          : `${previewData?.preview.name || "preview"}.csv`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -682,6 +759,11 @@ const PreviewPage: React.FC = () => {
         preview: previewData?.preview.name,
         exportedAt: new Date().toISOString(),
         totalItems: processedData.length,
+        totalInPreview: totalItems,
+        note:
+          processedData.length < totalItems
+            ? `Note: Only current page exported (${processedData.length} of ${totalItems} items)`
+            : undefined,
         data: processedData,
       };
 
@@ -691,7 +773,11 @@ const PreviewPage: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${previewData?.preview.name || "preview"}.json`;
+      const filename =
+        processedData.length < totalItems
+          ? `${previewData?.preview.name || "preview"}_page${currentPage}.json`
+          : `${previewData?.preview.name || "preview"}.json`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -699,20 +785,8 @@ const PreviewPage: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="flex items-center justify-center h-96">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading preview...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !previewData) {
+  // Only show error if we're not loading and there's actually an error
+  if (error && !loading && !previewData) {
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="flex items-center justify-center h-96">
@@ -726,6 +800,39 @@ const PreviewPage: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  // Show loading state if we don't have preview data yet
+  if (!previewData && loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-center h-96">
+          <Spin size="large" tip="Loading preview..." />
+        </div>
+      </div>
+    );
+  }
+
+  // If no preview data and not loading, show error
+  if (!previewData && !loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">Preview not found</p>
+            <Button onClick={() => router.back()}>
+              <ChevronLeftIcon className="h-4 w-4 mr-2" />
+              Go Back
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // At this point, previewData should exist, but TypeScript needs assurance
+  if (!previewData) {
+    return null; // This shouldn't happen, but satisfies TypeScript
   }
 
   return (
@@ -765,13 +872,18 @@ const PreviewPage: React.FC = () => {
             <div className="h-6 w-px bg-gray-300"></div>
 
             <div>
-              <p className="text-sm text-gray-500">
-                {processedData.length} items • {columns.length} columns
-              </p>
+              {statsLoading ? (
+                <Spin size="small" />
+              ) : (
+                <p className="text-sm text-gray-500">
+                  {qaStats.total > 0 ? qaStats.total : totalItems} items •{" "}
+                  {columns.length} columns
+                </p>
+              )}
             </div>
 
             {/* QA Summary Badge */}
-            {qaStats.total > 0 && (
+            {!statsLoading && qaStats.total > 0 && (
               <>
                 <div className="h-6 w-px bg-gray-300"></div>
                 <Tooltip
@@ -825,14 +937,20 @@ const PreviewPage: React.FC = () => {
                 </div>
               </>
             )}
+            {statsLoading && (
+              <>
+                <div className="h-6 w-px bg-gray-300"></div>
+                <Spin size="small" />
+              </>
+            )}
           </div>
 
           <div className="flex items-center space-x-4">
             {/* Search Bar */}
             <Input
               placeholder="Search data..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               prefix={<SearchOutlined />}
               style={{ width: 320 }}
               allowClear
@@ -858,26 +976,18 @@ const PreviewPage: React.FC = () => {
               trigger={["click"]}
               disabled={!processedData.length}
             >
-              <AntButton icon={<DownloadOutlined />}>Export</AntButton>
+              <AntButton icon={<DownloadOutlined />} title="Export Data" />
             </Dropdown>
+
+            <AntButton
+              icon={<ReloadOutlined />}
+              onClick={handleRefresh}
+              loading={loading}
+              title="Refresh data"
+            />
           </div>
         </div>
       </div>
-
-      {/* Bulk Verification Indicator */}
-      {qaStats.allVerified && qaStats.total > 0 && (
-        <div className="bg-green-50 border-b border-green-200 px-6 py-3 flex-shrink-0">
-          <div className="flex items-center space-x-2">
-            <CheckCircleOutlined className="text-green-600 text-lg" />
-            <span className="text-sm font-medium text-green-800">
-              All {qaStats.total} items in this preview are Human Verified
-            </span>
-            <span className="text-xs text-green-600 ml-2">
-              ✓ Quality assured by expert review
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-hidden">
@@ -887,18 +997,27 @@ const PreviewPage: React.FC = () => {
           dataSource={processedData}
           rowKey={(record) => `${record._fileId}-${record._filename}`}
           scroll={{ x: "max-content", y: "calc(100vh - 200px)" }}
+          loading={loading}
           pagination={{
             current: currentPage,
-            total: processedData.length,
+            total: totalItems,
+            pageSize: pageSize,
             showSizeChanger: true,
             showQuickJumper: false,
             showTotal: (total, range) =>
               `${range[0]}-${range[1]} of ${total} items`,
-            onChange: (page) => setCurrentPage(page),
+            onChange: (page, size) => {
+              setCurrentPage(page);
+              setPageSize(size);
+            },
+            onShowSizeChange: (current, size) => {
+              setCurrentPage(1);
+              setPageSize(size);
+            },
             size: "small",
-            hideOnSinglePage: true,
+            hideOnSinglePage: totalPages <= 1,
             position: ["bottomCenter"],
-            defaultPageSize: 20,
+            pageSizeOptions: ["10", "20", "50", "100"],
           }}
           size="small"
           className="ant-table-custom h-full"

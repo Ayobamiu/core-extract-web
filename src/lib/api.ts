@@ -736,6 +736,46 @@ class ApiClient {
         return this.request(`/previews/${id}/data`);
     }
 
+    async getPreviewDataPaginated(
+        id: string,
+        page: number = 1,
+        pageSize: number = 20,
+        search?: string
+    ): Promise<ApiResponse<{
+        preview: PreviewDataTable;
+        jobFiles: PreviewJobFile[];
+        pagination: {
+            total: number;
+            page: number;
+            pageSize: number;
+            totalPages: number;
+        };
+    }>> {
+        const params = new URLSearchParams({
+            page: page.toString(),
+            pageSize: pageSize.toString(),
+        });
+        if (search && search.trim()) {
+            params.append('search', search.trim());
+        }
+        return this.request(`/previews/${id}/data?${params.toString()}`);
+    }
+
+    async getPreviewStatistics(id: string): Promise<ApiResponse<{
+        total: number;
+        humanVerified: number;
+        reviewed: number;
+        approved: number;
+        inReview: number;
+        pending: number;
+        rejected: number;
+        humanVerifiedPercentage: number;
+        qualityScore: number;
+        allVerified: boolean;
+    }>> {
+        return this.request(`/previews/${id}/statistics`);
+    }
+
     async createPreview(name: string, schema: any, logo?: string): Promise<ApiResponse<PreviewDataTable>> {
         return this.request('/previews', {
             method: 'POST',
