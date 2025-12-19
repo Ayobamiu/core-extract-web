@@ -117,6 +117,7 @@ export interface JobFile {
     s3_key?: string;
     file_hash?: string;
     job_id?: string;
+    job_extraction_mode?: 'full_extraction' | 'text_only';
     extraction_status: 'pending' | 'processing' | 'completed' | 'failed';
     processing_status: 'pending' | 'processing' | 'completed' | 'failed';
     upload_status?: 'pending' | 'success' | 'failed' | 'retrying';

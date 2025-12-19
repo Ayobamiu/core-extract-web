@@ -77,11 +77,6 @@ export default function Dashboard() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchData();
-
-      // Set up polling for real-time updates
-      const interval = setInterval(fetchData, 5000); // Poll every 5 seconds
-
-      return () => clearInterval(interval);
     }
   }, [isAuthenticated, currentOrganization]); // Add currentOrganization dependency
 
