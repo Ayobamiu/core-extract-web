@@ -161,6 +161,73 @@ export interface ConstraintCheck {
 }
 
 /**
+ * Check if formations are continuous (no gaps between them)
+ * Formations are continuous if each formation's 'from' matches the previous formation's 'to'
+ */
+export function checkFormationContinuity(formations: any[]): {
+    isContinuous: boolean;
+    gaps: Array<{ from: number; to: number; gap: number }>;
+    message: string;
+} {
+    if (!formations || formations.length === 0) {
+        return {
+            isContinuous: true,
+            gaps: [],
+            message: 'No formations to check',
+        };
+    }
+
+    if (formations.length === 1) {
+        return {
+            isContinuous: true,
+            gaps: [],
+            message: 'Only one formation - continuity check not applicable',
+        };
+    }
+
+    // Filter out formations with missing from/to values and sort by 'from' depth
+    const validFormations = formations
+        .filter(f => f.from != null && f.to != null && typeof f.from === 'number' && typeof f.to === 'number')
+        .sort((a, b) => a.from - b.from);
+
+    if (validFormations.length < 2) {
+        return {
+            isContinuous: true,
+            gaps: [],
+            message: 'Not enough valid formations to check continuity',
+        };
+    }
+
+    const gaps: Array<{ from: number; to: number; gap: number }> = [];
+
+    // Check continuity between consecutive formations
+    for (let i = 1; i < validFormations.length; i++) {
+        const previous = validFormations[i - 1];
+        const current = validFormations[i];
+
+        // Check if there's a gap (current.from !== previous.to)
+        if (current.from !== previous.to) {
+            const gap = Math.abs(current.from - previous.to);
+            gaps.push({
+                from: previous.to,
+                to: current.from,
+                gap: gap,
+            });
+        }
+    }
+
+    const isContinuous = gaps.length === 0;
+
+    return {
+        isContinuous,
+        gaps,
+        message: isContinuous
+            ? 'Formations are continuous'
+            : `Found ${gaps.length} gap(s) in formations`,
+    };
+}
+
+/**
  * Check all constraints for a file (same logic as in FileTable Constraints column)
  */
 export function checkFileConstraints(file: JobFile): ConstraintCheck[] {
@@ -324,6 +391,34 @@ export function checkFileConstraints(file: JobFile): ConstraintCheck[] {
             message: 'Cannot check formation depth coverage - no formations found',
             severity: 'warning',
         });
+    }
+
+    // 6. Formation continuity check
+    if (formations.length > 0) {
+        const continuityCheck = checkFormationContinuity(formations);
+        if (!continuityCheck.isContinuous) {
+            const gapDetails = continuityCheck.gaps.map(g =>
+                `Gap of ${g.gap} between depth ${g.from} and ${g.to}`
+            ).join('; ');
+
+            checks.push({
+                name: 'Formation Continuity',
+                passed: false,
+                message: `Formations are not continuous: ${gapDetails}`,
+                severity: 'warning',
+                details: {
+                    gaps: continuityCheck.gaps,
+                    gapCount: continuityCheck.gaps.length,
+                },
+            });
+        } else {
+            checks.push({
+                name: 'Formation Continuity',
+                passed: true,
+                message: continuityCheck.message,
+                severity: 'info',
+            });
+        }
     }
 
     return checks;

@@ -55,6 +55,7 @@ import {
   getViolationSeverityColor,
   getViolationSeverityIcon,
   checkFileConstraints,
+  checkFormationContinuity,
 } from "@/lib/constraintUtils";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import ConstraintList from "@/components/ui/ConstraintList";
@@ -1664,6 +1665,9 @@ const FileTable: React.FC<FileTableProps> = ({
           record.result?.elevation && record.result?.elevation > 100;
         const correctFormationCount =
           record.result?.formations && record.result?.formations.length >= 10;
+        const continuityCheck = checkFormationContinuity(
+          record.result?.formations || []
+        );
 
         // Show violation flag if there's a permit number mismatch
 
@@ -1772,6 +1776,37 @@ const FileTable: React.FC<FileTableProps> = ({
                   </div>
                 </Tooltip>
               )}
+              {!continuityCheck.isContinuous &&
+                continuityCheck.gaps.length > 0 && (
+                  <Tooltip
+                    title={
+                      <div>
+                        <div
+                          style={{ fontWeight: "bold", marginBottom: "4px" }}
+                        >
+                          Formation Continuity Issue:
+                        </div>
+                        <div>
+                          {continuityCheck.gaps
+                            .map(
+                              (g) =>
+                                `Gap of ${g.gap} between ${g.from} and ${g.to}`
+                            )
+                            .join(", ")}
+                        </div>
+                      </div>
+                    }
+                  >
+                    <div
+                      className="flex items-center justify-center"
+                      style={{ whiteSpace: "nowrap" }}
+                    >
+                      <ExclamationCircleOutlined
+                        style={{ color: "#d97706", flexShrink: 0 }}
+                      />
+                    </div>
+                  </Tooltip>
+                )}
             </div>
           );
         }
@@ -1782,7 +1817,9 @@ const FileTable: React.FC<FileTableProps> = ({
           record.result &&
           record.job_id === "5667fe82-63e1-47fa-a640-b182b5c5d034" &&
           correctElevation &&
-          hasApiNumber
+          hasApiNumber &&
+          correctFormationCount &&
+          continuityCheck.isContinuous
         ) {
           return (
             <Tooltip title="All constraints met">
