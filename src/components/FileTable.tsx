@@ -252,7 +252,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // AJAX loading state
   const [data, setData] = useState<JobFile[]>([]);
-  console.log({ data });
+
   const [loading, setLoading] = useState(false);
   const [tableParams, setTableParams] = useState<TableParams>({
     pagination: {
@@ -3573,7 +3573,9 @@ const FileTable: React.FC<FileTableProps> = ({
 
             {/* Content Metadata */}
             <div>
-              <h3 className="text-lg font-semibold mb-3">Content Metadata</h3>
+              <h3 className="text-lg font-semibold mb-3">
+                Content Metadata UUUU
+              </h3>
               <Descriptions column={1} bordered size="small">
                 {selectedFilePageCount !== null && (
                   <Descriptions.Item label="Pages">
@@ -3611,6 +3613,185 @@ const FileTable: React.FC<FileTableProps> = ({
                 </Descriptions.Item>
               </Descriptions>
             </div>
+
+            {/* Formation Page Detection */}
+            {(() => {
+              const formationDetection = (
+                selectedFileForDetails.processing_metadata as any
+              )?.formation_page_detection;
+              console.log({ formationDetection, selectedFileForDetails });
+
+              if (!formationDetection) {
+                return null;
+              }
+
+              const scoring = formationDetection.scoring;
+              const confidentHits = scoring?.confidentHits || [];
+              const borderlines = scoring?.borderlines || [];
+              const confidentMisses = scoring?.confidentMisses || [];
+              const summary = scoring?.summary || {};
+
+              return (
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">
+                    Formation Page Detection
+                  </h3>
+                  <Descriptions column={1} bordered size="small">
+                    <Descriptions.Item label="Status">
+                      <Tag
+                        color={formationDetection.success ? "green" : "orange"}
+                      >
+                        {formationDetection.success
+                          ? "Completed"
+                          : "Not Available"}
+                      </Tag>
+                    </Descriptions.Item>
+                    {summary.total !== undefined && (
+                      <Descriptions.Item label="Total Pages">
+                        {summary.total}
+                      </Descriptions.Item>
+                    )}
+                    {confidentHits.length > 0 && (
+                      <Descriptions.Item label="Confident Hits">
+                        <div className="flex flex-wrap gap-1">
+                          <Tag color="green">
+                            {confidentHits.length} page
+                            {confidentHits.length !== 1 ? "s" : ""}
+                          </Tag>
+                          <span className="text-gray-600">
+                            ({confidentHits.join(", ")})
+                          </span>
+                        </div>
+                      </Descriptions.Item>
+                    )}
+                    {borderlines.length > 0 && (
+                      <Descriptions.Item label="Borderline Pages">
+                        <div className="flex flex-wrap gap-1">
+                          <Tag color="orange">
+                            {borderlines.length} page
+                            {borderlines.length !== 1 ? "s" : ""}
+                          </Tag>
+                          <span className="text-gray-600">
+                            ({borderlines.join(", ")})
+                          </span>
+                        </div>
+                      </Descriptions.Item>
+                    )}
+                    {confidentMisses.length > 0 && (
+                      <Descriptions.Item label="Confident Misses">
+                        <div className="flex flex-wrap gap-1">
+                          <Tag color="default">
+                            {confidentMisses.length} page
+                            {confidentMisses.length !== 1 ? "s" : ""}
+                          </Tag>
+                        </div>
+                      </Descriptions.Item>
+                    )}
+                    {formationDetection.extracted_pdf && (
+                      <Descriptions.Item label="Extracted PDF">
+                        <div className="flex items-center space-x-2">
+                          <Tag color="blue">
+                            {formationDetection.extracted_pdf.filename}
+                          </Tag>
+                          <span className="text-xs text-gray-500">
+                            ({formationDetection.extracted_pdf.page_count}{" "}
+                            pages,{" "}
+                            {formatFileSize(
+                              formationDetection.extracted_pdf.size
+                            )}
+                            )
+                          </span>
+                        </div>
+                      </Descriptions.Item>
+                    )}
+                    {formationDetection.error && (
+                      <Descriptions.Item label="Error">
+                        <Text type="danger" className="text-xs">
+                          {formationDetection.error}
+                        </Text>
+                      </Descriptions.Item>
+                    )}
+                  </Descriptions>
+
+                  {/* Detailed Scoring (Collapsible) */}
+                  {scoring?.scoredPages && scoring.scoredPages.length > 0 && (
+                    <div className="mt-4">
+                      <Collapse>
+                        <Collapse.Panel
+                          header={`View Detailed Page Scores (${scoring.scoredPages.length} pages)`}
+                          key="scoring"
+                        >
+                          <div className="max-h-96 overflow-y-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-gray-50 sticky top-0">
+                                <tr>
+                                  <th className="px-2 py-1 text-left border">
+                                    Page
+                                  </th>
+                                  <th className="px-2 py-1 text-left border">
+                                    Score
+                                  </th>
+                                  <th className="px-2 py-1 text-left border">
+                                    Classification
+                                  </th>
+                                  <th className="px-2 py-1 text-left border">
+                                    Text Length
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {scoring.scoredPages.map((page: any) => (
+                                  <tr key={page.page_number}>
+                                    <td className="px-2 py-1 border">
+                                      {page.page_number}
+                                    </td>
+                                    <td className="px-2 py-1 border">
+                                      <Tag
+                                        color={
+                                          page.classification ===
+                                          "CONFIDENT_HIT"
+                                            ? "green"
+                                            : page.classification ===
+                                              "BORDERLINE"
+                                            ? "orange"
+                                            : "default"
+                                        }
+                                      >
+                                        {page.score}
+                                      </Tag>
+                                    </td>
+                                    <td className="px-2 py-1 border">
+                                      <Tag
+                                        color={
+                                          page.classification ===
+                                          "CONFIDENT_HIT"
+                                            ? "green"
+                                            : page.classification ===
+                                              "BORDERLINE"
+                                            ? "orange"
+                                            : "default"
+                                        }
+                                      >
+                                        {page.classification
+                                          .replace(/_/g, " ")
+                                          .toLowerCase()}
+                                      </Tag>
+                                    </td>
+                                    <td className="px-2 py-1 border text-gray-600">
+                                      {page.text_length?.toLocaleString() || 0}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </Collapse.Panel>
+                      </Collapse>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Constraints */}
             <ConstraintList file={selectedFileForDetails} />
