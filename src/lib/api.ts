@@ -185,6 +185,7 @@ export interface ProcessingConfig {
         forceExtraction?: boolean;
         preview?: boolean;
     };
+    usePageDetection?: boolean; // Enable/disable page detection filtering (default: true)
 }
 
 export interface JobDetails extends Job {

@@ -3573,9 +3573,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
             {/* Content Metadata */}
             <div>
-              <h3 className="text-lg font-semibold mb-3">
-                Content Metadata UUUU
-              </h3>
+              <h3 className="text-lg font-semibold mb-3">Content Metadata</h3>
               <Descriptions column={1} bordered size="small">
                 {selectedFilePageCount !== null && (
                   <Descriptions.Item label="Pages">

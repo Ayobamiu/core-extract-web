@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Modal, Form, Input, Select, message, Divider } from "antd";
+import { Modal, Form, Input, Select, message, Divider, Switch } from "antd";
 import { ProcessingConfig } from "@/lib/api";
 import {
   PROCESSING_METHODS,
@@ -61,6 +61,8 @@ export default function JobConfigEditor({
           currentConfig.processing_config?.extraction?.method || "paddleocr",
         processing_method: processingMethod,
         processing_model: processingModel,
+        use_page_detection:
+          currentConfig.processing_config?.usePageDetection !== false, // Default to true
       });
     }
   }, [open, currentConfig, form]);
@@ -90,9 +92,14 @@ export default function JobConfigEditor({
         },
         processing: {
           method: values.processing_method || PROCESSING_METHODS.OPENAI,
-          model: values.processing_model || getDefaultModel(values.processing_method || PROCESSING_METHODS.OPENAI),
+          model:
+            values.processing_model ||
+            getDefaultModel(
+              values.processing_method || PROCESSING_METHODS.OPENAI
+            ),
           options: currentConfig.processing_config?.processing?.options || {},
         },
+        usePageDetection: values.use_page_detection !== false, // Default to true if not explicitly set
       };
 
       // Prepare updates
@@ -119,11 +126,14 @@ export default function JobConfigEditor({
       const currentProcessingModel =
         currentConfig.processing_config?.processing?.model ||
         getDefaultModel(currentProcessingMethod);
+      const currentUsePageDetection =
+        currentConfig.processing_config?.usePageDetection !== false; // Default to true
 
       if (
         values.extraction_method !== currentExtractionMethod ||
         values.processing_method !== currentProcessingMethod ||
-        values.processing_model !== currentProcessingModel
+        values.processing_model !== currentProcessingModel ||
+        values.use_page_detection !== currentUsePageDetection
       ) {
         updates.processing_config = processingConfig;
       }
@@ -252,6 +262,31 @@ export default function JobConfigEditor({
               ))}
             </Select>
           </Form.Item>
+        </div>
+
+        <Divider className="my-4" />
+
+        {/* Page Detection Configuration */}
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">
+            Page Detection Configuration
+          </h3>
+
+          <Form.Item
+            label="Enable Smart Page Filtering"
+            name="use_page_detection"
+            tooltip="When enabled, only processes pages identified as relevant (Formation, LOG, Plugging Record). When disabled, processes the entire document."
+            valuePropName="checked"
+            initialValue={true}
+          >
+            <Switch />
+          </Form.Item>
+          <div className="text-xs text-gray-500 mt-1 mb-4">
+            Smart page filtering automatically identifies and processes only
+            relevant pages (Formation, LOG OF OIL/GAS, Well Plugging Record),
+            reducing processing costs and improving accuracy. Disable to process
+            the entire document.
+          </div>
         </div>
 
         {/* Form Actions */}
