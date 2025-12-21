@@ -3614,38 +3614,77 @@ const FileTable: React.FC<FileTableProps> = ({
               </Descriptions>
             </div>
 
-            {/* Formation Page Detection */}
+            {/* Data Extraction Page Detection (Comprehensive) */}
             {(() => {
-              const formationDetection = (
-                selectedFileForDetails.processing_metadata as any
-              )?.formation_page_detection;
-              console.log({ formationDetection, selectedFileForDetails });
+              console.log({ selectedFileForDetails });
+              const metadata =
+                selectedFileForDetails.processing_metadata as any;
+              // Use comprehensive detection (pre-processing) if available, fallback to old formation detection for backward compatibility
+              const dataExtractionDetection =
+                metadata?.data_extraction_page_detection_pre ||
+                metadata?.formation_page_detection;
+              console.log({ dataExtractionDetection, selectedFileForDetails });
 
-              if (!formationDetection) {
+              if (!dataExtractionDetection) {
                 return null;
               }
 
-              const scoring = formationDetection.scoring;
-              const confidentHits = scoring?.confidentHits || [];
+              const scoring = dataExtractionDetection.scoring;
+              const confidentHits =
+                scoring?.confidentHits ||
+                dataExtractionDetection.confidentHits ||
+                [];
               const borderlines = scoring?.borderlines || [];
               const confidentMisses = scoring?.confidentMisses || [];
               const summary = scoring?.summary || {};
+              const detectionBreakdown =
+                dataExtractionDetection.detectionBreakdown || {};
+              const isComprehensive =
+                !!metadata?.data_extraction_page_detection_pre;
 
               return (
                 <div>
                   <h3 className="text-lg font-semibold mb-3">
-                    Formation Page Detection
+                    {isComprehensive
+                      ? "Data Extraction Page Detection"
+                      : "Formation Page Detection"}
                   </h3>
                   <Descriptions column={1} bordered size="small">
                     <Descriptions.Item label="Status">
                       <Tag
-                        color={formationDetection.success ? "green" : "orange"}
+                        color={
+                          dataExtractionDetection.success !== false
+                            ? "green"
+                            : "orange"
+                        }
                       >
-                        {formationDetection.success
+                        {dataExtractionDetection.success !== false
                           ? "Completed"
                           : "Not Available"}
                       </Tag>
                     </Descriptions.Item>
+                    {isComprehensive &&
+                      detectionBreakdown.total !== undefined && (
+                        <Descriptions.Item label="Detection Breakdown">
+                          <div className="flex flex-wrap gap-2">
+                            {detectionBreakdown.formation > 0 && (
+                              <Tag color="blue">
+                                Formation: {detectionBreakdown.formation}
+                              </Tag>
+                            )}
+                            {detectionBreakdown.log > 0 && (
+                              <Tag color="cyan">
+                                LOG: {detectionBreakdown.log}
+                              </Tag>
+                            )}
+                            {detectionBreakdown.plugging > 0 && (
+                              <Tag color="purple">
+                                Plugging: {detectionBreakdown.plugging}
+                              </Tag>
+                            )}
+                          </div>
+                        </Descriptions.Item>
+                      )}
                     {summary.total !== undefined && (
                       <Descriptions.Item label="Total Pages">
                         {summary.total}
@@ -3687,27 +3726,27 @@ const FileTable: React.FC<FileTableProps> = ({
                         </div>
                       </Descriptions.Item>
                     )}
-                    {formationDetection.extracted_pdf && (
+                    {dataExtractionDetection.extracted_pdf && (
                       <Descriptions.Item label="Extracted PDF">
                         <div className="flex items-center space-x-2">
                           <Tag color="blue">
-                            {formationDetection.extracted_pdf.filename}
+                            {dataExtractionDetection.extracted_pdf.filename}
                           </Tag>
                           <span className="text-xs text-gray-500">
-                            ({formationDetection.extracted_pdf.page_count}{" "}
+                            ({dataExtractionDetection.extracted_pdf.page_count}{" "}
                             pages,{" "}
                             {formatFileSize(
-                              formationDetection.extracted_pdf.size
+                              dataExtractionDetection.extracted_pdf.size
                             )}
                             )
                           </span>
                         </div>
                       </Descriptions.Item>
                     )}
-                    {formationDetection.error && (
+                    {dataExtractionDetection.error && (
                       <Descriptions.Item label="Error">
                         <Text type="danger" className="text-xs">
-                          {formationDetection.error}
+                          {dataExtractionDetection.error}
                         </Text>
                       </Descriptions.Item>
                     )}
@@ -3729,8 +3768,24 @@ const FileTable: React.FC<FileTableProps> = ({
                                     Page
                                   </th>
                                   <th className="px-2 py-1 text-left border">
-                                    Score
+                                    {isComprehensive ? "Total Score" : "Score"}
                                   </th>
+                                  {isComprehensive && (
+                                    <>
+                                      <th className="px-2 py-1 text-left border">
+                                        Formation
+                                      </th>
+                                      <th className="px-2 py-1 text-left border">
+                                        LOG
+                                      </th>
+                                      <th className="px-2 py-1 text-left border">
+                                        Plugging
+                                      </th>
+                                      <th className="px-2 py-1 text-left border">
+                                        Types
+                                      </th>
+                                    </>
+                                  )}
                                   <th className="px-2 py-1 text-left border">
                                     Classification
                                   </th>
@@ -3757,9 +3812,78 @@ const FileTable: React.FC<FileTableProps> = ({
                                             : "default"
                                         }
                                       >
-                                        {page.score}
+                                        {page.totalScore !== undefined
+                                          ? page.totalScore
+                                          : page.score}
                                       </Tag>
                                     </td>
+                                    {isComprehensive && (
+                                      <>
+                                        <td className="px-2 py-1 border text-gray-600">
+                                          {page.formationScore !== undefined ? (
+                                            <span className="text-xs">
+                                              {page.formationScore}
+                                            </span>
+                                          ) : (
+                                            <span className="text-gray-400">
+                                              -
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-2 py-1 border text-gray-600">
+                                          {page.logPageScore !== undefined ? (
+                                            <span className="text-xs">
+                                              {page.logPageScore}
+                                            </span>
+                                          ) : (
+                                            <span className="text-gray-400">
+                                              -
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-2 py-1 border text-gray-600">
+                                          {page.pluggingRecordScore !==
+                                          undefined ? (
+                                            <span className="text-xs">
+                                              {page.pluggingRecordScore}
+                                            </span>
+                                          ) : (
+                                            <span className="text-gray-400">
+                                              -
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-2 py-1 border">
+                                          {page.detectedTypes &&
+                                          page.detectedTypes.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1">
+                                              {page.detectedTypes.map(
+                                                (type: string) => (
+                                                  <Tag
+                                                    key={type}
+                                                    color={
+                                                      type === "FORMATION"
+                                                        ? "blue"
+                                                        : type ===
+                                                          "LOG_OF_OIL_GAS"
+                                                        ? "cyan"
+                                                        : "purple"
+                                                    }
+                                                    className="text-xs"
+                                                  >
+                                                    {type.replace(/_/g, " ")}
+                                                  </Tag>
+                                                )
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <span className="text-gray-400 text-xs">
+                                              -
+                                            </span>
+                                          )}
+                                        </td>
+                                      </>
+                                    )}
                                     <td className="px-2 py-1 border">
                                       <Tag
                                         color={
