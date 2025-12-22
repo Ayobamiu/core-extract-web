@@ -1365,6 +1365,21 @@ const FileTable: React.FC<FileTableProps> = ({
           >
             {record.filename}
           </Text>
+          {record.selected_pages &&
+            Array.isArray(record.selected_pages) &&
+            record.selected_pages.length > 0 && (
+              <Tooltip
+                title={`Selected pages: ${record.selected_pages.join(", ")} (${
+                  record.selected_pages.length
+                } of ${computePageCount(record) || "?"} pages)`}
+              >
+                <Badge
+                  count={record.selected_pages.length}
+                  style={{ backgroundColor: "#1890ff" }}
+                  overflowCount={99}
+                />
+              </Tooltip>
+            )}
         </div>
       ),
     },
@@ -3280,6 +3295,47 @@ const FileTable: React.FC<FileTableProps> = ({
                 )}
               </Descriptions>
             </div>
+
+            {/* Page Selection Information */}
+            {selectedFileForDetails.selected_pages &&
+              Array.isArray(selectedFileForDetails.selected_pages) &&
+              selectedFileForDetails.selected_pages.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Page Selection</h3>
+                  <Descriptions column={1} bordered size="small">
+                    <Descriptions.Item label="Total Pages">
+                      {selectedFilePageCount !== null
+                        ? selectedFilePageCount
+                        : "-"}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Selected Pages">
+                      <div className="flex flex-wrap gap-1">
+                        <Tag color="blue">
+                          {selectedFileForDetails.selected_pages.length} of{" "}
+                          {selectedFilePageCount || "?"} pages
+                        </Tag>
+                      </div>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Selected Page Numbers">
+                      <div className="flex flex-wrap gap-1">
+                        {selectedFileForDetails.selected_pages
+                          .sort((a, b) => a - b)
+                          .map((pageNum) => (
+                            <Tag key={pageNum} color="blue">
+                              {pageNum}
+                            </Tag>
+                          ))}
+                      </div>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Selection Status">
+                      <Tag color="green">
+                        <CheckCircleOutlined className="mr-1" />
+                        Only selected pages were processed
+                      </Tag>
+                    </Descriptions.Item>
+                  </Descriptions>
+                </div>
+              )}
 
             {/* Status Information */}
             <div>

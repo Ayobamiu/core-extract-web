@@ -20,6 +20,7 @@ import InlineSchemaEditor from "@/components/InlineSchemaEditor";
 import FileResultsEditor from "@/components/FileResultsEditor";
 import FileTable from "@/components/FileTable";
 import JobConfigEditor from "@/components/JobConfigEditor";
+import PageSelectionModal from "@/components/PageSelectionModal";
 import { useSocket } from "@/hooks/useSocket";
 import {
   PlusIcon,
@@ -65,6 +66,12 @@ export default function JobDetailPage() {
   const [isAddingFiles, setIsAddingFiles] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [fileList, setFileList] = useState<FileList | null>(null);
+  const [selectedPagesMap, setSelectedPagesMap] = useState<
+    Map<string, number[]>
+  >(new Map());
+  const [pageSelectionModalOpen, setPageSelectionModalOpen] = useState(false);
+  const [currentFileForPageSelection, setCurrentFileForPageSelection] =
+    useState<File | null>(null);
   const [showPreviewSelector, setShowPreviewSelector] = useState(false);
   const [selectedFileForPreview, setSelectedFileForPreview] = useState<
     string | null
@@ -218,9 +225,27 @@ export default function JobDetailPage() {
   ) => {
     const files = event.target.files;
     if (files) {
-      setSelectedFiles(Array.from(files));
+      const fileArray = Array.from(files);
+      setSelectedFiles(fileArray);
       setFileList(files);
+      // Clear selected pages when new files are selected
+      setSelectedPagesMap(new Map());
     }
+  };
+
+  const handleSelectPages = (file: File) => {
+    setCurrentFileForPageSelection(file);
+    setPageSelectionModalOpen(true);
+  };
+
+  const handlePageSelectionConfirm = (file: File, selectedPages: number[]) => {
+    setSelectedPagesMap((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(file.name, selectedPages);
+      return newMap;
+    });
+    setPageSelectionModalOpen(false);
+    setCurrentFileForPageSelection(null);
   };
 
   // Handle adding files to job
@@ -258,15 +283,28 @@ export default function JobDetailPage() {
   const handleConfirmUpload = async () => {
     if (selectedFiles.length === 0 || !fileList) return;
 
+    // Build selected_pages object from map
+    const selectedPagesObj: Record<string, number[]> = {};
+    selectedPagesMap.forEach((pages, filename) => {
+      if (pages.length > 0) {
+        selectedPagesObj[filename] = pages;
+      }
+    });
+
     setIsAddingFiles(true);
     try {
-      const response = await apiClient.addFilesToJob(jobId, fileList);
+      const response = await apiClient.addFilesToJob(
+        jobId,
+        fileList,
+        Object.keys(selectedPagesObj).length > 0 ? selectedPagesObj : undefined
+      );
 
       if (response.status === "success") {
         // Refresh job data to get updated file list
         await refreshJobData();
-        // Clear selected files
+        // Clear selected files and pages
         setSelectedFiles([]);
+        setSelectedPagesMap(new Map());
         setFileList(null);
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
@@ -744,28 +782,58 @@ export default function JobDetailPage() {
 
                     <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
                       <div className="divide-y divide-gray-200">
-                        {selectedFiles.map((file, index) => (
-                          <div key={index} className="p-4 hover:bg-gray-50">
-                            <div className="flex items-center space-x-3">
-                              <div className="flex-shrink-0">
-                                <DocumentIcon className="h-8 w-8 text-blue-500" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-gray-900 truncate">
-                                  {file.name}
+                        {selectedFiles.map((file, index) => {
+                          const isPdf =
+                            file.type === "application/pdf" ||
+                            file.name.toLowerCase().endsWith(".pdf");
+                          const selectedPages = selectedPagesMap.get(file.name);
+                          return (
+                            <div key={index} className="p-4 hover:bg-gray-50">
+                              <div className="flex items-center space-x-3">
+                                <div className="flex-shrink-0">
+                                  <DocumentIcon className="h-8 w-8 text-blue-500" />
                                 </div>
-                                <div className="text-sm text-gray-500">
-                                  {formatFileSize(file.size)}
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-gray-900 truncate">
+                                    {file.name}
+                                  </div>
+                                  <div className="text-sm text-gray-500">
+                                    {formatFileSize(file.size)}
+                                    {selectedPages &&
+                                      selectedPages.length > 0 && (
+                                        <span className="ml-2 text-blue-600">
+                                          • {selectedPages.length} page
+                                          {selectedPages.length !== 1
+                                            ? "s"
+                                            : ""}{" "}
+                                          selected
+                                        </span>
+                                      )}
+                                  </div>
                                 </div>
-                              </div>
-                              <div className="flex-shrink-0">
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                  {file.type || "Unknown type"}
-                                </span>
+                                <div className="flex items-center space-x-2">
+                                  {isPdf && (
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() => handleSelectPages(file)}
+                                      disabled={isAddingFiles}
+                                    >
+                                      {selectedPages && selectedPages.length > 0
+                                        ? "Edit Pages"
+                                        : "Select Pages"}
+                                    </Button>
+                                  )}
+                                  <div className="flex-shrink-0">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                      {file.type || "Unknown type"}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -868,6 +936,27 @@ export default function JobDetailPage() {
                   processing_config: job.processing_config,
                 }}
                 onUpdate={handleUpdateJobConfig}
+              />
+            )}
+
+            {/* Page Selection Modal */}
+            {currentFileForPageSelection && (
+              <PageSelectionModal
+                open={pageSelectionModalOpen}
+                file={currentFileForPageSelection}
+                initialSelectedPages={
+                  selectedPagesMap.get(currentFileForPageSelection.name) || []
+                }
+                onClose={() => {
+                  setPageSelectionModalOpen(false);
+                  setCurrentFileForPageSelection(null);
+                }}
+                onConfirm={(selectedPages) =>
+                  handlePageSelectionConfirm(
+                    currentFileForPageSelection,
+                    selectedPages
+                  )
+                }
               />
             )}
           </div>

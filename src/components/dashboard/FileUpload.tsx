@@ -9,6 +9,7 @@ import { apiClient, ProcessingConfig } from "@/lib/api";
 import { PROCESSING_METHODS, DEFAULT_MODELS } from "@/lib/processingConfig";
 import ExampleSchemaDropdown from "./ExampleSchemaPanel";
 import ProcessingConfigSelector from "../ProcessingConfigSelector";
+import PageSelectionModal from "../PageSelectionModal";
 
 interface FileUploadProps {
   onUploadSuccess?: (jobId: string) => void;
@@ -27,6 +28,12 @@ const FileUpload: React.FC<FileUploadProps> = ({
   >("idle");
   const [error, setError] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedPagesMap, setSelectedPagesMap] = useState<
+    Map<string, number[]>
+  >(new Map());
+  const [pageSelectionModalOpen, setPageSelectionModalOpen] = useState(false);
+  const [currentFileForPageSelection, setCurrentFileForPageSelection] =
+    useState<File | null>(null);
   const [schema, setSchema] = useState("");
   const [schemaName, setSchemaName] = useState("");
   const [extractionMode, setExtractionMode] = useState<
@@ -120,7 +127,31 @@ const FileUpload: React.FC<FileUploadProps> = ({
   };
 
   const removeFile = (index: number) => {
+    const file = selectedFiles[index];
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+    // Remove selected pages for this file
+    if (file) {
+      setSelectedPagesMap((prev) => {
+        const newMap = new Map(prev);
+        newMap.delete(file.name);
+        return newMap;
+      });
+    }
+  };
+
+  const handleSelectPages = (file: File) => {
+    setCurrentFileForPageSelection(file);
+    setPageSelectionModalOpen(true);
+  };
+
+  const handlePageSelectionConfirm = (file: File, selectedPages: number[]) => {
+    setSelectedPagesMap((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(file.name, selectedPages);
+      return newMap;
+    });
+    setPageSelectionModalOpen(false);
+    setCurrentFileForPageSelection(null);
   };
 
   const handleUpload = async () => {
@@ -152,6 +183,14 @@ const FileUpload: React.FC<FileUploadProps> = ({
         `Processing ${selectedFiles.length} files in a single request`
       );
 
+      // Build selected_pages object from map
+      const selectedPagesObj: Record<string, number[]> = {};
+      selectedPagesMap.forEach((pages, filename) => {
+        if (pages.length > 0) {
+          selectedPagesObj[filename] = pages;
+        }
+      });
+
       const response = await apiClient.extractMultiple(
         {
           schema: parsedSchema,
@@ -159,7 +198,8 @@ const FileUpload: React.FC<FileUploadProps> = ({
           extractionMode: extractionMode,
         },
         selectedFiles as any[],
-        processingConfig
+        processingConfig,
+        Object.keys(selectedPagesObj).length > 0 ? selectedPagesObj : undefined
       );
 
       console.log("API Response:", response);
@@ -176,6 +216,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
 
       setUploadStatus("success");
       setSelectedFiles([]);
+      setSelectedPagesMap(new Map());
       setSchema("");
       setSchemaName("");
 
@@ -364,32 +405,60 @@ const FileUpload: React.FC<FileUploadProps> = ({
             <div className="space-y-2">
               <h4 className="font-medium text-gray-700">Selected Files:</h4>
               <div className="space-y-2">
-                {selectedFiles.map((file, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className="text-2xl">📄</div>
-                      <div>
-                        <p className="font-medium text-gray-700">{file.name}</p>
-                        <p className="text-sm text-gray-500">
-                          {formatFileSize(file.size)}
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      variant="error"
-                      size="sm"
-                      onClick={() => removeFile(index)}
-                      disabled={uploading}
+                {selectedFiles.map((file, index) => {
+                  const isPdf =
+                    file.type === "application/pdf" ||
+                    file.name.toLowerCase().endsWith(".pdf");
+                  const selectedPages = selectedPagesMap.get(file.name);
+                  return (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                     >
-                      Remove
-                    </Button>
-                  </motion.div>
-                ))}
+                      <div className="flex items-center space-x-3 flex-1">
+                        <div className="text-2xl">📄</div>
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-700">
+                            {file.name}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {formatFileSize(file.size)}
+                            {selectedPages && selectedPages.length > 0 && (
+                              <span className="ml-2 text-blue-600">
+                                • {selectedPages.length} page
+                                {selectedPages.length !== 1 ? "s" : ""} selected
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {isPdf && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleSelectPages(file)}
+                            disabled={uploading}
+                          >
+                            {selectedPages && selectedPages.length > 0
+                              ? "Edit Pages"
+                              : "Select Pages"}
+                          </Button>
+                        )}
+                        <Button
+                          variant="error"
+                          size="sm"
+                          onClick={() => removeFile(index)}
+                          disabled={uploading}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -454,6 +523,27 @@ const FileUpload: React.FC<FileUploadProps> = ({
           </Button>
         </div>
       </CardContent>
+
+      {/* Page Selection Modal */}
+      {currentFileForPageSelection && (
+        <PageSelectionModal
+          open={pageSelectionModalOpen}
+          file={currentFileForPageSelection}
+          initialSelectedPages={
+            selectedPagesMap.get(currentFileForPageSelection.name) || []
+          }
+          onClose={() => {
+            setPageSelectionModalOpen(false);
+            setCurrentFileForPageSelection(null);
+          }}
+          onConfirm={(selectedPages) =>
+            handlePageSelectionConfirm(
+              currentFileForPageSelection,
+              selectedPages
+            )
+          }
+        />
+      )}
     </Card>
   );
 };

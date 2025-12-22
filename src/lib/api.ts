@@ -130,6 +130,7 @@ export interface JobFile {
     result?: any;
     pages?: number | any[]; // Can be a number (count) or array of page objects from raw_data
     page_count?: number;
+    selected_pages?: number[]; // Array of selected page numbers (1-indexed)
     actual_result?: any;
     extraction_error?: string;
     processing_error?: string;
@@ -576,7 +577,7 @@ class ApiClient {
         });
     }
 
-    async extractMultiple(schemaData: { schema: any; schemaName: string; extractionMode?: string; jobName?: string }, files: JobFile[], processingConfig?: ProcessingConfig): Promise<ApiResponse> {
+    async extractMultiple(schemaData: { schema: any; schemaName: string; extractionMode?: string; jobName?: string }, files: JobFile[], processingConfig?: ProcessingConfig, selectedPages?: Record<string, number[]>): Promise<ApiResponse> {
         const formData = new FormData();
 
         // Add schema data
@@ -598,6 +599,11 @@ class ApiClient {
             formData.append('extraction_method', processingConfig.extraction.method);
         }
 
+        // Add selected_pages if provided
+        if (selectedPages && Object.keys(selectedPages).length > 0) {
+            formData.append('selected_pages', JSON.stringify(selectedPages));
+        }
+
         // Add multiple files
         files.forEach((file) => {
             formData.append('files', file as unknown as Blob);
@@ -609,12 +615,17 @@ class ApiClient {
         });
     }
 
-    async addFilesToJob(jobId: string, files: FileList): Promise<ApiResponse> {
+    async addFilesToJob(jobId: string, files: FileList, selectedPages?: Record<string, number[]>): Promise<ApiResponse> {
         const formData = new FormData();
 
         Array.from(files).forEach((file) => {
             formData.append('files', file);
         });
+
+        // Add selected_pages if provided
+        if (selectedPages && Object.keys(selectedPages).length > 0) {
+            formData.append('selected_pages', JSON.stringify(selectedPages));
+        }
 
         return this.request(`/jobs/${jobId}/files`, {
             method: 'POST',
