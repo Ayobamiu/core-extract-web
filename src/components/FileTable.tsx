@@ -1365,21 +1365,6 @@ const FileTable: React.FC<FileTableProps> = ({
           >
             {record.filename}
           </Text>
-          {record.selected_pages &&
-            Array.isArray(record.selected_pages) &&
-            record.selected_pages.length > 0 && (
-              <Tooltip
-                title={`Selected pages: ${record.selected_pages.join(", ")} (${
-                  record.selected_pages.length
-                } of ${computePageCount(record) || "?"} pages)`}
-              >
-                <Badge
-                  count={record.selected_pages.length}
-                  style={{ backgroundColor: "#1890ff" }}
-                  overflowCount={99}
-                />
-              </Tooltip>
-            )}
         </div>
       ),
     },
@@ -1429,6 +1414,22 @@ const FileTable: React.FC<FileTableProps> = ({
         const pageCount = computePageCount(record);
         return (
           <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
+            {record.selected_pages &&
+              Array.isArray(record.selected_pages) &&
+              record.selected_pages.length > 0 && (
+                <Tooltip
+                  title={`Selected pages: ${record.selected_pages.join(
+                    ", "
+                  )} (${record.selected_pages.length} of ${
+                    computePageCount(record) || "?"
+                  } pages)`}
+                >
+                  <span className="text-blue-600">
+                    {record.selected_pages.length}
+                  </span>{" "}
+                  of{" "}
+                </Tooltip>
+              )}
             {pageCount !== null ? pageCount : "-"}
           </Text>
         );
