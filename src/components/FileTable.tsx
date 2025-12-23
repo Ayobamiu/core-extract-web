@@ -3810,162 +3810,173 @@ const FileTable: React.FC<FileTableProps> = ({
                   {/* Detailed Scoring (Collapsible) */}
                   {scoring?.scoredPages && scoring.scoredPages.length > 0 && (
                     <div className="mt-4">
-                      <Collapse>
-                        <Collapse.Panel
-                          header={`View Detailed Page Scores (${scoring.scoredPages.length} pages)`}
-                          key="scoring"
-                        >
-                          <div className="max-h-96 overflow-y-auto">
-                            <table className="w-full text-sm">
-                              <thead className="bg-gray-50 sticky top-0">
-                                <tr>
-                                  <th className="px-2 py-1 text-left border">
-                                    Page
-                                  </th>
-                                  <th className="px-2 py-1 text-left border">
-                                    {isComprehensive ? "Total Score" : "Score"}
-                                  </th>
-                                  {isComprehensive && (
-                                    <>
+                      <Collapse
+                        items={[
+                          {
+                            key: "scoring",
+                            label: `View Detailed Page Scores (${scoring.scoredPages.length} pages)`,
+                            children: (
+                              <div className="max-h-96 overflow-y-auto">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-gray-50 sticky top-0">
+                                    <tr>
                                       <th className="px-2 py-1 text-left border">
-                                        Formation
+                                        Page
                                       </th>
                                       <th className="px-2 py-1 text-left border">
-                                        LOG
+                                        {isComprehensive
+                                          ? "Total Score"
+                                          : "Score"}
+                                      </th>
+                                      {isComprehensive && (
+                                        <>
+                                          <th className="px-2 py-1 text-left border">
+                                            Formation
+                                          </th>
+                                          <th className="px-2 py-1 text-left border">
+                                            LOG
+                                          </th>
+                                          <th className="px-2 py-1 text-left border">
+                                            Plugging
+                                          </th>
+                                          <th className="px-2 py-1 text-left border">
+                                            Types
+                                          </th>
+                                        </>
+                                      )}
+                                      <th className="px-2 py-1 text-left border">
+                                        Classification
                                       </th>
                                       <th className="px-2 py-1 text-left border">
-                                        Plugging
+                                        Text Length
                                       </th>
-                                      <th className="px-2 py-1 text-left border">
-                                        Types
-                                      </th>
-                                    </>
-                                  )}
-                                  <th className="px-2 py-1 text-left border">
-                                    Classification
-                                  </th>
-                                  <th className="px-2 py-1 text-left border">
-                                    Text Length
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {scoring.scoredPages.map((page: any) => (
-                                  <tr key={page.page_number}>
-                                    <td className="px-2 py-1 border">
-                                      {page.page_number}
-                                    </td>
-                                    <td className="px-2 py-1 border">
-                                      <Tag
-                                        color={
-                                          page.classification ===
-                                          "CONFIDENT_HIT"
-                                            ? "green"
-                                            : page.classification ===
-                                              "BORDERLINE"
-                                            ? "orange"
-                                            : "default"
-                                        }
-                                      >
-                                        {page.totalScore !== undefined
-                                          ? page.totalScore
-                                          : page.score}
-                                      </Tag>
-                                    </td>
-                                    {isComprehensive && (
-                                      <>
-                                        <td className="px-2 py-1 border text-gray-600">
-                                          {page.formationScore !== undefined ? (
-                                            <span className="text-xs">
-                                              {page.formationScore}
-                                            </span>
-                                          ) : (
-                                            <span className="text-gray-400">
-                                              -
-                                            </span>
-                                          )}
-                                        </td>
-                                        <td className="px-2 py-1 border text-gray-600">
-                                          {page.logPageScore !== undefined ? (
-                                            <span className="text-xs">
-                                              {page.logPageScore}
-                                            </span>
-                                          ) : (
-                                            <span className="text-gray-400">
-                                              -
-                                            </span>
-                                          )}
-                                        </td>
-                                        <td className="px-2 py-1 border text-gray-600">
-                                          {page.pluggingRecordScore !==
-                                          undefined ? (
-                                            <span className="text-xs">
-                                              {page.pluggingRecordScore}
-                                            </span>
-                                          ) : (
-                                            <span className="text-gray-400">
-                                              -
-                                            </span>
-                                          )}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {scoring.scoredPages.map((page: any) => (
+                                      <tr key={page.page_number}>
+                                        <td className="px-2 py-1 border">
+                                          {page.page_number}
                                         </td>
                                         <td className="px-2 py-1 border">
-                                          {page.detectedTypes &&
-                                          page.detectedTypes.length > 0 ? (
-                                            <div className="flex flex-wrap gap-1">
-                                              {page.detectedTypes.map(
-                                                (type: string) => (
-                                                  <Tag
-                                                    key={type}
-                                                    color={
-                                                      type === "FORMATION"
-                                                        ? "blue"
-                                                        : type ===
-                                                          "LOG_OF_OIL_GAS"
-                                                        ? "cyan"
-                                                        : "purple"
-                                                    }
-                                                    className="text-xs"
-                                                  >
-                                                    {type.replace(/_/g, " ")}
-                                                  </Tag>
-                                                )
-                                              )}
-                                            </div>
-                                          ) : (
-                                            <span className="text-gray-400 text-xs">
-                                              -
-                                            </span>
-                                          )}
+                                          <Tag
+                                            color={
+                                              page.classification ===
+                                              "CONFIDENT_HIT"
+                                                ? "green"
+                                                : page.classification ===
+                                                  "BORDERLINE"
+                                                ? "orange"
+                                                : "default"
+                                            }
+                                          >
+                                            {page.totalScore !== undefined
+                                              ? page.totalScore
+                                              : page.score}
+                                          </Tag>
                                         </td>
-                                      </>
-                                    )}
-                                    <td className="px-2 py-1 border">
-                                      <Tag
-                                        color={
-                                          page.classification ===
-                                          "CONFIDENT_HIT"
-                                            ? "green"
-                                            : page.classification ===
-                                              "BORDERLINE"
-                                            ? "orange"
-                                            : "default"
-                                        }
-                                      >
-                                        {page.classification
-                                          .replace(/_/g, " ")
-                                          .toLowerCase()}
-                                      </Tag>
-                                    </td>
-                                    <td className="px-2 py-1 border text-gray-600">
-                                      {page.text_length?.toLocaleString() || 0}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </Collapse.Panel>
-                      </Collapse>
+                                        {isComprehensive && (
+                                          <>
+                                            <td className="px-2 py-1 border text-gray-600">
+                                              {page.formationScore !==
+                                              undefined ? (
+                                                <span className="text-xs">
+                                                  {page.formationScore}
+                                                </span>
+                                              ) : (
+                                                <span className="text-gray-400">
+                                                  -
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="px-2 py-1 border text-gray-600">
+                                              {page.logPageScore !==
+                                              undefined ? (
+                                                <span className="text-xs">
+                                                  {page.logPageScore}
+                                                </span>
+                                              ) : (
+                                                <span className="text-gray-400">
+                                                  -
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="px-2 py-1 border text-gray-600">
+                                              {page.pluggingRecordScore !==
+                                              undefined ? (
+                                                <span className="text-xs">
+                                                  {page.pluggingRecordScore}
+                                                </span>
+                                              ) : (
+                                                <span className="text-gray-400">
+                                                  -
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="px-2 py-1 border">
+                                              {page.detectedTypes &&
+                                              page.detectedTypes.length > 0 ? (
+                                                <div className="flex flex-wrap gap-1">
+                                                  {page.detectedTypes.map(
+                                                    (type: string) => (
+                                                      <Tag
+                                                        key={type}
+                                                        color={
+                                                          type === "FORMATION"
+                                                            ? "blue"
+                                                            : type ===
+                                                              "LOG_OF_OIL_GAS"
+                                                            ? "cyan"
+                                                            : "purple"
+                                                        }
+                                                        className="text-xs"
+                                                      >
+                                                        {type.replace(
+                                                          /_/g,
+                                                          " "
+                                                        )}
+                                                      </Tag>
+                                                    )
+                                                  )}
+                                                </div>
+                                              ) : (
+                                                <span className="text-gray-400 text-xs">
+                                                  -
+                                                </span>
+                                              )}
+                                            </td>
+                                          </>
+                                        )}
+                                        <td className="px-2 py-1 border">
+                                          <Tag
+                                            color={
+                                              page.classification ===
+                                              "CONFIDENT_HIT"
+                                                ? "green"
+                                                : page.classification ===
+                                                  "BORDERLINE"
+                                                ? "orange"
+                                                : "default"
+                                            }
+                                          >
+                                            {page.classification
+                                              .replace(/_/g, " ")
+                                              .toLowerCase()}
+                                          </Tag>
+                                        </td>
+                                        <td className="px-2 py-1 border text-gray-600">
+                                          {page.text_length?.toLocaleString() ||
+                                            0}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ),
+                          },
+                        ]}
+                      />
                     </div>
                   )}
                 </div>
