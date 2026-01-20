@@ -14,7 +14,6 @@ import {
   Modal,
   Upload,
   Button,
-  Drawer,
   Checkbox,
   Radio,
   Space,
@@ -24,7 +23,6 @@ import {
   Input,
 } from "antd";
 import {
-  FilePdfOutlined,
   ClockCircleOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
@@ -32,11 +30,8 @@ import {
   MoreOutlined,
   CopyOutlined,
   ArrowsAltOutlined,
-  ShrinkOutlined,
   FullscreenOutlined,
   ExportOutlined,
-  LeftOutlined,
-  RightOutlined,
   InfoCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -59,6 +54,9 @@ import {
 } from "@/lib/constraintUtils";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import ConstraintList from "@/components/ui/ConstraintList";
+import FileDetailsDrawer from "@/components/file/FileDetailsDrawer";
+import FileResultsDrawer from "@/components/file/FileResultsDrawer";
+import FullscreenModal from "@/components/file/FullscreenModal";
 import styles from "./FileTable.module.css";
 import { Loader, MessageSquare } from "lucide-react";
 import { SignalIcon } from "@heroicons/react/24/outline";
@@ -193,11 +191,6 @@ const FileTable: React.FC<FileTableProps> = ({
   const [selectedFileForDetails, setSelectedFileForDetails] =
     useState<JobFile | null>(null);
   const selectedFilePageCount = computePageCount(selectedFileForDetails);
-  const [splitPosition, setSplitPosition] = useState(50); // Percentage
-  const [isResizing, setIsResizing] = useState(false);
-  const splitPositionRef = React.useRef(50);
-  const leftPaneRef = React.useRef<HTMLDivElement>(null);
-  const rightPaneRef = React.useRef<HTMLDivElement>(null);
 
   // Comments state for drawer
   const [drawerComments, setDrawerComments] = useState<
@@ -936,71 +929,6 @@ const FileTable: React.FC<FileTableProps> = ({
       });
   }, [fullscreenModalVisible, fullscreenFileIndex, currentFullscreenFile?.id]);
 
-  // Resize handlers - optimized for smooth dragging
-  useEffect(() => {
-    let animationFrameId: number | null = null;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return;
-
-      // Cancel previous animation frame if exists
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-
-      animationFrameId = requestAnimationFrame(() => {
-        const container = document.querySelector(".fullscreen-modal-content");
-        if (!container || !leftPaneRef.current || !rightPaneRef.current) return;
-
-        const rect = container.getBoundingClientRect();
-        const newPosition = ((e.clientX - rect.left) / rect.width) * 100;
-        const clampedPosition = Math.max(20, Math.min(80, newPosition));
-
-        // Update ref immediately
-        splitPositionRef.current = clampedPosition;
-
-        // Update DOM directly for smooth performance (no React re-render)
-        leftPaneRef.current.style.width = `${clampedPosition}%`;
-        rightPaneRef.current.style.width = `${100 - clampedPosition}%`;
-      });
-    };
-
-    const handleMouseUp = () => {
-      // Sync final position to React state
-      setSplitPosition(splitPositionRef.current);
-      setIsResizing(false);
-    };
-
-    if (isResizing) {
-      document.addEventListener("mousemove", handleMouseMove, {
-        passive: true,
-      });
-      document.addEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    }
-
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-  }, [isResizing]);
-
-  // Sync ref when state changes (e.g., initial load)
-  useEffect(() => {
-    splitPositionRef.current = splitPosition;
-  }, [splitPosition]);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-  };
-
   // Keyboard navigation for fullscreen modal
   useEffect(() => {
     if (!fullscreenModalVisible) return;
@@ -1674,181 +1602,90 @@ const FileTable: React.FC<FileTableProps> = ({
         return aFailedCount - bFailedCount;
       },
       render: (_: any, record: JobFile) => {
-        // Only check for permit number mismatch using client-side logic
-        const permitCheck = checkPermitNumberMatch(record);
-        const hasApiNumber = record.result?.api_number;
-        const correctElevation =
-          record.result?.elevation && record.result?.elevation > 100;
-        const correctFormationCount =
-          record.result?.formations && record.result?.formations.length >= 10;
-        const continuityCheck = checkFormationContinuity(
-          record.result?.formations || []
-        );
-
-        // Show violation flag if there's a permit number mismatch
-
+        // Use checkFileConstraints to get all constraints including new ones
         if (
           record.processing_status === "completed" &&
           record.job_id === "5667fe82-63e1-47fa-a640-b182b5c5d034" &&
           record.result
         ) {
-          return (
-            <div className="flex items-center justify-center">
-              {permitCheck.hasViolation && (
-                <Tooltip
-                  title={
-                    <div>
-                      <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
-                        Permit Number Mismatch:
-                      </div>
-                      <div>Filename: {permitCheck.filenamePermit || "N/A"}</div>
-                      <div>Data: {permitCheck.dataPermit || "N/A"}</div>
-                      <div
-                        style={{
-                          marginTop: "8px",
-                          fontSize: "12px",
-                          color: "#666",
-                        }}
-                      >
-                        {permitCheck.message}
-                      </div>
-                    </div>
-                  }
-                >
-                  <div
-                    className="flex items-center space-x-0.5"
-                    style={{ whiteSpace: "nowrap" }}
-                  >
-                    <span style={{ flexShrink: 0 }}>
-                      {getViolationSeverityIcon("warning")}
-                    </span>
-                    <Badge
-                      count={1}
-                      style={{
-                        backgroundColor: getViolationSeverityColor("warning"),
-                        minWidth: "14px",
-                        height: "14px",
-                        lineHeight: "14px",
-                        flexShrink: 0,
-                      }}
-                    />
-                  </div>
-                </Tooltip>
-              )}
-              {!hasApiNumber && (
-                <Tooltip title="API number not found">
-                  <div
-                    className="flex items-center justify-center"
-                    style={{ whiteSpace: "nowrap" }}
-                  >
-                    <ExclamationCircleOutlined
-                      style={{ color: "#ff4d4f", flexShrink: 0 }}
-                    />
-                  </div>
-                </Tooltip>
-              )}
-              {!correctElevation && (
-                <Tooltip
-                  title={
-                    <div>
-                      <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
-                        Check Elevation:
-                      </div>
-                      <div>Elevation: {record.result?.elevation || "N/A"}</div>
-                    </div>
-                  }
-                >
-                  <div
-                    className="flex items-center justify-center"
-                    style={{ whiteSpace: "nowrap" }}
-                  >
-                    <ExclamationCircleOutlined
-                      style={{ color: "#ff4d4f", flexShrink: 0 }}
-                    />
-                  </div>
-                </Tooltip>
-              )}
-              {!correctFormationCount && (
-                <Tooltip
-                  title={
-                    <div>
-                      <div style={{ fontWeight: "bold", marginBottom: "4px" }}>
-                        Check Formation Count:
-                      </div>
-                      <div>
-                        Formation count:{" "}
-                        {record.result?.formations?.length || "N/A"}
-                      </div>
-                    </div>
-                  }
-                >
-                  <div
-                    className="flex items-center justify-center"
-                    style={{ whiteSpace: "nowrap" }}
-                  >
-                    <ExclamationCircleOutlined
-                      style={{ color: "#ff4d4f", flexShrink: 0 }}
-                    />
-                  </div>
-                </Tooltip>
-              )}
-              {!continuityCheck.isContinuous &&
-                continuityCheck.gaps.length > 0 && (
-                  <Tooltip
-                    title={
-                      <div>
-                        <div
-                          style={{ fontWeight: "bold", marginBottom: "4px" }}
-                        >
-                          Formation Continuity Issue:
-                        </div>
-                        <div>
-                          {continuityCheck.gaps
-                            .map(
-                              (g) =>
-                                `Gap of ${g.gap} between ${g.from} and ${g.to}`
-                            )
-                            .join(", ")}
-                        </div>
-                      </div>
-                    }
-                  >
-                    <div
-                      className="flex items-center justify-center"
-                      style={{ whiteSpace: "nowrap" }}
-                    >
-                      <ExclamationCircleOutlined
-                        style={{ color: "#d97706", flexShrink: 0 }}
-                      />
-                    </div>
-                  </Tooltip>
-                )}
-            </div>
-          );
-        }
+          const constraints = checkFileConstraints(record);
+          const failedConstraints = constraints.filter((c) => !c.passed);
 
-        // Show checkmark for files with no permit number violations
-        if (
-          record.processing_status === "completed" &&
-          record.result &&
-          record.job_id === "5667fe82-63e1-47fa-a640-b182b5c5d034" &&
-          correctElevation &&
-          hasApiNumber &&
-          correctFormationCount &&
-          continuityCheck.isContinuous
-        ) {
-          return (
-            <Tooltip title="All constraints met">
-              <div
-                className="flex items-center justify-center"
-                style={{ whiteSpace: "nowrap" }}
+          // Show checkmark if all constraints pass
+          if (failedConstraints.length === 0 && constraints.length > 0) {
+            return (
+              <Tooltip title="All constraints met">
+                <div
+                  className="flex items-center justify-center"
+                  style={{ whiteSpace: "nowrap" }}
+                >
+                  <CheckCircleOutlined
+                    style={{ color: "#52c41a", flexShrink: 0 }}
+                  />
+                </div>
+              </Tooltip>
+            );
+          }
+
+          // Show failed constraints
+          if (failedConstraints.length > 0) {
+            // Group constraints by severity for better display
+            const errorConstraints = failedConstraints.filter(
+              (c) => c.severity === "error"
+            );
+            const warningConstraints = failedConstraints.filter(
+              (c) => c.severity === "warning"
+            );
+
+            // Determine the primary severity to display
+            const primarySeverity =
+              errorConstraints.length > 0 ? "error" : "warning";
+
+            return (
+              <Tooltip
+                title={
+                  <div>
+                    <div
+                      style={{
+                        fontWeight: "bold",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      Failed Constraints ({failedConstraints.length}):
+                    </div>
+                    {failedConstraints.map((check, index) => (
+                      <div key={index} style={{ marginBottom: "4px" }}>
+                        <div style={{ fontWeight: "bold" }}>{check.name}</div>
+                        <div style={{ fontSize: "12px", color: "#ccc" }}>
+                          {check.message}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                }
               >
-                <CheckCircleOutlined
-                  style={{ color: "#52c41a", flexShrink: 0 }}
-                />
-              </div>
-            </Tooltip>
-          );
+                <div
+                  className="flex items-center space-x-0.5"
+                  style={{ whiteSpace: "nowrap" }}
+                >
+                  {/* <span style={{ flexShrink: 0, fontSize: "10px" }}>
+                    {getViolationSeverityIcon(primarySeverity)}
+                  </span> */}
+                  <Badge
+                    count={failedConstraints.length}
+                    style={{
+                      backgroundColor:
+                        getViolationSeverityColor(primarySeverity),
+                      minWidth: "14px",
+                      height: "14px",
+                      lineHeight: "14px",
+                      flexShrink: 0,
+                    }}
+                  />
+                </div>
+              </Tooltip>
+            );
+          }
         }
 
         return null;
@@ -2631,1363 +2468,71 @@ const FileTable: React.FC<FileTableProps> = ({
       </Modal>
 
       {/* File Results Drawer */}
-      <Drawer
-        title={
-          selectedFile ? (
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center space-x-2">
-                <FilePdfOutlined className="text-blue-500" />
-                <span className="font-medium">{selectedFile.filename}</span>
-              </div>
-              <ConstraintErrorIcon file={selectedFile} />
-            </div>
-          ) : (
-            "File Results"
-          )
-        }
-        placement="right"
-        size="large"
-        onClose={handleCloseDrawer}
+      <FileResultsDrawer
+        file={selectedFile}
         open={drawerVisible}
-        width={800}
-        extra={
-          <div className="flex items-center space-x-2">
-            {selectedFile && (
-              <>
-                <Button
-                  type={
-                    selectedFile.review_status === "reviewed"
-                      ? "default"
-                      : "primary"
-                  }
-                  icon={
-                    reviewingFileId === selectedFile.id ? (
-                      <Loader className="w-4 h-4 animate-spin" />
-                    ) : selectedFile.review_status === "reviewed" ? (
-                      <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                    ) : (
-                      <FileTextOutlined />
-                    )
-                  }
-                  onClick={() =>
-                    handleUpdateReviewStatus(
-                      selectedFile.id,
-                      selectedFile.review_status === "reviewed"
-                        ? "pending"
-                        : "reviewed"
-                    )
-                  }
-                  disabled={reviewingFileId === selectedFile.id}
-                  loading={reviewingFileId === selectedFile.id}
-                  style={
-                    selectedFile.review_status === "reviewed"
-                      ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
-                      : {}
-                  }
-                >
-                  {reviewingFileId === selectedFile.id
-                    ? "Updating..."
-                    : selectedFile.review_status === "reviewed"
-                    ? "Reviewed"
-                    : "Mark as Reviewed"}
-                </Button>
-                {isAdmin && (
-                  <Button
-                    type={selectedFile.admin_verified ? "default" : "primary"}
-                    icon={
-                      verifyingFileId === selectedFile.id ? (
-                        <Loader className="w-4 h-4 animate-spin" />
-                      ) : selectedFile.admin_verified ? (
-                        <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                      ) : (
-                        <CheckCircleOutlined />
-                      )
-                    }
-                    onClick={() =>
-                      handleVerifyFile(
-                        selectedFile.id,
-                        !selectedFile.admin_verified
-                      )
-                    }
-                    disabled={
-                      selectedFile.admin_verified ||
-                      verifyingFileId === selectedFile.id
-                    }
-                    loading={verifyingFileId === selectedFile.id}
-                    style={
-                      selectedFile.admin_verified
-                        ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
-                        : {}
-                    }
-                  >
-                    {verifyingFileId === selectedFile.id
-                      ? "Verifying..."
-                      : selectedFile.admin_verified
-                      ? "Verified"
-                      : "Verify"}
-                  </Button>
-                )}
-                {isAdmin && (
-                  <Button
-                    type="primary"
-                    style={{
-                      backgroundColor: "#fa8c16",
-                      borderColor: "#fa8c16",
-                    }}
-                    icon={
-                      reviewingFileId === selectedFile.id ||
-                      verifyingFileId === selectedFile.id ? (
-                        <Loader className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <CheckCircleOutlined />
-                      )
-                    }
-                    onClick={() => handleReviewAndVerifyFile(selectedFile.id)}
-                    disabled={
-                      reviewingFileId === selectedFile.id ||
-                      verifyingFileId === selectedFile.id
-                    }
-                    loading={
-                      reviewingFileId === selectedFile.id ||
-                      verifyingFileId === selectedFile.id
-                    }
-                  >
-                    {reviewingFileId === selectedFile.id ||
-                    verifyingFileId === selectedFile.id
-                      ? "Updating..."
-                      : "Review & Verify"}
-                  </Button>
-                )}
-                <Button
-                  type="default"
-                  icon={
-                    reprocessingFileId === selectedFile.id ||
-                    selectedFile.extraction_status === "processing" ||
-                    selectedFile.processing_status === "processing" ? (
-                      <Loader className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <ReloadOutlined />
-                    )
-                  }
-                  onClick={() => handleSingleFileReprocess(selectedFile.id)}
-                  disabled={
-                    reprocessingFileId === selectedFile.id ||
-                    selectedFile.extraction_status === "processing" ||
-                    selectedFile.processing_status === "processing"
-                  }
-                  loading={
-                    reprocessingFileId === selectedFile.id ||
-                    selectedFile.extraction_status === "processing" ||
-                    selectedFile.processing_status === "processing"
-                  }
-                >
-                  {reprocessingFileId === selectedFile.id ||
-                  selectedFile.extraction_status === "processing" ||
-                  selectedFile.processing_status === "processing"
-                    ? "Processing..."
-                    : "Reprocess"}
-                </Button>
-              </>
-            )}
-            <Button type="text" onClick={handleCloseDrawer}>
-              Close
-            </Button>
-          </div>
-        }
-      >
-        {selectedFile && (
-          <div className="h-full">
-            {selectedFile.processing_status !== "completed" ||
-            !selectedFile.result ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <ExclamationCircleOutlined className="text-gray-400 text-4xl mb-4" />
-                  <Text type="secondary" className="text-lg">
-                    No results available for this file.
-                  </Text>
-                  <br />
-                  <Text type="secondary" className="text-sm">
-                    File status: {selectedFile.processing_status}
-                  </Text>
-                </div>
-              </div>
-            ) : (
-              <TabbedDataViewer
-                data={selectedFile.result}
-                filename={selectedFile.filename}
-                schema={jobSchema}
-                editable={true}
-                markdown={selectedFile.markdown}
-                actual_result={selectedFile.actual_result}
-                pages={
-                  Array.isArray(selectedFile.pages)
-                    ? selectedFile.pages
-                    : undefined
-                }
-                onUpdate={async (updatedData) => {
-                  try {
-                    // Import apiClient dynamically to avoid circular imports
-                    const { apiClient } = await import("@/lib/api");
-                    await apiClient.updateFileResults(
-                      selectedFile.id,
-                      updatedData
-                    );
-
-                    // Show success message
-                    // message.success("File results updated successfully");
-
-                    // Refresh the data in the parent component
-                    if (onDataUpdate) {
-                      await onDataUpdate();
-                    }
-
-                    // Update the selected file data
-                    setSelectedFile({
-                      ...selectedFile,
-                      result: updatedData,
-                    });
-                  } catch (error) {
-                    console.error("Error updating file results:", error);
-                    // message.error(
-                    //   `Failed to update file results: ${
-                    //     (error as Error).message || "Unknown error"
-                    //   }`
-                    // );
-                  }
-                }}
-                comments={drawerComments}
-                onAddComment={handleDrawerAddComment}
-                fileId={selectedFile.id}
-              />
-            )}
-          </div>
-        )}
-      </Drawer>
+        onClose={handleCloseDrawer}
+        onOpenFileDetails={handleOpenFileDetails}
+        onUpdateReviewStatus={handleUpdateReviewStatus}
+        onVerifyFile={handleVerifyFile}
+        onReviewAndVerifyFile={handleReviewAndVerifyFile}
+        onReprocessFile={handleSingleFileReprocess}
+        onUpdateResults={async (fileId, updatedData) => {
+          await apiClient.updateFileResults(fileId, updatedData);
+          setSelectedFile((prev) =>
+            prev ? { ...prev, result: updatedData } : null
+          );
+        }}
+        onDataUpdate={onDataUpdate}
+        reviewingFileId={reviewingFileId}
+        verifyingFileId={verifyingFileId}
+        reprocessingFileId={reprocessingFileId}
+        isAdmin={isAdmin}
+        comments={drawerComments}
+        onAddComment={handleDrawerAddComment}
+        jobSchema={jobSchema}
+      />
 
       {/* Fullscreen Modal */}
-      <Modal
-        title={null}
+      <FullscreenModal
+        file={currentFullscreenFile}
         open={fullscreenModalVisible}
-        onCancel={handleCloseFullscreen}
-        footer={null}
-        width="100vw"
-        styles={{
-          body: {
-            height: "100vh",
-            padding: 0,
-            overflow: "hidden",
-          },
-          content: {
-            top: 0,
-            paddingBottom: 0,
-            maxHeight: "100vh",
-            borderRadius: 0,
-            boxShadow: "none",
-          },
-          wrapper: {
-            padding: 0,
-            top: 0,
-            overflow: "hidden",
-          },
+        onClose={handleCloseFullscreen}
+        onOpenFileDetails={handleOpenFileDetails}
+        onPreviousFile={handlePreviousFile}
+        onNextFile={handleNextFile}
+        onUpdateReviewStatus={handleUpdateReviewStatus}
+        onVerifyFile={handleVerifyFile}
+        onReviewAndVerifyFile={handleReviewAndVerifyFile}
+        onReprocessFile={handleSingleFileReprocess}
+        onUpdateResults={async (fileId, updatedData) => {
+          await apiClient.updateFileResults(fileId, updatedData);
+          setData((prevData) =>
+            prevData.map((file) =>
+              file.id === fileId ? { ...file, result: updatedData } : file
+            )
+          );
         }}
-        style={{
-          top: 0,
-          paddingBottom: 0,
-          maxWidth: "100vw",
-          margin: 0,
-        }}
-        closeIcon={null}
-        maskClosable={false}
-      >
-        {currentFullscreenFile && (
-          <div className="flex flex-col h-full overflow-hidden border border-gray-200">
-            {/* Navigation Header */}
-            <div className="flex items-center justify-between p-2 border-b border-gray-200 flex-shrink-0">
-              <div className="flex items-center space-x-4 flex-1">
-                <div className="flex items-center space-x-2">
-                  <Button
-                    type="default"
-                    icon={<LeftOutlined />}
-                    onClick={handlePreviousFile}
-                    disabled={fullscreenFileIndex === 0}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    type="default"
-                    icon={<RightOutlined />}
-                    iconPosition="end"
-                    onClick={handleNextFile}
-                    disabled={fullscreenFileIndex === data.length - 1}
-                  >
-                    Next
-                  </Button>
-                </div>
-                <div className="flex items-center space-x-2 text-sm text-gray-600">
-                  <FilePdfOutlined className="text-blue-500" />
-                  <span className="font-medium">
-                    {currentFullscreenFile.filename}
-                  </span>
-                  <span className="text-gray-400">
-                    ({fullscreenFileIndex + 1} of {data.length})
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  type={
-                    currentFullscreenFile.review_status === "reviewed"
-                      ? "default"
-                      : "primary"
-                  }
-                  icon={
-                    reviewingFileId === currentFullscreenFile.id ? (
-                      <Loader className="w-4 h-4 animate-spin" />
-                    ) : currentFullscreenFile.review_status === "reviewed" ? (
-                      <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                    ) : (
-                      <FileTextOutlined />
-                    )
-                  }
-                  onClick={() =>
-                    handleUpdateReviewStatus(
-                      currentFullscreenFile.id,
-                      currentFullscreenFile.review_status === "reviewed"
-                        ? "pending"
-                        : "reviewed"
-                    )
-                  }
-                  disabled={reviewingFileId === currentFullscreenFile.id}
-                  loading={reviewingFileId === currentFullscreenFile.id}
-                  style={
-                    currentFullscreenFile.review_status === "reviewed"
-                      ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
-                      : {}
-                  }
-                >
-                  {reviewingFileId === currentFullscreenFile.id
-                    ? "Updating..."
-                    : currentFullscreenFile.review_status === "reviewed"
-                    ? "Reviewed"
-                    : "Mark as Reviewed"}
-                </Button>
-                {isAdmin && (
-                  <Button
-                    type={
-                      currentFullscreenFile.admin_verified
-                        ? "default"
-                        : "primary"
-                    }
-                    icon={
-                      verifyingFileId === currentFullscreenFile.id ? (
-                        <Loader className="w-4 h-4 animate-spin" />
-                      ) : currentFullscreenFile.admin_verified ? (
-                        <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                      ) : (
-                        <CheckCircleOutlined />
-                      )
-                    }
-                    onClick={() =>
-                      handleVerifyFile(
-                        currentFullscreenFile.id,
-                        !currentFullscreenFile.admin_verified
-                      )
-                    }
-                    disabled={
-                      currentFullscreenFile.admin_verified ||
-                      verifyingFileId === currentFullscreenFile.id
-                    }
-                    loading={verifyingFileId === currentFullscreenFile.id}
-                    style={
-                      currentFullscreenFile.admin_verified
-                        ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
-                        : {}
-                    }
-                  >
-                    {verifyingFileId === currentFullscreenFile.id
-                      ? "Verifying..."
-                      : currentFullscreenFile.admin_verified
-                      ? "Verified"
-                      : "Verify"}
-                  </Button>
-                )}
-                {isAdmin && (
-                  <Button
-                    type="primary"
-                    style={{
-                      backgroundColor: "#fa8c16",
-                      borderColor: "#fa8c16",
-                    }}
-                    icon={
-                      reviewingFileId === currentFullscreenFile.id ||
-                      verifyingFileId === currentFullscreenFile.id ? (
-                        <Loader className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <CheckCircleOutlined />
-                      )
-                    }
-                    onClick={() =>
-                      handleReviewAndVerifyFile(currentFullscreenFile.id)
-                    }
-                    disabled={
-                      reviewingFileId === currentFullscreenFile.id ||
-                      verifyingFileId === currentFullscreenFile.id
-                    }
-                    loading={
-                      reviewingFileId === currentFullscreenFile.id ||
-                      verifyingFileId === currentFullscreenFile.id
-                    }
-                  >
-                    {reviewingFileId === currentFullscreenFile.id ||
-                    verifyingFileId === currentFullscreenFile.id
-                      ? "Updating..."
-                      : "Review & Verify"}
-                  </Button>
-                )}
-                <Button
-                  type="default"
-                  icon={
-                    reprocessingFileId === currentFullscreenFile.id ||
-                    currentFullscreenFile.extraction_status === "processing" ||
-                    currentFullscreenFile.processing_status === "processing" ? (
-                      <Loader className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <ReloadOutlined />
-                    )
-                  }
-                  onClick={() =>
-                    handleSingleFileReprocess(currentFullscreenFile.id)
-                  }
-                  disabled={
-                    reprocessingFileId === currentFullscreenFile.id ||
-                    currentFullscreenFile.extraction_status === "processing" ||
-                    currentFullscreenFile.processing_status === "processing"
-                  }
-                  loading={
-                    reprocessingFileId === currentFullscreenFile.id ||
-                    currentFullscreenFile.extraction_status === "processing" ||
-                    currentFullscreenFile.processing_status === "processing"
-                  }
-                >
-                  {reprocessingFileId === currentFullscreenFile.id ||
-                  currentFullscreenFile.extraction_status === "processing" ||
-                  currentFullscreenFile.processing_status === "processing"
-                    ? "Processing..."
-                    : "Reprocess"}
-                </Button>
-                <Button
-                  type="text"
-                  icon={<ShrinkOutlined />}
-                  onClick={handleCloseFullscreen}
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-
-            {/* Content Area - Two Pane Layout */}
-            <div className="flex flex-1 overflow-hidden min-h-0 fullscreen-modal-content">
-              {/* Left Pane - PDF Viewer */}
-              <div
-                ref={leftPaneRef}
-                className="bg-gray-100 flex flex-col min-w-0 overflow-hidden"
-                style={{ width: `${splitPosition}%`, minWidth: "200px" }}
-              >
-                <div className="px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
-                  <Text strong className="text-sm">
-                    PDF Document
-                  </Text>
-                </div>
-                <div className="flex-1 overflow-hidden min-h-0">
-                  {pdfUrlLoading ? (
-                    <div className="flex items-center justify-center h-full">
-                      <Loader className="w-8 h-8 animate-spin text-blue-500" />
-                    </div>
-                  ) : pdfUrl ? (
-                    <iframe
-                      src={pdfUrl}
-                      className="w-full h-full border-0 bg-white"
-                      style={{ display: "block", height: "100%" }}
-                      title={`PDF viewer for ${currentFullscreenFile.filename}`}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-center">
-                        <ExclamationCircleOutlined className="text-gray-400 text-4xl mb-4" />
-                        <Text type="secondary" className="text-lg">
-                          Unable to load PDF
-                        </Text>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Resizable Divider */}
-              <div
-                className="w-1 bg-gray-300 hover:bg-blue-500 cursor-col-resize flex-shrink-0 relative group"
-                onMouseDown={handleMouseDown}
-                style={{ minWidth: "4px" }}
-              >
-                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1 group-hover:bg-blue-500 transition-colors" />
-              </div>
-
-              {/* Right Pane - Results Viewer */}
-              <div
-                ref={rightPaneRef}
-                className="bg-white flex flex-col min-w-0 overflow-hidden"
-                style={{ width: `${100 - splitPosition}%`, minWidth: "200px" }}
-              >
-                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0 flex items-center justify-between">
-                  <Text strong className="text-sm">
-                    Extracted Results
-                  </Text>
-                  <ConstraintErrorIcon file={currentFullscreenFile} />
-                </div>
-                <div className="flex-1 overflow-hidden min-h-0">
-                  {currentFullscreenFile.processing_status !== "completed" ||
-                  !currentFullscreenFile.result ? (
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-center">
-                        <ExclamationCircleOutlined className="text-gray-400 text-4xl mb-4" />
-                        <Text type="secondary" className="text-lg">
-                          No results available for this file.
-                        </Text>
-                        <br />
-                        <Text type="secondary" className="text-sm">
-                          File status: {currentFullscreenFile.processing_status}
-                        </Text>
-                      </div>
-                    </div>
-                  ) : (
-                    <TabbedDataViewer
-                      data={currentFullscreenFile.result}
-                      filename={currentFullscreenFile.filename}
-                      schema={jobSchema}
-                      editable={true}
-                      markdown={currentFullscreenFile.markdown}
-                      actual_result={currentFullscreenFile.actual_result}
-                      pages={
-                        Array.isArray(currentFullscreenFile.pages)
-                          ? currentFullscreenFile.pages
-                          : undefined
-                      }
-                      onUpdate={async (updatedData) => {
-                        try {
-                          await apiClient.updateFileResults(
-                            currentFullscreenFile.id,
-                            updatedData
-                          );
-
-                          // Refresh the data in the parent component
-                          if (onDataUpdate) {
-                            await onDataUpdate();
-                          }
-
-                          // Update the current file data
-                          setData((prevData) =>
-                            prevData.map((file) =>
-                              file.id === currentFullscreenFile.id
-                                ? { ...file, result: updatedData }
-                                : file
-                            )
-                          );
-                        } catch (error) {
-                          console.error("Error updating file results:", error);
-                        }
-                      }}
-                      comments={fullscreenComments}
-                      onAddComment={handleFullscreenAddComment}
-                      fileId={currentFullscreenFile.id}
-                    />
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
+        onDataUpdate={onDataUpdate}
+        reviewingFileId={reviewingFileId}
+        verifyingFileId={verifyingFileId}
+        reprocessingFileId={reprocessingFileId}
+        isAdmin={isAdmin}
+        comments={fullscreenComments}
+        onAddComment={handleFullscreenAddComment}
+        jobSchema={jobSchema}
+        pdfUrl={pdfUrl}
+        pdfUrlLoading={pdfUrlLoading}
+        fileIndex={fullscreenFileIndex}
+        totalFiles={data.length}
+      />
 
       {/* File Details Drawer */}
-      <Drawer
-        title={
-          selectedFileForDetails ? (
-            <div className="flex items-center space-x-2">
-              <InfoCircleOutlined className="text-blue-500" />
-              <span className="font-medium">
-                File Details: {selectedFileForDetails.filename}
-              </span>
-            </div>
-          ) : (
-            "File Details"
-          )
-        }
-        placement="right"
-        size="large"
-        onClose={handleCloseFileDetails}
+      <FileDetailsDrawer
+        file={selectedFileForDetails}
         open={fileDetailsDrawerVisible}
-        width={600}
-      >
-        {selectedFileForDetails && (
-          <div className="space-y-6">
-            {/* File Overview */}
-            <div>
-              <h3 className="text-lg font-semibold mb-3">Overview</h3>
-              <Descriptions column={1} bordered size="small">
-                <Descriptions.Item label="Filename">
-                  {selectedFileForDetails.filename}
-                </Descriptions.Item>
-                <Descriptions.Item label="File ID">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-mono text-xs">
-                      {selectedFileForDetails.id}
-                    </span>
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<CopyOutlined />}
-                      onClick={() => copyToClipboard(selectedFileForDetails.id)}
-                    />
-                  </div>
-                </Descriptions.Item>
-                <Descriptions.Item label="File Size">
-                  {formatFileSize(selectedFileForDetails.size)}
-                </Descriptions.Item>
-                <Descriptions.Item label="File Hash">
-                  {selectedFileForDetails.file_hash ? (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-mono text-xs">
-                        {selectedFileForDetails.file_hash}
-                      </span>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<CopyOutlined />}
-                        onClick={() =>
-                          copyToClipboard(
-                            selectedFileForDetails.file_hash || ""
-                          )
-                        }
-                      />
-                    </div>
-                  ) : (
-                    <Text type="secondary">-</Text>
-                  )}
-                </Descriptions.Item>
-                <Descriptions.Item label="Storage Type">
-                  <Tag>{selectedFileForDetails.storage_type || "s3"}</Tag>
-                </Descriptions.Item>
-                {selectedFileForDetails.s3_key && (
-                  <Descriptions.Item label="S3 Key">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-mono text-xs break-all">
-                        {selectedFileForDetails.s3_key}
-                      </span>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<CopyOutlined />}
-                        onClick={() =>
-                          copyToClipboard(selectedFileForDetails.s3_key || "")
-                        }
-                      />
-                    </div>
-                  </Descriptions.Item>
-                )}
-              </Descriptions>
-            </div>
-
-            {/* Page Selection Information */}
-            {selectedFileForDetails.selected_pages &&
-              Array.isArray(selectedFileForDetails.selected_pages) &&
-              selectedFileForDetails.selected_pages.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">Page Selection</h3>
-                  <Descriptions column={1} bordered size="small">
-                    <Descriptions.Item label="Total Pages">
-                      {selectedFilePageCount !== null
-                        ? selectedFilePageCount
-                        : "-"}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Selected Pages">
-                      <div className="flex flex-wrap gap-1">
-                        <Tag color="blue">
-                          {selectedFileForDetails.selected_pages.length} of{" "}
-                          {selectedFilePageCount || "?"} pages
-                        </Tag>
-                      </div>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Selected Page Numbers">
-                      <div className="flex flex-wrap gap-1">
-                        {selectedFileForDetails.selected_pages
-                          .sort((a, b) => a - b)
-                          .map((pageNum) => (
-                            <Tag key={pageNum} color="blue">
-                              {pageNum}
-                            </Tag>
-                          ))}
-                      </div>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="Selection Status">
-                      <Tag color="green">
-                        <CheckCircleOutlined className="mr-1" />
-                        Only selected pages were processed
-                      </Tag>
-                    </Descriptions.Item>
-                  </Descriptions>
-                </div>
-              )}
-
-            {/* Status Information */}
-            <div>
-              <h3 className="text-lg font-semibold mb-3">Status</h3>
-              <Descriptions column={1} bordered size="small">
-                <Descriptions.Item label="Upload Status">
-                  {getUploadStatusIcon(selectedFileForDetails.upload_status)}
-                  <span className="ml-2">
-                    {selectedFileForDetails.upload_status ? (
-                      <Tag
-                        color={
-                          selectedFileForDetails.upload_status === "success"
-                            ? "green"
-                            : selectedFileForDetails.upload_status === "failed"
-                            ? "red"
-                            : "orange"
-                        }
-                      >
-                        {selectedFileForDetails.upload_status}
-                      </Tag>
-                    ) : (
-                      <Tag>pending</Tag>
-                    )}
-                  </span>
-                </Descriptions.Item>
-                <Descriptions.Item label="Extraction Status">
-                  {getStatusIcon(selectedFileForDetails.extraction_status)}
-                  <span className="ml-2">
-                    <Tag
-                      color={
-                        selectedFileForDetails.extraction_status === "completed"
-                          ? "green"
-                          : selectedFileForDetails.extraction_status ===
-                            "failed"
-                          ? "red"
-                          : selectedFileForDetails.extraction_status ===
-                            "processing"
-                          ? "blue"
-                          : "default"
-                      }
-                    >
-                      {selectedFileForDetails.extraction_status}
-                    </Tag>
-                  </span>
-                </Descriptions.Item>
-                <Descriptions.Item label="Processing Status">
-                  {getStatusIcon(selectedFileForDetails.processing_status)}
-                  <span className="ml-2">
-                    <Tag
-                      color={
-                        selectedFileForDetails.processing_status === "completed"
-                          ? "green"
-                          : selectedFileForDetails.processing_status ===
-                            "failed"
-                          ? "red"
-                          : selectedFileForDetails.processing_status ===
-                            "processing"
-                          ? "blue"
-                          : "default"
-                      }
-                    >
-                      {selectedFileForDetails.processing_status}
-                    </Tag>
-                  </span>
-                </Descriptions.Item>
-                <Descriptions.Item label="Verification">
-                  <Space>
-                    {selectedFileForDetails.admin_verified && (
-                      <Tag color="green">Admin Verified</Tag>
-                    )}
-                    {selectedFileForDetails.customer_verified && (
-                      <Tag color="blue">Customer Verified</Tag>
-                    )}
-                    {!selectedFileForDetails.admin_verified &&
-                      !selectedFileForDetails.customer_verified && (
-                        <Text type="secondary">Not verified</Text>
-                      )}
-                  </Space>
-                </Descriptions.Item>
-                {selectedFileForDetails.retry_count !== undefined &&
-                  selectedFileForDetails.retry_count > 0 && (
-                    <Descriptions.Item label="Retry Count">
-                      <Tag color="orange">
-                        {selectedFileForDetails.retry_count}
-                      </Tag>
-                    </Descriptions.Item>
-                  )}
-              </Descriptions>
-            </div>
-
-            {/* Processing Configuration */}
-            {(() => {
-              const extractionMethod = (
-                selectedFileForDetails.extraction_metadata as any
-              )?.extraction_method;
-              const processingMethod = (
-                selectedFileForDetails.processing_metadata as any
-              )?.processing_method;
-              const model = (selectedFileForDetails.processing_metadata as any)
-                ?.model;
-
-              if (!extractionMethod && !processingMethod && !model) {
-                return null;
-              }
-
-              return (
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">
-                    Processing Configuration
-                  </h3>
-                  <Descriptions column={1} bordered size="small">
-                    {extractionMethod && (
-                      <Descriptions.Item label="Extraction Method">
-                        <Tag color="blue">{extractionMethod}</Tag>
-                      </Descriptions.Item>
-                    )}
-                    {processingMethod && (
-                      <Descriptions.Item label="Processing Method">
-                        <Tag color="purple">{processingMethod}</Tag>
-                      </Descriptions.Item>
-                    )}
-                    {model && (
-                      <Descriptions.Item label="AI Model">
-                        <Tag color="green">{model}</Tag>
-                      </Descriptions.Item>
-                    )}
-                  </Descriptions>
-                </div>
-              );
-            })()}
-
-            {/* Timing Information */}
-            <div>
-              <h3 className="text-lg font-semibold mb-3">Timing</h3>
-              <Descriptions column={1} bordered size="small">
-                <Descriptions.Item label="Created At">
-                  {moment(selectedFileForDetails.created_at).format(
-                    "MMMM DD, YYYY hh:mm:ss A"
-                  )}
-                  <div className="text-xs text-gray-500 mt-1">
-                    ({moment(selectedFileForDetails.created_at).fromNow()})
-                  </div>
-                </Descriptions.Item>
-                {selectedFileForDetails.processed_at && (
-                  <Descriptions.Item label="Processed At">
-                    {moment(selectedFileForDetails.processed_at).format(
-                      "MMMM DD, YYYY hh:mm:ss A"
-                    )}
-                    <div className="text-xs text-gray-500 mt-1">
-                      ({moment(selectedFileForDetails.processed_at).fromNow()})
-                    </div>
-                  </Descriptions.Item>
-                )}
-                {selectedFileForDetails.processed_at && (
-                  <Descriptions.Item label="Total Time Elapsed">
-                    <Tag color="geekblue">
-                      {moment
-                        .duration(
-                          moment(selectedFileForDetails.processed_at).diff(
-                            moment(selectedFileForDetails.created_at)
-                          )
-                        )
-                        .humanize()}
-                    </Tag>
-                    <span className="ml-2 text-gray-500 text-xs">
-                      (
-                      {formatDuration(
-                        moment(selectedFileForDetails.processed_at).diff(
-                          moment(selectedFileForDetails.created_at),
-                          "seconds"
-                        )
-                      )}
-                      )
-                    </span>
-                  </Descriptions.Item>
-                )}
-                {selectedFileForDetails.extraction_time_seconds !== undefined &&
-                  selectedFileForDetails.extraction_time_seconds !== null && (
-                    <Descriptions.Item label="Extraction Duration">
-                      <Tag color="blue">
-                        {formatDuration(
-                          Number(selectedFileForDetails.extraction_time_seconds)
-                        )}
-                      </Tag>
-                      <span className="ml-2 text-gray-500 text-xs">
-                        (
-                        {Number(
-                          selectedFileForDetails.extraction_time_seconds
-                        ).toFixed(2)}
-                        s)
-                      </span>
-                    </Descriptions.Item>
-                  )}
-                {selectedFileForDetails.ai_processing_time_seconds !==
-                  undefined &&
-                  selectedFileForDetails.ai_processing_time_seconds !==
-                    null && (
-                    <Descriptions.Item label="Processing Duration">
-                      <Tag color="purple">
-                        {formatDuration(
-                          Number(
-                            selectedFileForDetails.ai_processing_time_seconds
-                          )
-                        )}
-                      </Tag>
-                      <span className="ml-2 text-gray-500 text-xs">
-                        (
-                        {Number(
-                          selectedFileForDetails.ai_processing_time_seconds
-                        ).toFixed(2)}
-                        s)
-                      </span>
-                    </Descriptions.Item>
-                  )}
-                {selectedFileForDetails.extraction_time_seconds !== undefined &&
-                  selectedFileForDetails.extraction_time_seconds !== null &&
-                  selectedFileForDetails.ai_processing_time_seconds !==
-                    undefined &&
-                  selectedFileForDetails.ai_processing_time_seconds !==
-                    null && (
-                    <Descriptions.Item label="Combined Processing Time">
-                      <Tag color="green">
-                        {formatDuration(
-                          Number(
-                            selectedFileForDetails.extraction_time_seconds
-                          ) +
-                            Number(
-                              selectedFileForDetails.ai_processing_time_seconds
-                            )
-                        )}
-                      </Tag>
-                      <span className="ml-2 text-gray-500 text-xs">
-                        (
-                        {(
-                          Number(
-                            selectedFileForDetails.extraction_time_seconds
-                          ) +
-                          Number(
-                            selectedFileForDetails.ai_processing_time_seconds
-                          )
-                        ).toFixed(2)}
-                        s)
-                      </span>
-                    </Descriptions.Item>
-                  )}
-              </Descriptions>
-            </div>
-
-            {/* Errors */}
-            {(selectedFileForDetails.upload_error ||
-              selectedFileForDetails.extraction_error ||
-              selectedFileForDetails.processing_error) && (
-              <div>
-                <h3 className="text-lg font-semibold mb-3 text-red-600">
-                  Errors
-                </h3>
-                <Collapse>
-                  {selectedFileForDetails.upload_error && (
-                    <Collapse.Panel header="Upload Error" key="upload">
-                      <Text
-                        type="danger"
-                        className="font-mono text-xs whitespace-pre-wrap"
-                      >
-                        {selectedFileForDetails.upload_error}
-                      </Text>
-                    </Collapse.Panel>
-                  )}
-                  {selectedFileForDetails.extraction_error && (
-                    <Collapse.Panel header="Extraction Error" key="extraction">
-                      <Text
-                        type="danger"
-                        className="font-mono text-xs whitespace-pre-wrap"
-                      >
-                        {selectedFileForDetails.extraction_error}
-                      </Text>
-                    </Collapse.Panel>
-                  )}
-                  {selectedFileForDetails.processing_error && (
-                    <Collapse.Panel header="Processing Error" key="processing">
-                      <Text
-                        type="danger"
-                        className="font-mono text-xs whitespace-pre-wrap"
-                      >
-                        {selectedFileForDetails.processing_error}
-                      </Text>
-                    </Collapse.Panel>
-                  )}
-                </Collapse>
-              </div>
-            )}
-
-            {/* Content Metadata */}
-            <div>
-              <h3 className="text-lg font-semibold mb-3">Content Metadata</h3>
-              <Descriptions column={1} bordered size="small">
-                {selectedFilePageCount !== null && (
-                  <Descriptions.Item label="Pages">
-                    {selectedFilePageCount}
-                  </Descriptions.Item>
-                )}
-                {selectedFileForDetails.extracted_text &&
-                  typeof selectedFileForDetails.extracted_text === "string" && (
-                    <Descriptions.Item label="Extracted Text Length">
-                      {selectedFileForDetails.extracted_text.length.toLocaleString()}{" "}
-                      characters
-                    </Descriptions.Item>
-                  )}
-                {selectedFileForDetails.extracted_tables &&
-                  Array.isArray(selectedFileForDetails.extracted_tables) && (
-                    <Descriptions.Item label="Extracted Tables">
-                      {selectedFileForDetails.extracted_tables.length}
-                    </Descriptions.Item>
-                  )}
-                <Descriptions.Item label="Has Result">
-                  <Tag
-                    color={selectedFileForDetails.result ? "green" : "default"}
-                  >
-                    {selectedFileForDetails.result ? "Yes" : "No"}
-                  </Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="Has Actual Result">
-                  <Tag
-                    color={
-                      selectedFileForDetails.actual_result ? "green" : "default"
-                    }
-                  >
-                    {selectedFileForDetails.actual_result ? "Yes" : "No"}
-                  </Tag>
-                </Descriptions.Item>
-              </Descriptions>
-            </div>
-
-            {/* Data Extraction Page Detection (Comprehensive) */}
-            {(() => {
-              console.log({ selectedFileForDetails });
-              const metadata =
-                selectedFileForDetails.processing_metadata as any;
-              // Use comprehensive detection (pre-processing) if available, fallback to old formation detection for backward compatibility
-              const dataExtractionDetection =
-                metadata?.data_extraction_page_detection_pre ||
-                metadata?.formation_page_detection;
-              console.log({ dataExtractionDetection, selectedFileForDetails });
-
-              if (!dataExtractionDetection) {
-                return null;
-              }
-
-              const scoring = dataExtractionDetection.scoring;
-              const confidentHits =
-                scoring?.confidentHits ||
-                dataExtractionDetection.confidentHits ||
-                [];
-              const borderlines = scoring?.borderlines || [];
-              const confidentMisses = scoring?.confidentMisses || [];
-              const summary = scoring?.summary || {};
-              const detectionBreakdown =
-                dataExtractionDetection.detectionBreakdown || {};
-              const isComprehensive =
-                !!metadata?.data_extraction_page_detection_pre;
-
-              return (
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">
-                    {isComprehensive
-                      ? "Data Extraction Page Detection"
-                      : "Formation Page Detection"}
-                  </h3>
-                  <Descriptions column={1} bordered size="small">
-                    <Descriptions.Item label="Status">
-                      <Tag
-                        color={
-                          dataExtractionDetection.success !== false
-                            ? "green"
-                            : "orange"
-                        }
-                      >
-                        {dataExtractionDetection.success !== false
-                          ? "Completed"
-                          : "Not Available"}
-                      </Tag>
-                    </Descriptions.Item>
-                    {isComprehensive &&
-                      detectionBreakdown.total !== undefined && (
-                        <Descriptions.Item label="Detection Breakdown">
-                          <div className="flex flex-wrap gap-2">
-                            {detectionBreakdown.formation > 0 && (
-                              <Tag color="blue">
-                                Formation: {detectionBreakdown.formation}
-                              </Tag>
-                            )}
-                            {detectionBreakdown.log > 0 && (
-                              <Tag color="cyan">
-                                LOG: {detectionBreakdown.log}
-                              </Tag>
-                            )}
-                            {detectionBreakdown.plugging > 0 && (
-                              <Tag color="purple">
-                                Plugging: {detectionBreakdown.plugging}
-                              </Tag>
-                            )}
-                          </div>
-                        </Descriptions.Item>
-                      )}
-                    {summary.total !== undefined && (
-                      <Descriptions.Item label="Total Pages">
-                        {summary.total}
-                      </Descriptions.Item>
-                    )}
-                    {confidentHits.length > 0 && (
-                      <Descriptions.Item label="Confident Hits">
-                        <div className="flex flex-wrap gap-1">
-                          <Tag color="green">
-                            {confidentHits.length} page
-                            {confidentHits.length !== 1 ? "s" : ""}
-                          </Tag>
-                          <span className="text-gray-600">
-                            ({confidentHits.join(", ")})
-                          </span>
-                        </div>
-                      </Descriptions.Item>
-                    )}
-                    {borderlines.length > 0 && (
-                      <Descriptions.Item label="Borderline Pages">
-                        <div className="flex flex-wrap gap-1">
-                          <Tag color="orange">
-                            {borderlines.length} page
-                            {borderlines.length !== 1 ? "s" : ""}
-                          </Tag>
-                          <span className="text-gray-600">
-                            ({borderlines.join(", ")})
-                          </span>
-                        </div>
-                      </Descriptions.Item>
-                    )}
-                    {confidentMisses.length > 0 && (
-                      <Descriptions.Item label="Confident Misses">
-                        <div className="flex flex-wrap gap-1">
-                          <Tag color="default">
-                            {confidentMisses.length} page
-                            {confidentMisses.length !== 1 ? "s" : ""}
-                          </Tag>
-                        </div>
-                      </Descriptions.Item>
-                    )}
-                    {dataExtractionDetection.extracted_pdf && (
-                      <Descriptions.Item label="Extracted PDF">
-                        <div className="flex items-center space-x-2">
-                          <Tag color="blue">
-                            {dataExtractionDetection.extracted_pdf.filename}
-                          </Tag>
-                          <span className="text-xs text-gray-500">
-                            ({dataExtractionDetection.extracted_pdf.page_count}{" "}
-                            pages,{" "}
-                            {formatFileSize(
-                              dataExtractionDetection.extracted_pdf.size
-                            )}
-                            )
-                          </span>
-                        </div>
-                      </Descriptions.Item>
-                    )}
-                    {dataExtractionDetection.error && (
-                      <Descriptions.Item label="Error">
-                        <Text type="danger" className="text-xs">
-                          {dataExtractionDetection.error}
-                        </Text>
-                      </Descriptions.Item>
-                    )}
-                  </Descriptions>
-
-                  {/* Detailed Scoring (Collapsible) */}
-                  {scoring?.scoredPages && scoring.scoredPages.length > 0 && (
-                    <div className="mt-4">
-                      <Collapse
-                        items={[
-                          {
-                            key: "scoring",
-                            label: `View Detailed Page Scores (${scoring.scoredPages.length} pages)`,
-                            children: (
-                              <div className="max-h-96 overflow-y-auto">
-                                <table className="w-full text-sm">
-                                  <thead className="bg-gray-50 sticky top-0">
-                                    <tr>
-                                      <th className="px-2 py-1 text-left border">
-                                        Page
-                                      </th>
-                                      <th className="px-2 py-1 text-left border">
-                                        {isComprehensive
-                                          ? "Total Score"
-                                          : "Score"}
-                                      </th>
-                                      {isComprehensive && (
-                                        <>
-                                          <th className="px-2 py-1 text-left border">
-                                            Formation
-                                          </th>
-                                          <th className="px-2 py-1 text-left border">
-                                            LOG
-                                          </th>
-                                          <th className="px-2 py-1 text-left border">
-                                            Plugging
-                                          </th>
-                                          <th className="px-2 py-1 text-left border">
-                                            Types
-                                          </th>
-                                        </>
-                                      )}
-                                      <th className="px-2 py-1 text-left border">
-                                        Classification
-                                      </th>
-                                      <th className="px-2 py-1 text-left border">
-                                        Text Length
-                                      </th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {scoring.scoredPages.map((page: any) => (
-                                      <tr key={page.page_number}>
-                                        <td className="px-2 py-1 border">
-                                          {page.page_number}
-                                        </td>
-                                        <td className="px-2 py-1 border">
-                                          <Tag
-                                            color={
-                                              page.classification ===
-                                              "CONFIDENT_HIT"
-                                                ? "green"
-                                                : page.classification ===
-                                                  "BORDERLINE"
-                                                ? "orange"
-                                                : "default"
-                                            }
-                                          >
-                                            {page.totalScore !== undefined
-                                              ? page.totalScore
-                                              : page.score}
-                                          </Tag>
-                                        </td>
-                                        {isComprehensive && (
-                                          <>
-                                            <td className="px-2 py-1 border text-gray-600">
-                                              {page.formationScore !==
-                                              undefined ? (
-                                                <span className="text-xs">
-                                                  {page.formationScore}
-                                                </span>
-                                              ) : (
-                                                <span className="text-gray-400">
-                                                  -
-                                                </span>
-                                              )}
-                                            </td>
-                                            <td className="px-2 py-1 border text-gray-600">
-                                              {page.logPageScore !==
-                                              undefined ? (
-                                                <span className="text-xs">
-                                                  {page.logPageScore}
-                                                </span>
-                                              ) : (
-                                                <span className="text-gray-400">
-                                                  -
-                                                </span>
-                                              )}
-                                            </td>
-                                            <td className="px-2 py-1 border text-gray-600">
-                                              {page.pluggingRecordScore !==
-                                              undefined ? (
-                                                <span className="text-xs">
-                                                  {page.pluggingRecordScore}
-                                                </span>
-                                              ) : (
-                                                <span className="text-gray-400">
-                                                  -
-                                                </span>
-                                              )}
-                                            </td>
-                                            <td className="px-2 py-1 border">
-                                              {page.detectedTypes &&
-                                              page.detectedTypes.length > 0 ? (
-                                                <div className="flex flex-wrap gap-1">
-                                                  {page.detectedTypes.map(
-                                                    (type: string) => (
-                                                      <Tag
-                                                        key={type}
-                                                        color={
-                                                          type === "FORMATION"
-                                                            ? "blue"
-                                                            : type ===
-                                                              "LOG_OF_OIL_GAS"
-                                                            ? "cyan"
-                                                            : "purple"
-                                                        }
-                                                        className="text-xs"
-                                                      >
-                                                        {type.replace(
-                                                          /_/g,
-                                                          " "
-                                                        )}
-                                                      </Tag>
-                                                    )
-                                                  )}
-                                                </div>
-                                              ) : (
-                                                <span className="text-gray-400 text-xs">
-                                                  -
-                                                </span>
-                                              )}
-                                            </td>
-                                          </>
-                                        )}
-                                        <td className="px-2 py-1 border">
-                                          <Tag
-                                            color={
-                                              page.classification ===
-                                              "CONFIDENT_HIT"
-                                                ? "green"
-                                                : page.classification ===
-                                                  "BORDERLINE"
-                                                ? "orange"
-                                                : "default"
-                                            }
-                                          >
-                                            {page.classification
-                                              .replace(/_/g, " ")
-                                              .toLowerCase()}
-                                          </Tag>
-                                        </td>
-                                        <td className="px-2 py-1 border text-gray-600">
-                                          {page.text_length?.toLocaleString() ||
-                                            0}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            ),
-                          },
-                        ]}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Constraints */}
-            <ConstraintList file={selectedFileForDetails} />
-          </div>
-        )}
-      </Drawer>
+        onClose={handleCloseFileDetails}
+      />
     </div>
   );
 };

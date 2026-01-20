@@ -421,5 +421,93 @@ export function checkFileConstraints(file: JobFile): ConstraintCheck[] {
         }
     }
 
+    // 7. Perforation intervals check
+    const perforationIntervals = file.result?.perforation_intervals || [];
+    const hasPerforationIntervals = Array.isArray(perforationIntervals) && perforationIntervals.length > 0;
+    if (!hasPerforationIntervals) {
+        checks.push({
+            name: 'Perforation Intervals',
+            passed: false,
+            message: 'Perforation intervals not found or empty',
+            severity: 'error',
+            details: {
+                count: perforationIntervals.length || 0,
+            },
+        });
+    } else {
+        checks.push({
+            name: 'Perforation Intervals',
+            passed: true,
+            message: `Perforation intervals: ${perforationIntervals.length}`,
+            severity: 'info',
+        });
+    }
+
+    // 8. Pluggings check
+    const pluggings = file.result?.pluggings || [];
+    const hasPluggings = Array.isArray(pluggings) && pluggings.length > 0;
+    if (!hasPluggings) {
+        checks.push({
+            name: 'Pluggings',
+            passed: false,
+            message: 'Pluggings not found or empty',
+            severity: 'error',
+            details: {
+                count: pluggings.length || 0,
+            },
+        });
+    } else {
+        checks.push({
+            name: 'Pluggings',
+            passed: true,
+            message: `Pluggings: ${pluggings.length}`,
+            severity: 'info',
+        });
+    }
+
+    // 9. Shows depths check
+    const showsDepths = file.result?.shows_depths || [];
+    const hasShowsDepths = Array.isArray(showsDepths) && showsDepths.length > 0;
+    if (!hasShowsDepths) {
+        checks.push({
+            name: 'Shows Depths',
+            passed: false,
+            message: 'Shows depths not found or empty',
+            severity: 'error',
+            details: {
+                count: showsDepths.length || 0,
+            },
+        });
+    } else {
+        checks.push({
+            name: 'Shows Depths',
+            passed: true,
+            message: `Shows depths: ${showsDepths.length}`,
+            severity: 'info',
+        });
+    }
+
+    // 10. Shows casing check
+    const casing = file.result?.casing || [];
+    const hasCasing = Array.isArray(casing) && casing.length > 0;
+    if (!hasCasing) {
+        checks.push({
+            name: 'Casing',
+            passed: false,
+            message: 'Casing not found or empty',
+            severity: 'error',
+            details: {
+                count: casing.length || 0,
+            },
+        });
+    } else {
+        checks.push({
+            name: 'Casing',
+            passed: true,
+            message: `Casing: ${casing.length}`,
+            severity: 'info',
+        });
+    }
+
     return checks;
 }
