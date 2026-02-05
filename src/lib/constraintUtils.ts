@@ -342,7 +342,7 @@ export function checkFileConstraints(file: JobFile): ConstraintCheck[] {
         const sortedFormations = [...formations]
             .filter(f => f.to != null)
             .sort((a, b) => (b.to || 0) - (a.to || 0));
-        console.log('sortedFormations', sortedFormations);
+
         const lastFormation = sortedFormations[0];
 
         if (lastFormation && lastFormation.to != null) {

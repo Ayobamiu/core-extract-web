@@ -389,7 +389,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
                     .sort((a, b) => a - b)
                     .join(", ")}`}
               </Text>
-              <ConstraintErrorIcon file={file} />
+              <ConstraintErrorIcon file={file} defaultOpen={true} />
             </div>
             <div className="flex-1 overflow-hidden min-h-0">
               {file.processing_status !== "completed" || !file.result ? (

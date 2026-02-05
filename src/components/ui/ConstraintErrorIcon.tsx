@@ -12,6 +12,7 @@ import {
 interface ConstraintErrorIconProps {
   file: JobFile | null;
   className?: string;
+  defaultOpen?: boolean;
 }
 
 /**
@@ -21,6 +22,7 @@ interface ConstraintErrorIconProps {
 const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
   file,
   className = "",
+  defaultOpen = false,
 }) => {
   if (
     !file ||
@@ -39,6 +41,7 @@ const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
 
   return (
     <Tooltip
+    open={defaultOpen}
       title={
         <div>
           <div
