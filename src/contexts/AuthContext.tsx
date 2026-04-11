@@ -120,7 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw error;
       }
     },
-    [clearAuthState]
+    [clearAuthState],
   );
 
   // Refresh token from storage
@@ -146,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw error;
       }
     },
-    [tokens, clearAuthState]
+    [tokens, clearAuthState],
   );
 
   // Login function
@@ -160,7 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const { user: userData, tokens: tokenData } = response.data;
-      console.log("Login successful", userData, tokenData);
+      // console.log("Login successful", userData, tokenData);
       setUser(userData);
       setTokens(tokenData);
       localStorage.setItem("auth_tokens", JSON.stringify(tokenData));

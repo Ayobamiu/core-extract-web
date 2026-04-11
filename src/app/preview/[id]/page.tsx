@@ -154,7 +154,7 @@ const ComplexDataCell: React.FC<{
 
     // Check if it's an array of objects
     const isArrayOfObjects = value.every(
-      (item) => typeof item === "object" && item !== null
+      (item) => typeof item === "object" && item !== null,
     );
 
     if (isArrayOfObjects) {
@@ -289,7 +289,7 @@ const PreviewPage: React.FC = () => {
         key,
         label: value.title || key,
         type: value.type || "string",
-      })
+      }),
     );
   }, [previewData?.preview.schema]);
 
@@ -509,7 +509,7 @@ const PreviewPage: React.FC = () => {
         }, 500);
       };
     })(),
-    []
+    [],
   );
 
   // Fetch preview data with pagination and caching
@@ -532,7 +532,7 @@ const PreviewPage: React.FC = () => {
             previewId,
             currentPage,
             pageSize,
-            searchTerm || undefined
+            searchTerm || undefined,
           );
 
           if (cached) {
@@ -552,7 +552,7 @@ const PreviewPage: React.FC = () => {
           previewId,
           currentPage,
           pageSize,
-          searchTerm || undefined
+          searchTerm || undefined,
         );
 
         if (response.success && response.data) {
@@ -573,7 +573,7 @@ const PreviewPage: React.FC = () => {
               jobFiles: response.data.jobFiles,
               pagination: response.data.pagination,
             },
-            searchTerm || undefined
+            searchTerm || undefined,
           );
         } else {
           setError("Failed to load preview data");
@@ -585,7 +585,7 @@ const PreviewPage: React.FC = () => {
         setLoading(false);
       }
     },
-    [previewId, currentPage, pageSize, searchTerm]
+    [previewId, currentPage, pageSize, searchTerm],
   );
 
   // Force refresh function
@@ -666,7 +666,7 @@ const PreviewPage: React.FC = () => {
   const extractAllPrimitiveValues = (
     obj: any,
     maxDepth: number = 2,
-    currentDepth: number = 0
+    currentDepth: number = 0,
   ): string => {
     if (obj === null || obj === undefined) return "";
 
@@ -685,7 +685,7 @@ const PreviewPage: React.FC = () => {
       const items = obj
         .slice(0, 3)
         .map((item) =>
-          extractAllPrimitiveValues(item, maxDepth, currentDepth + 1)
+          extractAllPrimitiveValues(item, maxDepth, currentDepth + 1),
         );
       const remaining = obj.length - 3;
       const result = items.join(", ");
@@ -702,7 +702,7 @@ const PreviewPage: React.FC = () => {
         const extracted = extractAllPrimitiveValues(
           val,
           maxDepth,
-          currentDepth + 1
+          currentDepth + 1,
         );
         return `${key}: ${extracted}`;
       });
@@ -742,7 +742,7 @@ const PreviewPage: React.FC = () => {
                 ? `"${value.replace(/"/g, '""')}"`
                 : value;
             })
-            .join(",")
+            .join(","),
         ),
       ].join("\n");
 
@@ -896,11 +896,11 @@ const PreviewPage: React.FC = () => {
                 >
                   <div className="flex items-center space-x-2 px-3 py-1.5 bg-green-50 border border-green-200 rounded-lg">
                     <CheckCircleOutlined className="text-green-600" />
-                    <span className="text-sm font-medium text-green-700">
+                    {/* <span className="text-sm font-medium text-green-700">
                       {qaStats.humanVerified}/{qaStats.total} Verified
-                    </span>
+                    </span> */}
                     <span className="text-xs text-green-600">
-                      ({qaStats.humanVerifiedPercentage}%)
+                      {qaStats.humanVerifiedPercentage}% Verified
                     </span>
                   </div>
                 </Tooltip>
@@ -915,17 +915,17 @@ const PreviewPage: React.FC = () => {
                         qaStats.qualityScore >= 80
                           ? "bg-blue-50 border-blue-200"
                           : qaStats.qualityScore >= 50
-                          ? "bg-yellow-50 border-yellow-200"
-                          : "bg-orange-50 border-orange-200"
+                            ? "bg-yellow-50 border-yellow-200"
+                            : "bg-orange-50 border-orange-200"
                       }`}
                     >
                       <span
-                        className={`text-sm font-semibold ${
+                        className={`text-xs ${
                           qaStats.qualityScore >= 80
                             ? "text-blue-700"
                             : qaStats.qualityScore >= 50
-                            ? "text-yellow-700"
-                            : "text-orange-700"
+                              ? "text-yellow-700"
+                              : "text-orange-700"
                         }`}
                       >
                         Quality: {qaStats.qualityScore}%
