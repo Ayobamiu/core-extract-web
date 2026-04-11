@@ -106,6 +106,11 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
             setCurrentOrganization(response.data.organizations[0]);
           }
         }
+      } else if (!response.success) {
+        console.warn(
+          "Organizations API did not succeed:",
+          response.error || response.message || response
+        );
       }
     } catch (error) {
       console.error("Failed to load organizations:", error);
