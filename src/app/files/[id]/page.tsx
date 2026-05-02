@@ -60,6 +60,11 @@ export default function FilePage() {
   const leftPaneRef = React.useRef<HTMLDivElement>(null);
   const rightPaneRef = React.useRef<HTMLDivElement>(null);
 
+  // Use File.filename as the title
+  useEffect(() => {
+    document.title = file?.filename || "File Details";
+  }, [file?.filename]);
+
   // Comments state
   const [comments, setComments] = useState<
     Array<{
@@ -208,7 +213,7 @@ export default function FilePage() {
       const response = await apiClient.reprocessFiles(
         [file.id],
         0,
-        processingConfig
+        processingConfig,
       );
 
       if (response.status === "success") {
@@ -238,13 +243,18 @@ export default function FilePage() {
 
   const handleUpdateReviewStatus = async (
     fileId: string,
-    reviewStatus: "pending" | "in_review" | "reviewed" | "approved" | "rejected"
+    reviewStatus:
+      | "pending"
+      | "in_review"
+      | "reviewed"
+      | "approved"
+      | "rejected",
   ) => {
     setIsReviewing(true);
     try {
       const response = await apiClient.updateFileReviewStatus(
         fileId,
-        reviewStatus
+        reviewStatus,
       );
       if (response.status === "success" && response.data) {
         setFile((prev) =>
@@ -262,7 +272,7 @@ export default function FilePage() {
                 reviewed_at: response.data!.reviewed_at,
                 review_notes: response.data!.review_notes,
               }
-            : null
+            : null,
         );
         message.success(`File marked as ${reviewStatus}`);
       } else {
@@ -283,7 +293,7 @@ export default function FilePage() {
       const response = await apiClient.bulkReviewAndVerifyFiles(
         [file.id],
         "reviewed",
-        true // adminVerified
+        true, // adminVerified
       );
 
       if (
@@ -308,7 +318,7 @@ export default function FilePage() {
                 admin_verified: updated.admin_verified,
                 customer_verified: updated.customer_verified,
               }
-            : null
+            : null,
         );
         message.success("File marked as reviewed and verified successfully");
       } else {
@@ -465,7 +475,7 @@ export default function FilePage() {
               onClick={() =>
                 handleUpdateReviewStatus(
                   file.id,
-                  file.review_status === "reviewed" ? "pending" : "reviewed"
+                  file.review_status === "reviewed" ? "pending" : "reviewed",
                 )
               }
               disabled={isReviewing}
@@ -479,8 +489,8 @@ export default function FilePage() {
               {isReviewing
                 ? "Updating..."
                 : file.review_status === "reviewed"
-                ? "Reviewed"
-                : "Mark as Reviewed"}
+                  ? "Reviewed"
+                  : "Mark as Reviewed"}
             </Button>
             {isAdmin && (
               <Button
@@ -506,8 +516,8 @@ export default function FilePage() {
                 {isVerifying
                   ? "Verifying..."
                   : file.admin_verified
-                  ? "Verified"
-                  : "Verify"}
+                    ? "Verified"
+                    : "Verify"}
               </Button>
             )}
             {isAdmin && (
