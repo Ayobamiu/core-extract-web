@@ -22,6 +22,7 @@ import {
   Settings,
   Upload,
   BarChart3,
+  Library,
 } from "lucide-react";
 import OrganizationSelector from "@/components/organization/OrganizationSelector";
 import CreateOrganizationModal from "@/components/organization/CreateOrganizationModal";
@@ -60,6 +61,14 @@ const navigationItems = [
     description: "Upload new files",
   },
 ];
+
+/** Shown below main nav for admin JWTs only — schema registry CRUD UI. */
+const adminRegistryNavItem = {
+  name: "Schema registry",
+  href: "/registry",
+  icon: Library,
+  description: "Document types & schemas",
+};
 
 export default function SidebarLayout({
   children,
@@ -243,8 +252,12 @@ export default function SidebarLayout({
               isDesktop && isCollapsed ? "px-2" : "px-4"
             }`}
           >
-            {navigationItems.map((item) => {
-              const isActive = pathname === item.href;
+            {[...navigationItems, ...(isAdmin ? [adminRegistryNavItem] : [])].map(
+              (item) => {
+              const isActive =
+                item.href !== "/"
+                  ? pathname === item.href || pathname?.startsWith(item.href + "/")
+                  : pathname === item.href;
               const Icon = item.icon;
 
               return (
@@ -282,7 +295,8 @@ export default function SidebarLayout({
                   )}
                 </Link>
               );
-            })}
+            }
+            )}
           </nav>
 
           {/* User Profile */}

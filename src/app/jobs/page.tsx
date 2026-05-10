@@ -74,7 +74,7 @@ export default function JobsPage() {
   const fetchJobs = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.getJobs(30);
+      const response = await apiClient.getJobs(50);
       setJobs(response.jobs || []);
       setError(null);
     } catch (err: any) {

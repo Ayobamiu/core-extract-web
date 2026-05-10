@@ -223,6 +223,45 @@ export interface DocumentTypeInfo {
     has_classifier_hints: boolean;
 }
 
+// Admin schema registry (GET /registry/...)
+export interface RegistryDocumentTypeDetail {
+    slug: string;
+    display_name: string;
+    description?: string | null;
+    default_extractor: string;
+    routing_confidence_threshold: number;
+    status: string;
+    classifier_hints?: Record<string, unknown> | null;
+    created_at?: string;
+    updated_at?: string;
+    current_schema_version_id?: string | null;
+    current_schema_version?: number | null;
+    current_schema_name?: string | null;
+    current_schema_row_status?: string | null;
+    version_count?: number;
+}
+
+export interface RegistrySchemaVersionSummary {
+    id: string;
+    version: number;
+    schema_name: string | null;
+    status: string;
+    notes: string | null;
+    created_at: string;
+    is_current: boolean;
+}
+
+export interface RegistrySchemaVersionFull {
+    schemaId: string;
+    version: number;
+    schemaName: string;
+    status: string;
+    schema: Record<string, unknown>;
+    promptHints: Record<string, unknown>;
+    documentTypeSlug: string;
+    defaultExtractor?: string | null;
+}
+
 // Visual Page Classifier output, persisted on job_files.detected_sections.
 export interface DetectedPage {
     page_number: number;
@@ -672,6 +711,109 @@ class ApiClient {
         if (opts?.includeDeprecated) params.set('includeDeprecated', 'true');
         const qs = params.toString();
         return this.request(`/document-types${qs ? `?${qs}` : ''}`);
+    }
+
+    // ── Schema registry admin (admin JWT only) ───────────────────────────
+    async registryGetDocumentTypeDetail(
+        slug: string
+    ): Promise<
+        ApiResponse<{
+            documentType: RegistryDocumentTypeDetail;
+            schemaVersions: RegistrySchemaVersionSummary[];
+        }>
+    > {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}/detail`);
+    }
+
+    async registryGetSchemaVersion(
+        slug: string,
+        version: number
+    ): Promise<ApiResponse<{ schema: RegistrySchemaVersionFull }>> {
+        return this.request(
+            `/registry/document-types/${encodeURIComponent(slug)}/schemas/${version}`
+        );
+    }
+
+    async registryCreateDocumentType(body: {
+        slug: string;
+        displayName: string;
+        description?: string | null;
+        defaultExtractor?: string;
+        routingConfidenceThreshold?: number;
+        initialSchema?: {
+            jsonSchema: Record<string, unknown>;
+            schemaName?: string | null;
+            setActive?: boolean;
+            notes?: string | null;
+        } | null;
+    }): Promise<ApiResponse<{ documentType: RegistryDocumentTypeDetail; initialSchemaRegistered: unknown }>> {
+        console.log({ body });
+        return this.request(`/registry/document-types`, {
+            method: 'POST',
+            body: JSON.stringify(body),
+        });
+    }
+
+    async registryPatchDocumentType(
+        slug: string,
+        patch: {
+            displayName?: string;
+            description?: string | null;
+            defaultExtractor?: string;
+            routingConfidenceThreshold?: number;
+            status?: 'active' | 'deprecated';
+        }
+    ): Promise<
+        ApiResponse<{
+            documentType: Partial<RegistryDocumentTypeDetail> & Record<string, unknown>;
+        }>
+    > {
+        console.log({ patch, slug });
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(patch),
+        });
+    }
+
+    async registryDeleteDocumentType(slug: string): Promise<ApiResponse<{ deleted: { slug: string; id: string } }>> {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}`, {
+            method: 'DELETE',
+        });
+    }
+
+    async registryPutClassifierHints(
+        slug: string,
+        hints: Record<string, unknown> | null
+    ): Promise<ApiResponse<{ classifier_hints: unknown; updated_at: string }>> {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}/classifier-hints`, {
+            method: 'PUT',
+            body: JSON.stringify({ hints }),
+        });
+    }
+
+    async registryRegisterSchemaVersion(
+        slug: string,
+        body: {
+            jsonSchema: Record<string, unknown>;
+            schemaName?: string | null;
+            setActive?: boolean;
+            notes?: string | null;
+        }
+    ): Promise<ApiResponse<{ schema: Record<string, unknown> }>> {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}/schemas`, {
+            method: 'POST',
+            body: JSON.stringify(body),
+        });
+    }
+
+    async registryPromoteSchemaVersion(
+        slug: string,
+        version: number
+    ): Promise<ApiResponse<{ promoted: Record<string, unknown> }>> {
+        return this.request(
+            `/registry/document-types/${encodeURIComponent(slug)}/schemas/${version}/promote`,
+            { method: 'POST' }
+        );
     }
 
     // Fetch a rasterised JPEG of a single PDF page and return a blob URL
