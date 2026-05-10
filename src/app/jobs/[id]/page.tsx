@@ -904,6 +904,12 @@ export default function JobDetailPage() {
                 fileId={selectedFileForResultsEdit.id}
                 filename={selectedFileForResultsEdit.filename}
                 initialResults={selectedFileForResultsEdit.result}
+                resultEnvelope={
+                  selectedFileForResultsEdit.extraction_metadata?.result_envelope
+                }
+                sectionResults={
+                  selectedFileForResultsEdit.extraction_metadata?.section_results
+                }
                 onSuccess={(updatedResults) => {
                   handleEditResults(
                     selectedFileForResultsEdit.id,

@@ -1,10 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Button from "@/components/ui/Button";
 import JSONTreeEditor from "@/components/JSONTreeEditor";
 import { XMarkIcon, CheckIcon } from "@heroicons/react/24/outline";
+import {
+  isV2ResultEnvelope,
+  type SectionResult,
+  type V2ResultEnvelope,
+} from "@/lib/api";
 
 interface FileResultsEditorProps {
   isOpen: boolean;
@@ -13,6 +18,31 @@ interface FileResultsEditorProps {
   filename: string;
   initialResults: any;
   onSuccess: (updatedResults: any) => void;
+  // Per-section extraction (v2 envelope) provenance. When present, the
+  // editor shows a section summary banner so the user understands they're
+  // editing a multi-section result, not a flat field bag.
+  resultEnvelope?: "v1" | "v2";
+  sectionResults?: SectionResult[];
+}
+
+interface V2SectionSummary {
+  slug: string;
+  instanceCount: number;
+  fieldCount: number;
+}
+
+function summarizeV2Envelope(envelope: V2ResultEnvelope): V2SectionSummary[] {
+  return Object.entries(envelope).map(([slug, instances]) => {
+    const firstInstance =
+      Array.isArray(instances) && instances[0] && typeof instances[0] === "object"
+        ? instances[0]
+        : null;
+    return {
+      slug,
+      instanceCount: Array.isArray(instances) ? instances.length : 0,
+      fieldCount: firstInstance ? Object.keys(firstInstance).length : 0,
+    };
+  });
 }
 
 export default function FileResultsEditor({
@@ -22,6 +52,8 @@ export default function FileResultsEditor({
   filename,
   initialResults,
   onSuccess,
+  resultEnvelope,
+  sectionResults,
 }: FileResultsEditorProps) {
   const [results, setResults] = useState<any>(null);
   const [isValid, setIsValid] = useState(true);
@@ -29,6 +61,23 @@ export default function FileResultsEditor({
   const [success, setSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Detect v2 envelope so we can show a section summary banner above the
+  // tree editor. The editor itself doesn't change behaviour — the JSON tree
+  // already handles nested arrays — but the banner makes the structure
+  // discoverable instead of forcing the user to go fishing inside arrays.
+  const isV2 = useMemo(
+    () =>
+      isV2ResultEnvelope(results, {
+        result_envelope: resultEnvelope,
+        section_results: sectionResults,
+      }),
+    [results, resultEnvelope, sectionResults]
+  );
+  const v2Summaries = useMemo<V2SectionSummary[]>(
+    () => (isV2 && results ? summarizeV2Envelope(results as V2ResultEnvelope) : []),
+    [isV2, results]
+  );
 
   // Initialize results when modal opens
   useEffect(() => {
@@ -197,6 +246,34 @@ export default function FileResultsEditor({
               <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                 <div className="text-sm text-green-700">
                   File results updated successfully!
+                </div>
+              </div>
+            )}
+
+            {/* v2 envelope summary banner — only when this file's result was
+                produced by per-section extraction. Tells the user up-front
+                that this is a multi-section result so they don't expect a
+                flat field bag. */}
+            {isV2 && v2Summaries.length > 0 && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="text-sm text-blue-900 font-medium mb-1">
+                  Per-section result ({v2Summaries.length} document type
+                  {v2Summaries.length === 1 ? "" : "s"})
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {v2Summaries.map((s) => (
+                    <span
+                      key={s.slug}
+                      className="px-2 py-0.5 bg-white border border-blue-200 rounded text-xs text-blue-800"
+                      title={`${s.fieldCount} field${s.fieldCount === 1 ? "" : "s"} per instance`}
+                    >
+                      {s.slug}
+                      {s.instanceCount > 1 ? ` ×${s.instanceCount}` : ""}
+                    </span>
+                  ))}
+                </div>
+                <div className="text-xs text-blue-700 mt-2">
+                  Expand each top-level key below to edit that section&apos;s data.
                 </div>
               </div>
             )}

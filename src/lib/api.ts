@@ -155,6 +155,20 @@ export interface JobFile {
     extraction_metadata?: {
         extraction_method?: string;
         extraction_time_seconds?: number;
+        // Per-section extraction (v2 envelope) provenance. Populated when
+        // the visual classifier ran and produced ≥1 section with extractable
+        // pages. When this is present and result_envelope === 'v2',
+        // file.result is shaped as V2ResultEnvelope (per-slug arrays).
+        result_envelope?: 'v1' | 'v2';
+        section_results?: SectionResult[];
+        schemas_used?: Record<string, { version: number; schemaId: string }>;
+        per_section_extraction?: {
+            section_count: number;
+            success_count: number;
+            failed_count: number;
+            skipped_count: number;
+            total_ai_time_seconds?: number;
+        };
         [key: string]: any;
     };
     previews?: Array<{
@@ -256,6 +270,60 @@ export interface DetectedSections {
     pages: DetectedPage[];
     sections: DetectedSection[];
     status: 'auto_approved' | 'pending_review' | 'skipped' | string;
+}
+
+// Per-section extraction (Phase 1, item #3 — v2 envelope).
+//
+// When the visual classifier is on AND it produces ≥1 section with extractable
+// pages, the worker fans out one AI call per section using registry-resolved
+// schemas. The result is stored as a v2 envelope: top-level keys are document
+// type slugs, values are ALWAYS arrays (even with a single section per slug)
+// so downstream consumers don't have to type-check.
+//
+// Detection: `extraction_metadata.result_envelope === 'v2'` (preferred) OR
+// shape inspection (top-level keys match `extraction_metadata.section_results[*].slug`).
+export type V2ResultEnvelope = Record<string, Array<Record<string, unknown>>>;
+
+export type SectionResultStatus =
+    | 'success'
+    | 'failed'
+    | 'skipped_no_schema'
+    | 'skipped_no_content'
+    | 'skipped_no_pages';
+
+export interface SectionResult {
+    section_index: number;
+    slug: string;
+    page_range: [number | null, number | null];
+    extraction_pages: number[];
+    status: SectionResultStatus;
+    error?: string;
+    duration_ms?: number;
+    ai_metadata?: Record<string, unknown>;
+}
+
+/**
+ * Returns true when `result` is a v2 envelope. Checks the explicit marker
+ * first (preferred), falls back to a shape-based heuristic when callers
+ * don't have the metadata available (e.g., realtime websocket events).
+ */
+export function isV2ResultEnvelope(
+    result: unknown,
+    metadata?: { result_envelope?: 'v1' | 'v2'; section_results?: SectionResult[] }
+): result is V2ResultEnvelope {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return false;
+    if (metadata?.result_envelope === 'v2') return true;
+    if (metadata?.result_envelope === 'v1') return false;
+
+    // Heuristic: every top-level key maps to an array of objects, AND there's
+    // at least one such key. This rules out v1 results which are flat field
+    // bags ({ name: '...', depth: 100 }) since their top-level values are
+    // primitives or single objects, not arrays-of-objects.
+    const entries = Object.entries(result as Record<string, unknown>);
+    if (entries.length === 0) return false;
+    return entries.every(([_, v]) =>
+        Array.isArray(v) && v.every((x) => x && typeof x === 'object' && !Array.isArray(x))
+    );
 }
 
 export interface JobDetails extends Job {

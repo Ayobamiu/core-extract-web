@@ -10,6 +10,11 @@ import { jsonToCsv } from "@/lib/csvExport";
 import CompareDiffViewer from "./CompareDiffViewer";
 import { MessageSquare } from "lucide-react";
 import { Button, Input, message, Typography } from "antd";
+import {
+  isV2ResultEnvelope,
+  type SectionResult,
+  type V2ResultEnvelope,
+} from "@/lib/api";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -44,6 +49,80 @@ interface TabbedDataViewerProps {
   }>;
   onAddComment?: (text: string) => Promise<void>;
   fileId?: string; // File ID for fetching comments if not provided
+  // Per-section extraction (v2 envelope) metadata. When provided AND `data`
+  // is a v2 envelope, the viewer renders a section picker above the existing
+  // tab strip and scopes the data-shaped tabs (Preview/JSON/CSV/Edit) to the
+  // selected section. Markdown/Compare/Comments stay file-level.
+  resultEnvelope?: "v1" | "v2";
+  sectionResults?: SectionResult[];
+}
+
+// One discoverable "row" in the section picker. We derive these from the
+// envelope rather than relying solely on section_results so the viewer keeps
+// working even when section_results is missing (older results, etc.).
+interface SectionPickerEntry {
+  slug: string;
+  instanceIndex: number; // 0-based index within slug
+  globalIndex: number; // unique selection key
+  data: Record<string, unknown>;
+  fieldCount: number;
+  // From section_results (when available) — gives extra context to the user.
+  pageRange?: [number | null, number | null];
+  status?: string;
+}
+
+function buildSectionPickerEntries(
+  envelope: V2ResultEnvelope,
+  sectionResults?: SectionResult[]
+): SectionPickerEntry[] {
+  // Walk the envelope first (it's the ground truth for what data exists),
+  // then enrich each entry with the matching section_results row when we can.
+  // The envelope is keyed by slug; values are arrays in document order. We
+  // pair them with the section_results for the same slug, in order.
+  const entries: SectionPickerEntry[] = [];
+  const sectionsBySlug = new Map<string, SectionResult[]>();
+  if (Array.isArray(sectionResults)) {
+    for (const s of sectionResults) {
+      if (!s || s.status !== "success") continue;
+      const arr = sectionsBySlug.get(s.slug) ?? [];
+      arr.push(s);
+      sectionsBySlug.set(s.slug, arr);
+    }
+  }
+
+  let globalIndex = 0;
+  for (const [slug, instances] of Object.entries(envelope)) {
+    if (!Array.isArray(instances)) continue;
+    const matching = sectionsBySlug.get(slug) ?? [];
+    instances.forEach((data, instanceIndex) => {
+      const sr = matching[instanceIndex];
+      entries.push({
+        slug,
+        instanceIndex,
+        globalIndex: globalIndex++,
+        data: data as Record<string, unknown>,
+        fieldCount:
+          data && typeof data === "object" ? Object.keys(data as object).length : 0,
+        pageRange: sr?.page_range,
+        status: sr?.status,
+      });
+    });
+  }
+  return entries;
+}
+
+function formatSectionLabel(entry: SectionPickerEntry): string {
+  const range = entry.pageRange;
+  const pageBit =
+    range && range[0] != null && range[1] != null
+      ? range[0] === range[1]
+        ? `p${range[0]}`
+        : `p${range[0]}–${range[1]}`
+      : null;
+  const parts = [entry.slug];
+  if (pageBit) parts.push(pageBit);
+  parts.push(`${entry.fieldCount} field${entry.fieldCount === 1 ? "" : "s"}`);
+  return parts.join(" · ");
 }
 
 type TabType =
@@ -69,6 +148,8 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   comments = [],
   onAddComment,
   fileId,
+  resultEnvelope,
+  sectionResults,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>("preview");
   const [markdownView, setMarkdownView] = useState<MarkdownViewType>("full");
@@ -80,14 +161,42 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [addingComment, setAddingComment] = useState(false);
+  const [selectedSectionIdx, setSelectedSectionIdx] = useState<number>(0);
 
-  // Initialize editable JSON when data changes
+  // Per-section (v2 envelope) detection. The picker only renders when both
+  // (a) the data shape matches and (b) there's at least one section to pick.
+  // When v1 (or empty), we behave exactly as before.
+  const isV2 = useMemo(
+    () => isV2ResultEnvelope(data, { result_envelope: resultEnvelope, section_results: sectionResults }),
+    [data, resultEnvelope, sectionResults]
+  );
+  const sectionEntries = useMemo<SectionPickerEntry[]>(
+    () => (isV2 ? buildSectionPickerEntries(data as V2ResultEnvelope, sectionResults) : []),
+    [isV2, data, sectionResults]
+  );
+  const selectedSection = sectionEntries[selectedSectionIdx] ?? sectionEntries[0];
+
+  // The data that the data-shaped tabs (Preview, JSON, CSV, Edit) operate on.
+  // When v2 we scope to the selected section so the user sees one focused
+  // result tree; when v1, we pass the original `data` through unchanged.
+  const sectionData: unknown = isV2 && selectedSection ? selectedSection.data : data;
+
+  // Reset section selection when the underlying data shape changes (e.g.,
+  // file switch). Otherwise an out-of-range index can persist briefly.
   React.useEffect(() => {
-    if (data) {
-      setEditableJson(JSON.stringify(data, null, 2));
+    if (selectedSectionIdx > sectionEntries.length - 1) {
+      setSelectedSectionIdx(0);
+    }
+  }, [sectionEntries.length, selectedSectionIdx]);
+
+  // Initialize editable JSON when the *displayed* data changes — for v2
+  // that's the selected section's slot, for v1 the whole result.
+  React.useEffect(() => {
+    if (sectionData !== undefined && sectionData !== null) {
+      setEditableJson(JSON.stringify(sectionData, null, 2));
       setJsonError(null);
     }
-  }, [data]);
+  }, [sectionData]);
 
   // Reset markdown view when switching away from markdown tab
   React.useEffect(() => {
@@ -109,7 +218,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     }
   };
 
-  // Save changes
+  // Save changes. For v2 we splice the edited section back into the envelope
+  // and call onUpdate with the full envelope so the file's persisted result
+  // shape stays consistent (downstream consumers always see V2ResultEnvelope).
   const handleSave = async (e?: React.MouseEvent) => {
     if (e) {
       e.preventDefault();
@@ -120,8 +231,23 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
     try {
       setIsSaving(true);
-      const parsedData = JSON.parse(editableJson);
-      await onUpdate(parsedData);
+      const parsedSectionData = JSON.parse(editableJson);
+
+      if (isV2 && selectedSection) {
+        const envelope = data as V2ResultEnvelope;
+        const slugInstances = Array.isArray(envelope[selectedSection.slug])
+          ? [...envelope[selectedSection.slug]]
+          : [];
+        slugInstances[selectedSection.instanceIndex] = parsedSectionData;
+        const nextEnvelope: V2ResultEnvelope = {
+          ...envelope,
+          [selectedSection.slug]: slugInstances,
+        };
+        await onUpdate(nextEnvelope);
+      } else {
+        await onUpdate(parsedSectionData);
+      }
+
       setJsonError(null);
     } catch (error) {
       setJsonError(error instanceof Error ? error.message : "Failed to save");
@@ -130,10 +256,12 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     }
   };
 
-  // Convert data to CSV format
+  // Convert data to CSV format. Scoped to the selected section in v2 so the
+  // CSV columns line up with that section's schema instead of mashing every
+  // section's keys into one wide table.
   const csvData = useMemo(() => {
     try {
-      const csvString = jsonToCsv(data, {
+      const csvString = jsonToCsv(sectionData, {
         includeHeaders: true,
         flattenNested: true,
       });
@@ -142,7 +270,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       console.error("Error converting to CSV:", error);
       return "";
     }
-  }, [data]);
+  }, [sectionData]);
 
   // Parse CSV line handling quoted values
   const parseCsvLine = (line: string): string[] => {
@@ -238,7 +366,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     getFilteredRowModel: getFilteredRowModel(),
   });
 
-  // Export handlers
+  // Export handlers — JSON exports the full envelope (v2) so the user gets a
+  // complete file-level snapshot; CSV stays scoped to the selected section
+  // because flattening multiple sections together produces a confusing union.
   const handleJsonExport = () => {
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: "application/json",
@@ -258,7 +388,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${filename.replace(/\.[^/.]+$/, "")}_results.csv`;
+    const sectionSuffix = isV2 && selectedSection
+      ? `_${selectedSection.slug}_${selectedSection.instanceIndex + 1}`
+      : "";
+    a.download = `${filename.replace(/\.[^/.]+$/, "")}${sectionSuffix}_results.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -473,6 +606,40 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     <div
       className={`bg-white flex flex-col h-full overflow-hidden ${className}`}
     >
+      {/* Per-section picker (v2 envelope only) — sits ABOVE the tab strip
+          and only swaps the data fed to data-shaped tabs. Markdown / Compare
+          / Comments stay file-level. */}
+      {isV2 && sectionEntries.length > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 flex-shrink-0 overflow-x-auto">
+          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">
+            Sections
+          </span>
+          <div className="flex items-center gap-1.5 flex-nowrap">
+            {sectionEntries.map((entry) => {
+              const isActive = entry.globalIndex === selectedSectionIdx;
+              return (
+                <button
+                  key={`${entry.slug}-${entry.instanceIndex}`}
+                  onClick={() => setSelectedSectionIdx(entry.globalIndex)}
+                  className={`px-3 py-1 text-xs rounded-full border whitespace-nowrap transition-colors ${
+                    isActive
+                      ? "bg-blue-600 border-blue-600 text-white"
+                      : "bg-white border-gray-300 text-gray-700 hover:border-blue-400 hover:text-blue-600"
+                  }`}
+                  title={
+                    entry.pageRange && entry.pageRange[0] != null
+                      ? `Pages ${entry.pageRange[0]}–${entry.pageRange[1]} · ${entry.fieldCount} fields`
+                      : `${entry.fieldCount} fields`
+                  }
+                >
+                  {formatSectionLabel(entry)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Tab Headers */}
       <div className="flex items-center justify-between border-b border-gray-200 flex-shrink-0">
         <div className="flex space-x-1">
@@ -577,14 +744,14 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         >
           {activeTab === "preview" && (
             <div className="overflow-auto flex-1 p-4 min-h-0">
-              <div className="space-y-4">{renderPreviewData(data)}</div>
+              <div className="space-y-4">{renderPreviewData(sectionData)}</div>
             </div>
           )}
 
           {activeTab === "json" && (
             <div className="overflow-auto flex-1 min-h-0">
               <JsonView
-                value={data as object}
+                value={sectionData as object}
                 style={{
                   backgroundColor: "transparent",
                   fontSize: "14px",
@@ -653,7 +820,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setEditableJson(JSON.stringify(data, null, 2));
+                      setEditableJson(JSON.stringify(sectionData, null, 2));
                       return false;
                     }}
                     onMouseDown={(e) => {
@@ -1121,7 +1288,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
           {activeTab === "compare" && actual_result && (
             <div className="flex-1 overflow-hidden min-h-0">
-              <CompareDiffViewer original={actual_result} current={data} />
+              <CompareDiffViewer original={actual_result} current={sectionData} />
             </div>
           )}
 

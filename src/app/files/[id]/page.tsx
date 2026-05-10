@@ -693,6 +693,8 @@ export default function FilePage() {
                     comments={comments}
                     onAddComment={handleAddComment}
                     fileId={file.id}
+                    resultEnvelope={file.extraction_metadata?.result_envelope}
+                    sectionResults={file.extraction_metadata?.section_results}
                   />
                 )}
               </div>
