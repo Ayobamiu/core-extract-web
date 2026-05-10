@@ -22,6 +22,7 @@ import {
 import { apiClient, JobFile, ProcessingConfig } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
+import DocumentRoutingPanel from "@/components/DocumentRoutingPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { canPerformAdminActions, isReviewer, canEdit } from "@/utils/roleUtils";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -636,6 +637,36 @@ export default function FilePage() {
                 <ConstraintErrorIcon file={file} />
               </div>
               <div className="flex-1 overflow-auto min-h-0 flex flex-col">
+                {/* Document Routing — collapsible section above the results.
+                    Only shown when the visual classifier ran on this file
+                    (detected_sections present). */}
+                {file.detected_sections && (
+                  <details
+                    className="border-b border-gray-200 bg-white flex-shrink-0"
+                    open
+                  >
+                    <summary className="px-4 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                      <span>📍</span>
+                      <span>Document Routing</span>
+                      <span className="text-xs text-gray-500 font-normal">
+                        ({file.detected_sections.sections?.length ?? 0} section
+                        {(file.detected_sections.sections?.length ?? 0) === 1
+                          ? ""
+                          : "s"}
+                        , status: {file.detected_sections.status})
+                      </span>
+                    </summary>
+                    <DocumentRoutingPanel
+                      fileId={file.id}
+                      detectedSections={file.detected_sections}
+                      visualClassifierMeta={
+                        (file.extraction_metadata as any)
+                          ?.visual_page_classifier ?? null
+                      }
+                    />
+                  </details>
+                )}
+
                 {file.processing_status !== "completed" || !file.result ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center">

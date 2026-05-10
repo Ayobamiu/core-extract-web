@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect } from "react";
-import { ProcessingConfig } from "@/lib/api";
+import React, { useEffect, useState } from "react";
+import { Select, Tag } from "antd";
+import { apiClient, DocumentTypeInfo, ProcessingConfig } from "@/lib/api";
 import {
   PROCESSING_METHODS,
   getModelsForMethod,
@@ -78,6 +79,46 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
 
   const currentMethod = config.processing.method || PROCESSING_METHODS.OPENAI;
   const availableModels = getModelsForMethod(currentMethod);
+
+  // Document types for the visual classifier multi-select. Loaded lazily
+  // on mount so the form is usable even if the registry call is slow / 404.
+  const [documentTypes, setDocumentTypes] = useState<DocumentTypeInfo[]>([]);
+  const [docTypesError, setDocTypesError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.getDocumentTypes();
+        if (cancelled) return;
+        if (res.success && Array.isArray((res as any).documentTypes)) {
+          setDocumentTypes((res as any).documentTypes);
+        } else {
+          setDocTypesError(res.message || "Failed to load document types");
+        }
+      } catch (err: any) {
+        if (!cancelled) setDocTypesError(err?.message || "Failed to load document types");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const useVisualClassifier = config.useVisualClassifier === true;
+  const handleVisualClassifierToggle = (enabled: boolean) => {
+    onChange({
+      ...config,
+      useVisualClassifier: enabled,
+      // Reset slug restriction when disabling so it's not silently retained.
+      documentTypeSlugs: enabled ? config.documentTypeSlugs : undefined,
+    });
+  };
+  const handleSlugsChange = (slugs: string[]) => {
+    onChange({
+      ...config,
+      documentTypeSlugs: slugs.length > 0 ? slugs : undefined,
+    });
+  };
 
   return (
     <div className="space-y-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -244,6 +285,66 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
         </select>
       </div>
 
+      {/* Visual Page Classifier */}
+      <div className="pt-4 border-t border-gray-200">
+        <label className="flex items-start space-x-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={useVisualClassifier}
+            onChange={(e) => handleVisualClassifierToggle(e.target.checked)}
+            disabled={disabled}
+            className="h-4 w-4 mt-1 text-blue-600"
+          />
+          <div className="flex-1">
+            <div className="font-medium text-gray-900 flex items-center gap-2">
+              Use visual page classifier
+              <Tag color="blue" style={{ marginInlineEnd: 0 }}>BETA</Tag>
+            </div>
+            <div className="text-sm text-gray-500">
+              Classifies each page from its image BEFORE extraction (no OCR
+              required) and only sends the relevant pages to the extractor.
+              Big cost win on long documents — typically reduces OCR pages by
+              50-80%. Falls back to extracting the full document if the
+              classifier fails or finds no usable pages.
+            </div>
+          </div>
+        </label>
+
+        {useVisualClassifier && (
+          <div className="mt-4 ml-7 space-y-2">
+            <label className="block text-sm font-medium text-gray-700">
+              Restrict to document types{" "}
+              <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="Leave empty to consider all registered types"
+              value={config.documentTypeSlugs ?? []}
+              onChange={handleSlugsChange}
+              disabled={disabled}
+              className="w-full"
+              options={documentTypes.map((dt) => ({
+                value: dt.slug,
+                label: `${dt.display_name} — ${dt.slug}`,
+              }))}
+              notFoundContent={
+                docTypesError
+                  ? `Failed to load: ${docTypesError}`
+                  : "No registered document types yet"
+              }
+            />
+            <div className="text-xs text-gray-500">
+              When set, the classifier only considers these types when deciding
+              what each page is. Useful when you know the document family up
+              front and want to suppress noise from unrelated types.
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Current Configuration Summary */}
       <div className="pt-4 border-t border-gray-200">
         <div className="text-sm text-gray-600">
@@ -257,6 +358,17 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
             : "MinerU"}{" "}
           + {getMethodDisplayName(currentMethod)}{" "}
           {getModelDisplayName(config.processing.model)}
+          {useVisualClassifier && (
+            <>
+              {" "}
+              · classifier on
+              {config.documentTypeSlugs && config.documentTypeSlugs.length > 0
+                ? ` (${config.documentTypeSlugs.length} type${
+                    config.documentTypeSlugs.length === 1 ? "" : "s"
+                  })`
+                : " (all types)"}
+            </>
+          )}
         </div>
       </div>
     </div>

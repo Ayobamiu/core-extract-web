@@ -140,6 +140,7 @@ export interface JobFile {
     reviewed_by?: string;
     reviewed_at?: string;
     review_notes?: string;
+    detected_sections?: DetectedSections | null;
     created_at: string;
     processed_at?: string;
     extraction_time_seconds?: number;
@@ -187,6 +188,74 @@ export interface ProcessingConfig {
         preview?: boolean;
     };
     usePageDetection?: boolean; // Enable/disable page detection filtering (default: true)
+    // Visual Page Classifier (Phase 1, item #2). When true the worker runs
+    // the classifier BEFORE extraction and narrows the page set passed to
+    // the extractor to the union of every section's `extraction_pages`.
+    // documentTypeSlugs (optional) restricts the classifier's candidate set
+    // to specific registered types — empty/undefined means "consider all".
+    useVisualClassifier?: boolean;
+    documentTypeSlugs?: string[];
+}
+
+// Document type registry (GET /document-types).
+export interface DocumentTypeInfo {
+    id: string;
+    slug: string;
+    display_name: string;
+    description?: string | null;
+    default_extractor?: string | null;
+    routing_confidence_threshold?: number | null;
+    status: 'active' | 'deprecated' | string;
+    has_classifier_hints: boolean;
+}
+
+// Visual Page Classifier output, persisted on job_files.detected_sections.
+export interface DetectedPage {
+    page_number: number;
+    document_type_slug: string; // 'none' for boilerplate/empty pages
+    page_role?: 'first' | 'middle' | 'last' | 'standalone' | 'none' | null;
+    page_purpose?: 'data' | 'reference' | 'boilerplate' | 'cover' | 'blank' | 'attachment' | 'unknown';
+    confidence: number;
+    duplicate_of?: number | null;
+    dupe_signature?: string | null;
+}
+
+export interface DetectedSectionSkippedPage {
+    page_number: number;
+    reason: 'duplicate' | 'reference' | 'boilerplate' | 'cover' | 'blank' | 'attachment' | 'unknown' | string;
+    duplicate_of?: number | null;
+    page_purpose?: string;
+}
+
+export interface DetectedSection {
+    document_type_slug: string;
+    page_range: [number, number];
+    page_count: number;
+    extraction_pages: number[];
+    skipped_pages: DetectedSectionSkippedPage[];
+    page_roles: (string | null)[];
+    page_purposes: string[];
+    confidence: number;
+    min_page_confidence: number;
+    status: 'auto_approved' | 'pending_review' | 'approved' | string;
+    threshold_used: number;
+}
+
+export interface DetectedSections {
+    classifier?: {
+        provider?: string;
+        model?: string;
+        version?: number;
+        [k: string]: any;
+    };
+    grouper?: {
+        strategy?: string;
+        version?: number;
+    };
+    candidate_slugs?: string[];
+    pages: DetectedPage[];
+    sections: DetectedSection[];
+    status: 'auto_approved' | 'pending_review' | 'skipped' | string;
 }
 
 export interface JobDetails extends Job {
@@ -526,6 +595,40 @@ class ApiClient {
 
     async getFileResult(fileId: string): Promise<ApiResponse<{ file: JobFile }>> {
         return this.request(`/files/${fileId}/result`);
+    }
+
+    // List active document types from the schema registry. Powers the
+    // "restrict classifier to" multi-select on job creation/config.
+    async getDocumentTypes(opts?: { includeDeprecated?: boolean }): Promise<ApiResponse<{ documentTypes: DocumentTypeInfo[] }>> {
+        const params = new URLSearchParams();
+        if (opts?.includeDeprecated) params.set('includeDeprecated', 'true');
+        const qs = params.toString();
+        return this.request(`/document-types${qs ? `?${qs}` : ''}`);
+    }
+
+    // Fetch a rasterised JPEG of a single PDF page and return a blob URL
+    // ready to drop into <img src>. Caller is responsible for revoking the
+    // URL when the consumer unmounts (URL.revokeObjectURL).
+    async getFilePageThumbnail(
+        fileId: string,
+        pageNumber: number,
+        opts?: { width?: number; quality?: number; signal?: AbortSignal }
+    ): Promise<string> {
+        const params = new URLSearchParams();
+        if (opts?.width) params.set('width', String(opts.width));
+        if (opts?.quality) params.set('q', String(opts.quality));
+        const qs = params.toString();
+        const url = `${this.baseURL}/files/${fileId}/pages/${pageNumber}/thumbnail.jpg${qs ? `?${qs}` : ''}`;
+
+        const res = await fetch(url, {
+            signal: opts?.signal,
+            headers: this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {},
+        });
+        if (!res.ok) {
+            throw new Error(`Thumbnail fetch failed: ${res.status} ${res.statusText}`);
+        }
+        const blob = await res.blob();
+        return URL.createObjectURL(blob);
     }
 
     async getFilePdfUrl(fileId: string): Promise<string> {
