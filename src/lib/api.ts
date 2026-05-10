@@ -816,6 +816,47 @@ class ApiClient {
         );
     }
 
+    // ── Routing review writes (Phase 1, item #4) ─────────────────────────
+    // All three return the new `detected_sections` blob so callers can
+    // refresh local state without re-fetching the whole file.
+    async routingApproveSection(
+        fileId: string,
+        sectionIndex: number,
+    ): Promise<ApiResponse<{ detected_sections: DetectedSections }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/${sectionIndex}/approve`,
+            { method: 'POST' },
+        );
+    }
+
+    async routingChangeSectionSlug(
+        fileId: string,
+        sectionIndex: number,
+        slug: string,
+    ): Promise<ApiResponse<{ detected_sections: DetectedSections }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/${sectionIndex}/change-slug`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ slug }),
+            },
+        );
+    }
+
+    async routingSplitSection(
+        fileId: string,
+        sectionIndex: number,
+        atPage: number,
+    ): Promise<ApiResponse<{ detected_sections: DetectedSections }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/${sectionIndex}/split`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ atPage }),
+            },
+        );
+    }
+
     // Fetch a rasterised JPEG of a single PDF page and return a blob URL
     // ready to drop into <img src>. Caller is responsible for revoking the
     // URL when the consumer unmounts (URL.revokeObjectURL).

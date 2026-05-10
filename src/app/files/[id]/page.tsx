@@ -663,6 +663,11 @@ export default function FilePage() {
                         (file.extraction_metadata as any)
                           ?.visual_page_classifier ?? null
                       }
+                      onSectionsUpdated={(next) =>
+                        setFile((prev) =>
+                          prev ? { ...prev, detected_sections: next } : prev,
+                        )
+                      }
                     />
                   </details>
                 )}

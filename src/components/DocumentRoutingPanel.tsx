@@ -1,7 +1,18 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Tag, Tooltip, Empty, Collapse } from "antd";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Button,
+  Empty,
+  Collapse,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Tag,
+  Tooltip,
+  message,
+} from "antd";
 import {
   CheckCircleFilled,
   CloseCircleFilled,
@@ -15,6 +26,7 @@ import {
   DetectedPage,
   DetectedSection,
   DetectedSections,
+  DocumentTypeInfo,
 } from "@/lib/api";
 
 interface Props {
@@ -33,6 +45,17 @@ interface Props {
     total_pages?: number;
     classifier?: { provider?: string; model?: string; version?: number };
   } | null;
+  // Called with the updated detected_sections blob whenever the operator
+  // approves / re-routes / splits a section. Parent should hold the source
+  // of truth for `file.detected_sections` so the panel reflects the new
+  // state without a full file re-fetch.
+  onSectionsUpdated?: (next: DetectedSections) => void;
+}
+
+type ActionKind = "change_slug" | "split";
+interface ActionState {
+  kind: ActionKind;
+  sectionIndex: number;
 }
 
 // ─── Per-page thumbnail with intersection-observer-based lazy fetch ────────
@@ -219,9 +242,114 @@ export default function DocumentRoutingPanel({
   fileId,
   detectedSections,
   visualClassifierMeta,
+  onSectionsUpdated,
 }: Props) {
   const sections = detectedSections?.sections ?? [];
   const pages = detectedSections?.pages ?? [];
+
+  // Slugs for the change-slug picker. Loaded once; cheap. Empty array until
+  // the request completes — the picker shows a "loading" state.
+  const [availableSlugs, setAvailableSlugs] = useState<DocumentTypeInfo[]>([]);
+  const [slugsLoaded, setSlugsLoaded] = useState(false);
+
+  // Single in-flight action at a time. Index is into `sections`; kind drives
+  // which modal opens. `null` when no modal is open.
+  const [activeAction, setActiveAction] = useState<ActionState | null>(null);
+  const [actionLoadingFor, setActionLoadingFor] = useState<number | null>(null);
+  const [pickedSlug, setPickedSlug] = useState<string | null>(null);
+  const [pickedSplitPage, setPickedSplitPage] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.getDocumentTypes({ includeDeprecated: true });
+        if (cancelled) return;
+        if (res.success && res.documentTypes) {
+          setAvailableSlugs(res.documentTypes);
+        }
+      } catch {
+        // Non-fatal: the picker just won't have suggestions.
+      } finally {
+        if (!cancelled) setSlugsLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const closeAction = useCallback(() => {
+    setActiveAction(null);
+    setPickedSlug(null);
+    setPickedSplitPage(null);
+  }, []);
+
+  const handleApprove = useCallback(
+    async (sectionIndex: number) => {
+      setActionLoadingFor(sectionIndex);
+      try {
+        const res = await apiClient.routingApproveSection(fileId, sectionIndex);
+        if (res.success && res.data?.detected_sections) {
+          message.success("Section approved");
+          onSectionsUpdated?.(res.data.detected_sections);
+        } else {
+          message.error(res.message || "Approve failed");
+        }
+      } catch (err: unknown) {
+        message.error(err instanceof Error ? err.message : "Approve failed");
+      } finally {
+        setActionLoadingFor(null);
+      }
+    },
+    [fileId, onSectionsUpdated],
+  );
+
+  const handleChangeSlug = useCallback(async () => {
+    if (!activeAction || activeAction.kind !== "change_slug" || !pickedSlug) return;
+    setActionLoadingFor(activeAction.sectionIndex);
+    try {
+      const res = await apiClient.routingChangeSectionSlug(
+        fileId,
+        activeAction.sectionIndex,
+        pickedSlug,
+      );
+      if (res.success && res.data?.detected_sections) {
+        message.success(`Section re-routed to ${pickedSlug}`);
+        onSectionsUpdated?.(res.data.detected_sections);
+        closeAction();
+      } else {
+        message.error(res.message || "Change failed");
+      }
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Change failed");
+    } finally {
+      setActionLoadingFor(null);
+    }
+  }, [activeAction, pickedSlug, fileId, onSectionsUpdated, closeAction]);
+
+  const handleSplit = useCallback(async () => {
+    if (!activeAction || activeAction.kind !== "split" || pickedSplitPage == null) return;
+    setActionLoadingFor(activeAction.sectionIndex);
+    try {
+      const res = await apiClient.routingSplitSection(
+        fileId,
+        activeAction.sectionIndex,
+        pickedSplitPage,
+      );
+      if (res.success && res.data?.detected_sections) {
+        message.success(`Section split at page ${pickedSplitPage}`);
+        onSectionsUpdated?.(res.data.detected_sections);
+        closeAction();
+      } else {
+        message.error(res.message || "Split failed");
+      }
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Split failed");
+    } finally {
+      setActionLoadingFor(null);
+    }
+  }, [activeAction, pickedSplitPage, fileId, onSectionsUpdated, closeAction]);
 
   // High-level summary numbers.
   const summary = useMemo(() => {
@@ -364,6 +492,21 @@ export default function DocumentRoutingPanel({
             return {
               key: `s${i}`,
               label: <SectionHeader section={section} />,
+              extra: (
+                <SectionActions
+                  section={section}
+                  loading={actionLoadingFor === i}
+                  onApprove={() => handleApprove(i)}
+                  onChangeSlug={() => {
+                    setPickedSlug(section.document_type_slug);
+                    setActiveAction({ kind: "change_slug", sectionIndex: i });
+                  }}
+                  onSplit={() => {
+                    setPickedSplitPage(null);
+                    setActiveAction({ kind: "split", sectionIndex: i });
+                  }}
+                />
+              ),
               children: (
                 <div className="flex flex-col gap-2">
                   {decisions.map((d) => (
@@ -406,7 +549,153 @@ export default function DocumentRoutingPanel({
           ]}
         />
       )}
+
+      {/* Change-slug modal */}
+      <Modal
+        title={
+          activeAction?.kind === "change_slug" && sections[activeAction.sectionIndex]
+            ? `Re-route section: pages ${sections[activeAction.sectionIndex].page_range[0]}–${sections[activeAction.sectionIndex].page_range[1]}`
+            : "Re-route section"
+        }
+        open={activeAction?.kind === "change_slug"}
+        onCancel={closeAction}
+        onOk={handleChangeSlug}
+        okText="Re-route & approve"
+        confirmLoading={
+          activeAction?.kind === "change_slug" &&
+          actionLoadingFor === activeAction.sectionIndex
+        }
+        okButtonProps={{ disabled: !pickedSlug }}
+        destroyOnClose
+      >
+        <div className="space-y-3">
+          <div className="text-xs text-gray-500">
+            The new document type&apos;s schema (from the registry) will drive
+            extraction on the next reprocess pass. The section will be marked
+            as approved.
+          </div>
+          <Select
+            showSearch
+            value={pickedSlug ?? undefined}
+            onChange={(v) => setPickedSlug(v)}
+            placeholder={slugsLoaded ? "Pick a document type" : "Loading types…"}
+            optionFilterProp="label"
+            className="w-full"
+            options={availableSlugs.map((d) => ({
+              value: d.slug,
+              label: `${d.display_name}  ·  ${d.slug}${d.status !== "active" ? " (deprecated)" : ""}`,
+            }))}
+          />
+        </div>
+      </Modal>
+
+      {/* Split modal */}
+      <Modal
+        title={
+          activeAction?.kind === "split" && sections[activeAction.sectionIndex]
+            ? `Split section at page (current range ${sections[activeAction.sectionIndex].page_range[0]}–${sections[activeAction.sectionIndex].page_range[1]})`
+            : "Split section"
+        }
+        open={activeAction?.kind === "split"}
+        onCancel={closeAction}
+        onOk={handleSplit}
+        okText="Split & approve both halves"
+        confirmLoading={
+          activeAction?.kind === "split" &&
+          actionLoadingFor === activeAction.sectionIndex
+        }
+        okButtonProps={{ disabled: pickedSplitPage == null }}
+        destroyOnClose
+      >
+        <div className="space-y-3">
+          <div className="text-xs text-gray-500">
+            The chosen page becomes the FIRST page of the second half. Pages
+            before it stay in the original section.
+          </div>
+          {(() => {
+            if (activeAction?.kind !== "split") return null;
+            const section = sections[activeAction.sectionIndex];
+            if (!section) return null;
+            const [start, end] = section.page_range;
+            const candidates: number[] = [];
+            for (let p = start + 1; p <= end; p++) candidates.push(p);
+            if (candidates.length === 0) {
+              return (
+                <div className="text-sm text-amber-700">
+                  This section is only one page long — there&apos;s nothing to
+                  split.
+                </div>
+              );
+            }
+            return (
+              <Select
+                value={pickedSplitPage ?? undefined}
+                onChange={(v) => setPickedSplitPage(v)}
+                placeholder="Pick the first page of the second half"
+                className="w-full"
+                options={candidates.map((p) => ({
+                  value: p,
+                  label: `Page ${p} (split → [${start}–${p - 1}] + [${p}–${end}])`,
+                }))}
+              />
+            );
+          })()}
+        </div>
+      </Modal>
     </div>
+  );
+}
+
+function SectionActions({
+  section,
+  loading,
+  onApprove,
+  onChangeSlug,
+  onSplit,
+}: {
+  section: DetectedSection;
+  loading: boolean;
+  onApprove: () => void;
+  onChangeSlug: () => void;
+  onSplit: () => void;
+}) {
+  const [start, end] = section.page_range;
+  const canSplit = end > start;
+  const isPending = section.status === "pending_review";
+
+  // stopPropagation so clicks don't toggle the Collapse panel.
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  return (
+    <Space size="small" onClick={stop}>
+      {isPending ? (
+        <Popconfirm
+          title="Approve this section as-is?"
+          description="Its pages will be eligible for extraction on the next reprocess."
+          okText="Approve"
+          cancelText="Cancel"
+          onConfirm={onApprove}
+        >
+          <Button size="small" type="primary" loading={loading}>
+            Approve
+          </Button>
+        </Popconfirm>
+      ) : null}
+      <Button size="small" onClick={onChangeSlug} disabled={loading}>
+        Change slug
+      </Button>
+      <Tooltip
+        title={canSplit ? "Split this section into two" : "Section is only one page"}
+      >
+        <Button
+          size="small"
+          onClick={onSplit}
+          disabled={!canSplit || loading}
+        >
+          Split
+        </Button>
+      </Tooltip>
+    </Space>
   );
 }
 
