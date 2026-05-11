@@ -208,6 +208,7 @@ export interface ProcessingConfig {
     // documentTypeSlugs (optional) restricts the classifier's candidate set
     // to specific registered types — empty/undefined means "consider all".
     useVisualClassifier?: boolean;
+    usePerSectionExtraction?: boolean;
     documentTypeSlugs?: string[];
 }
 

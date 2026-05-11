@@ -105,12 +105,23 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
   }, []);
 
   const useVisualClassifier = config.useVisualClassifier === true;
+  const usePerSectionExtraction = config.usePerSectionExtraction === true;
   const handleVisualClassifierToggle = (enabled: boolean) => {
     onChange({
       ...config,
       useVisualClassifier: enabled,
+      // Per-section requires VPC — auto-disable when VPC goes off.
+      usePerSectionExtraction: enabled ? config.usePerSectionExtraction : false,
       // Reset slug restriction when disabling so it's not silently retained.
       documentTypeSlugs: enabled ? config.documentTypeSlugs : undefined,
+    });
+  };
+  const handlePerSectionToggle = (enabled: boolean) => {
+    onChange({
+      ...config,
+      usePerSectionExtraction: enabled,
+      // Auto-enable VPC when per-section is turned on.
+      useVisualClassifier: enabled ? true : config.useVisualClassifier,
     });
   };
   const handleSlugsChange = (slugs: string[]) => {
@@ -345,6 +356,30 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
         )}
       </div>
 
+      {/* Per-Section Extraction */}
+      <div className="pt-4 border-t border-gray-200">
+        <label className="flex items-start space-x-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={usePerSectionExtraction}
+            onChange={(e) => handlePerSectionToggle(e.target.checked)}
+            disabled={disabled}
+            className="h-4 w-4 mt-1 text-blue-600"
+          />
+          <div className="flex-1">
+            <div className="font-medium text-gray-900 flex items-center gap-2">
+              Per-section extraction
+              <Tag color="blue" style={{ marginInlineEnd: 0 }}>BETA</Tag>
+            </div>
+            <div className="text-sm text-gray-500">
+              Fans out one AI call per classified section, each with its own
+              registry-resolved schema. Produces a v2 result envelope grouped
+              by document type. Requires the visual page classifier.
+            </div>
+          </div>
+        </label>
+      </div>
+
       {/* Current Configuration Summary */}
       <div className="pt-4 border-t border-gray-200">
         <div className="text-sm text-gray-600">
@@ -369,6 +404,7 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
                 : " (all types)"}
             </>
           )}
+          {usePerSectionExtraction && <> · per-section on</>}
         </div>
       </div>
     </div>

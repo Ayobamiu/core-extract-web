@@ -29,7 +29,7 @@ interface FullscreenModalProps {
   onNextFile: () => void;
   onUpdateReviewStatus: (
     fileId: string,
-    status: "reviewed" | "pending"
+    status: "reviewed" | "pending",
   ) => void;
   onVerifyFile: (fileId: string, verified: boolean) => void;
   onReviewAndVerifyFile: (fileId: string) => void;
@@ -220,7 +220,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
               onClick={() =>
                 onUpdateReviewStatus(
                   file.id,
-                  file.review_status === "reviewed" ? "pending" : "reviewed"
+                  file.review_status === "reviewed" ? "pending" : "reviewed",
                 )
               }
               disabled={reviewingFileId === file.id}
@@ -234,8 +234,8 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
               {reviewingFileId === file.id
                 ? "Updating..."
                 : file.review_status === "reviewed"
-                ? "Reviewed"
-                : "Mark as Reviewed"}
+                  ? "Reviewed"
+                  : "Mark as Reviewed"}
             </Button>
             {isAdmin && (
               <Button
@@ -261,8 +261,8 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
                 {verifyingFileId === file.id
                   ? "Verifying..."
                   : file.admin_verified
-                  ? "Verified"
-                  : "Verify"}
+                    ? "Verified"
+                    : "Verify"}
               </Button>
             )}
             {isAdmin && (
@@ -389,7 +389,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
                     .sort((a, b) => a - b)
                     .join(", ")}`}
               </Text>
-              <ConstraintErrorIcon file={file} defaultOpen={true} />
+              <ConstraintErrorIcon file={file} defaultOpen={false} />
             </div>
             <div className="flex-1 overflow-hidden min-h-0">
               {file.processing_status !== "completed" || !file.result ? (

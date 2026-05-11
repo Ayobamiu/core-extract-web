@@ -65,6 +65,8 @@ export default function JobConfigEditor({
           currentConfig.processing_config?.usePageDetection !== false, // Default to true
         use_visual_classifier:
           currentConfig.processing_config?.useVisualClassifier === true,
+        use_per_section_extraction:
+          currentConfig.processing_config?.usePerSectionExtraction === true,
         document_type_slugs:
           currentConfig.processing_config?.documentTypeSlugs ?? [],
       });
@@ -126,6 +128,7 @@ export default function JobConfigEditor({
         },
         usePageDetection: values.use_page_detection !== false, // Default to true if not explicitly set
         useVisualClassifier: values.use_visual_classifier === true,
+        usePerSectionExtraction: values.use_per_section_extraction === true,
         documentTypeSlugs:
           values.use_visual_classifier === true &&
           Array.isArray(values.document_type_slugs) &&
@@ -162,6 +165,8 @@ export default function JobConfigEditor({
         currentConfig.processing_config?.usePageDetection !== false; // Default to true
       const currentUseVisualClassifier =
         currentConfig.processing_config?.useVisualClassifier === true;
+      const currentUsePerSectionExtraction =
+        currentConfig.processing_config?.usePerSectionExtraction === true;
       const currentSlugs = (
         currentConfig.processing_config?.documentTypeSlugs ?? []
       )
@@ -179,6 +184,7 @@ export default function JobConfigEditor({
         values.processing_model !== currentProcessingModel ||
         values.use_page_detection !== currentUsePageDetection ||
         values.use_visual_classifier !== currentUseVisualClassifier ||
+        values.use_per_section_extraction !== currentUsePerSectionExtraction ||
         currentSlugs !== newSlugs
       ) {
         updates.processing_config = processingConfig;
@@ -386,6 +392,42 @@ export default function JobConfigEditor({
           <div className="text-xs text-gray-500 mt-1 mb-4">
             Falls back to extracting the full document if the classifier fails
             or finds no usable pages — never silently drops files.
+          </div>
+
+          <Form.Item
+            label="Per-section extraction"
+            name="use_per_section_extraction"
+            tooltip="Fan out one AI call per classified section with its own registry-resolved schema. Produces a v2 result envelope. Requires the visual page classifier."
+            valuePropName="checked"
+            initialValue={false}
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev: any, curr: any) =>
+              prev.use_per_section_extraction !== curr.use_per_section_extraction ||
+              prev.use_visual_classifier !== curr.use_visual_classifier
+            }
+          >
+            {({ getFieldValue, setFieldsValue }: any) => {
+              const vpc = getFieldValue("use_visual_classifier");
+              const perSection = getFieldValue("use_per_section_extraction");
+              if (perSection && !vpc) {
+                setTimeout(() => setFieldsValue({ use_visual_classifier: true }), 0);
+              }
+              if (!vpc && perSection) {
+                setTimeout(() => setFieldsValue({ use_per_section_extraction: false }), 0);
+              }
+              return null;
+            }}
+          </Form.Item>
+
+          <div className="text-xs text-gray-500 mt-1 mb-4">
+            When off, the classifier still narrows the page set but extraction
+            uses the single job schema (v1 flat result). Turn on for multi-schema
+            fan-out with the v2 envelope.
           </div>
         </div>
 
