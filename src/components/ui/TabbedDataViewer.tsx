@@ -29,6 +29,16 @@ import {
   ColumnFiltersState,
 } from "@tanstack/react-table";
 
+/**
+ * rehype-raw turns angle-bracket markup in markdown into custom element names.
+ * React only accepts known HTML intrinsics; map non-standard tags to spans.
+ */
+const markdownRehypeRawPassthrough: Record<string, React.ComponentType<any>> = {
+  signature: ({ node, ...props }) => (
+    <span data-rehype-custom-tag="signature" className="inline" {...props} />
+  ),
+};
+
 interface TabbedDataViewerProps {
   data: unknown;
   filename: string;
@@ -900,6 +910,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                     rehypePlugins={[rehypeRaw]}
                     // className="prose prose-sm max-w-none"
                     components={{
+                      ...markdownRehypeRawPassthrough,
                       // Custom styles for better readability
                       h1: ({ node, ...props }) => (
                         <h1
@@ -1056,6 +1067,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                             remarkPlugins={[remarkGfm]}
                             rehypePlugins={[rehypeRaw]}
                             components={{
+                              ...markdownRehypeRawPassthrough,
                               h1: ({ node, ...props }) => (
                                 <h1
                                   className="text-2xl font-bold mb-4 mt-6"
@@ -1216,6 +1228,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                                       remarkPlugins={[remarkGfm]}
                                       rehypePlugins={[rehypeRaw]}
                                       components={{
+                                        ...markdownRehypeRawPassthrough,
                                         h1: ({ node, ...props }) => (
                                           <h1
                                             className="text-xl font-bold mb-3 mt-4"
