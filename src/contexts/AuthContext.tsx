@@ -234,7 +234,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const response = await fetch("http://localhost:3000/auth/profile", {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+      const response = await fetch(`${apiUrl}/auth/profile`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${tokens.accessToken}`,
