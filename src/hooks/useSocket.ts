@@ -19,7 +19,7 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
 
     useEffect(() => {
         // Create socket connection
-        const newSocket = io('http://localhost:3000', {
+        const newSocket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000', {
             transports: ['websocket', 'polling'],
         });
 
