@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Modal, Form, Input, Select, message, Divider, Switch } from "antd";
-import { ProcessingConfig } from "@/lib/api";
+import { Modal, Form, Input, Select, message, Divider, Switch, Tag } from "antd";
+import { apiClient, DocumentTypeInfo, ProcessingConfig } from "@/lib/api";
 import {
   PROCESSING_METHODS,
   getModelsForMethod,
@@ -63,9 +63,36 @@ export default function JobConfigEditor({
         processing_model: processingModel,
         use_page_detection:
           currentConfig.processing_config?.usePageDetection !== false, // Default to true
+        use_visual_classifier:
+          currentConfig.processing_config?.useVisualClassifier === true,
+        use_per_section_extraction:
+          currentConfig.processing_config?.usePerSectionExtraction === true,
+        document_type_slugs:
+          currentConfig.processing_config?.documentTypeSlugs ?? [],
       });
     }
   }, [open, currentConfig, form]);
+
+  // Load registered document types for the visual-classifier multi-select.
+  const [documentTypes, setDocumentTypes] = useState<DocumentTypeInfo[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.getDocumentTypes();
+        if (cancelled) return;
+        if (res.success && Array.isArray((res as any).documentTypes)) {
+          setDocumentTypes((res as any).documentTypes);
+        }
+      } catch {
+        // Non-fatal: editor still works, multi-select will just be empty.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const handleProcessingMethodChange = (method: "openai" | "qwen") => {
     setSelectedProcessingMethod(method);
@@ -100,6 +127,14 @@ export default function JobConfigEditor({
           options: currentConfig.processing_config?.processing?.options || {},
         },
         usePageDetection: values.use_page_detection !== false, // Default to true if not explicitly set
+        useVisualClassifier: values.use_visual_classifier === true,
+        usePerSectionExtraction: values.use_per_section_extraction === true,
+        documentTypeSlugs:
+          values.use_visual_classifier === true &&
+          Array.isArray(values.document_type_slugs) &&
+          values.document_type_slugs.length > 0
+            ? values.document_type_slugs
+            : undefined,
       };
 
       // Prepare updates
@@ -128,12 +163,29 @@ export default function JobConfigEditor({
         getDefaultModel(currentProcessingMethod);
       const currentUsePageDetection =
         currentConfig.processing_config?.usePageDetection !== false; // Default to true
+      const currentUseVisualClassifier =
+        currentConfig.processing_config?.useVisualClassifier === true;
+      const currentUsePerSectionExtraction =
+        currentConfig.processing_config?.usePerSectionExtraction === true;
+      const currentSlugs = (
+        currentConfig.processing_config?.documentTypeSlugs ?? []
+      )
+        .slice()
+        .sort()
+        .join(",");
+      const newSlugs = (values.document_type_slugs ?? [])
+        .slice()
+        .sort()
+        .join(",");
 
       if (
         values.extraction_method !== currentExtractionMethod ||
         values.processing_method !== currentProcessingMethod ||
         values.processing_model !== currentProcessingModel ||
-        values.use_page_detection !== currentUsePageDetection
+        values.use_page_detection !== currentUsePageDetection ||
+        values.use_visual_classifier !== currentUseVisualClassifier ||
+        values.use_per_section_extraction !== currentUsePerSectionExtraction ||
+        currentSlugs !== newSlugs
       ) {
         updates.processing_config = processingConfig;
       }
@@ -286,6 +338,96 @@ export default function JobConfigEditor({
             relevant pages (Formation, LOG OF OIL/GAS, Well Plugging Record),
             reducing processing costs and improving accuracy. Disable to process
             the entire document.
+          </div>
+        </div>
+
+        <Divider className="my-4" />
+
+        {/* Visual Page Classifier */}
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            Visual Page Classifier
+            <Tag color="blue" style={{ marginInlineEnd: 0 }}>BETA</Tag>
+          </h3>
+
+          <Form.Item
+            label="Use visual page classifier"
+            name="use_visual_classifier"
+            tooltip="Classifies each page from its image BEFORE extraction so the OCR/AI step only runs on the pages that matter. Big cost win on long documents."
+            valuePropName="checked"
+            initialValue={false}
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, curr) =>
+              prev.use_visual_classifier !== curr.use_visual_classifier
+            }
+          >
+            {({ getFieldValue }) =>
+              getFieldValue("use_visual_classifier") ? (
+                <Form.Item
+                  label="Restrict to document types (optional)"
+                  name="document_type_slugs"
+                  tooltip="Leave empty to consider all registered types. Restrict when you know the document family up front."
+                >
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="Leave empty to consider all registered types"
+                    options={documentTypes.map((dt) => ({
+                      value: dt.slug,
+                      label: `${dt.display_name} — ${dt.slug}`,
+                    }))}
+                  />
+                </Form.Item>
+              ) : null
+            }
+          </Form.Item>
+
+          <div className="text-xs text-gray-500 mt-1 mb-4">
+            Falls back to extracting the full document if the classifier fails
+            or finds no usable pages — never silently drops files.
+          </div>
+
+          <Form.Item
+            label="Per-section extraction"
+            name="use_per_section_extraction"
+            tooltip="Fan out one AI call per classified section with its own registry-resolved schema. Produces a v2 result envelope. Requires the visual page classifier."
+            valuePropName="checked"
+            initialValue={false}
+          >
+            <Switch />
+          </Form.Item>
+
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev: any, curr: any) =>
+              prev.use_per_section_extraction !== curr.use_per_section_extraction ||
+              prev.use_visual_classifier !== curr.use_visual_classifier
+            }
+          >
+            {({ getFieldValue, setFieldsValue }: any) => {
+              const vpc = getFieldValue("use_visual_classifier");
+              const perSection = getFieldValue("use_per_section_extraction");
+              if (perSection && !vpc) {
+                setTimeout(() => setFieldsValue({ use_visual_classifier: true }), 0);
+              }
+              if (!vpc && perSection) {
+                setTimeout(() => setFieldsValue({ use_per_section_extraction: false }), 0);
+              }
+              return null;
+            }}
+          </Form.Item>
+
+          <div className="text-xs text-gray-500 mt-1 mb-4">
+            When off, the classifier still narrows the page set but extraction
+            uses the single job schema (v1 flat result). Turn on for multi-schema
+            fan-out with the v2 envelope.
           </div>
         </div>
 

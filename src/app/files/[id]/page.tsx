@@ -22,6 +22,7 @@ import {
 import { apiClient, JobFile, ProcessingConfig } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
+import DocumentRoutingPanel from "@/components/DocumentRoutingPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { canPerformAdminActions, isReviewer, canEdit } from "@/utils/roleUtils";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -59,6 +60,11 @@ export default function FilePage() {
   const splitPositionRef = React.useRef(50);
   const leftPaneRef = React.useRef<HTMLDivElement>(null);
   const rightPaneRef = React.useRef<HTMLDivElement>(null);
+
+  // Use File.filename as the title
+  useEffect(() => {
+    document.title = file?.filename || "File Details";
+  }, [file?.filename]);
 
   // Comments state
   const [comments, setComments] = useState<
@@ -208,7 +214,7 @@ export default function FilePage() {
       const response = await apiClient.reprocessFiles(
         [file.id],
         0,
-        processingConfig
+        processingConfig,
       );
 
       if (response.status === "success") {
@@ -238,13 +244,18 @@ export default function FilePage() {
 
   const handleUpdateReviewStatus = async (
     fileId: string,
-    reviewStatus: "pending" | "in_review" | "reviewed" | "approved" | "rejected"
+    reviewStatus:
+      | "pending"
+      | "in_review"
+      | "reviewed"
+      | "approved"
+      | "rejected",
   ) => {
     setIsReviewing(true);
     try {
       const response = await apiClient.updateFileReviewStatus(
         fileId,
-        reviewStatus
+        reviewStatus,
       );
       if (response.status === "success" && response.data) {
         setFile((prev) =>
@@ -262,7 +273,7 @@ export default function FilePage() {
                 reviewed_at: response.data!.reviewed_at,
                 review_notes: response.data!.review_notes,
               }
-            : null
+            : null,
         );
         message.success(`File marked as ${reviewStatus}`);
       } else {
@@ -283,7 +294,7 @@ export default function FilePage() {
       const response = await apiClient.bulkReviewAndVerifyFiles(
         [file.id],
         "reviewed",
-        true // adminVerified
+        true, // adminVerified
       );
 
       if (
@@ -308,7 +319,7 @@ export default function FilePage() {
                 admin_verified: updated.admin_verified,
                 customer_verified: updated.customer_verified,
               }
-            : null
+            : null,
         );
         message.success("File marked as reviewed and verified successfully");
       } else {
@@ -465,7 +476,7 @@ export default function FilePage() {
               onClick={() =>
                 handleUpdateReviewStatus(
                   file.id,
-                  file.review_status === "reviewed" ? "pending" : "reviewed"
+                  file.review_status === "reviewed" ? "pending" : "reviewed",
                 )
               }
               disabled={isReviewing}
@@ -479,8 +490,8 @@ export default function FilePage() {
               {isReviewing
                 ? "Updating..."
                 : file.review_status === "reviewed"
-                ? "Reviewed"
-                : "Mark as Reviewed"}
+                  ? "Reviewed"
+                  : "Mark as Reviewed"}
             </Button>
             {isAdmin && (
               <Button
@@ -506,8 +517,8 @@ export default function FilePage() {
                 {isVerifying
                   ? "Verifying..."
                   : file.admin_verified
-                  ? "Verified"
-                  : "Verify"}
+                    ? "Verified"
+                    : "Verify"}
               </Button>
             )}
             {isAdmin && (
@@ -626,6 +637,41 @@ export default function FilePage() {
                 <ConstraintErrorIcon file={file} />
               </div>
               <div className="flex-1 overflow-auto min-h-0 flex flex-col">
+                {/* Document Routing — collapsible section above the results.
+                    Only shown when the visual classifier ran on this file
+                    (detected_sections present). */}
+                {file.detected_sections && (
+                  <details
+                    className="border-b border-gray-200 bg-white flex-shrink-0"
+                    open
+                  >
+                    <summary className="px-4 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                      <span>📍</span>
+                      <span>Document Routing</span>
+                      <span className="text-xs text-gray-500 font-normal">
+                        ({file.detected_sections.sections?.length ?? 0} section
+                        {(file.detected_sections.sections?.length ?? 0) === 1
+                          ? ""
+                          : "s"}
+                        , status: {file.detected_sections.status})
+                      </span>
+                    </summary>
+                    <DocumentRoutingPanel
+                      fileId={file.id}
+                      detectedSections={file.detected_sections}
+                      visualClassifierMeta={
+                        (file.extraction_metadata as any)
+                          ?.visual_page_classifier ?? null
+                      }
+                      onSectionsUpdated={(next) =>
+                        setFile((prev) =>
+                          prev ? { ...prev, detected_sections: next } : prev,
+                        )
+                      }
+                    />
+                  </details>
+                )}
+
                 {file.processing_status !== "completed" || !file.result ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center">
@@ -652,6 +698,8 @@ export default function FilePage() {
                     comments={comments}
                     onAddComment={handleAddComment}
                     fileId={file.id}
+                    resultEnvelope={file.extraction_metadata?.result_envelope}
+                    sectionResults={file.extraction_metadata?.section_results}
                   />
                 )}
               </div>

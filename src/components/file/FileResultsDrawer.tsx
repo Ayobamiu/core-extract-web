@@ -260,6 +260,8 @@ const FileResultsDrawer: React.FC<FileResultsDrawerProps> = ({
               comments={comments}
               onAddComment={onAddComment}
               fileId={file.id}
+              resultEnvelope={file.extraction_metadata?.result_envelope}
+              sectionResults={file.extraction_metadata?.section_results}
             />
           )}
         </div>

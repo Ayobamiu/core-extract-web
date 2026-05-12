@@ -140,6 +140,7 @@ export interface JobFile {
     reviewed_by?: string;
     reviewed_at?: string;
     review_notes?: string;
+    detected_sections?: DetectedSections | null;
     created_at: string;
     processed_at?: string;
     extraction_time_seconds?: number;
@@ -154,6 +155,20 @@ export interface JobFile {
     extraction_metadata?: {
         extraction_method?: string;
         extraction_time_seconds?: number;
+        // Per-section extraction (v2 envelope) provenance. Populated when
+        // the visual classifier ran and produced ≥1 section with extractable
+        // pages. When this is present and result_envelope === 'v2',
+        // file.result is shaped as V2ResultEnvelope (per-slug arrays).
+        result_envelope?: 'v1' | 'v2';
+        section_results?: SectionResult[];
+        schemas_used?: Record<string, { version: number; schemaId: string }>;
+        per_section_extraction?: {
+            section_count: number;
+            success_count: number;
+            failed_count: number;
+            skipped_count: number;
+            total_ai_time_seconds?: number;
+        };
         [key: string]: any;
     };
     previews?: Array<{
@@ -187,6 +202,168 @@ export interface ProcessingConfig {
         preview?: boolean;
     };
     usePageDetection?: boolean; // Enable/disable page detection filtering (default: true)
+    // Visual Page Classifier (Phase 1, item #2). When true the worker runs
+    // the classifier BEFORE extraction and narrows the page set passed to
+    // the extractor to the union of every section's `extraction_pages`.
+    // documentTypeSlugs (optional) restricts the classifier's candidate set
+    // to specific registered types — empty/undefined means "consider all".
+    useVisualClassifier?: boolean;
+    usePerSectionExtraction?: boolean;
+    documentTypeSlugs?: string[];
+}
+
+// Document type registry (GET /document-types).
+export interface DocumentTypeInfo {
+    id: string;
+    slug: string;
+    display_name: string;
+    description?: string | null;
+    default_extractor?: string | null;
+    routing_confidence_threshold?: number | null;
+    status: 'active' | 'deprecated' | string;
+    has_classifier_hints: boolean;
+}
+
+// Admin schema registry (GET /registry/...)
+export interface RegistryDocumentTypeDetail {
+    slug: string;
+    display_name: string;
+    description?: string | null;
+    default_extractor: string;
+    routing_confidence_threshold: number;
+    status: string;
+    classifier_hints?: Record<string, unknown> | null;
+    created_at?: string;
+    updated_at?: string;
+    current_schema_version_id?: string | null;
+    current_schema_version?: number | null;
+    current_schema_name?: string | null;
+    current_schema_row_status?: string | null;
+    version_count?: number;
+}
+
+export interface RegistrySchemaVersionSummary {
+    id: string;
+    version: number;
+    schema_name: string | null;
+    status: string;
+    notes: string | null;
+    created_at: string;
+    is_current: boolean;
+}
+
+export interface RegistrySchemaVersionFull {
+    schemaId: string;
+    version: number;
+    schemaName: string;
+    status: string;
+    schema: Record<string, unknown>;
+    promptHints: Record<string, unknown>;
+    documentTypeSlug: string;
+    defaultExtractor?: string | null;
+}
+
+// Visual Page Classifier output, persisted on job_files.detected_sections.
+export interface DetectedPage {
+    page_number: number;
+    document_type_slug: string; // 'none' for boilerplate/empty pages
+    page_role?: 'first' | 'middle' | 'last' | 'standalone' | 'none' | null;
+    page_purpose?: 'data' | 'reference' | 'boilerplate' | 'cover' | 'blank' | 'attachment' | 'unknown';
+    confidence: number;
+    duplicate_of?: number | null;
+    dupe_signature?: string | null;
+}
+
+export interface DetectedSectionSkippedPage {
+    page_number: number;
+    reason: 'duplicate' | 'reference' | 'boilerplate' | 'cover' | 'blank' | 'attachment' | 'unknown' | string;
+    duplicate_of?: number | null;
+    page_purpose?: string;
+}
+
+export interface DetectedSection {
+    document_type_slug: string;
+    page_range: [number, number];
+    page_count: number;
+    extraction_pages: number[];
+    skipped_pages: DetectedSectionSkippedPage[];
+    page_roles: (string | null)[];
+    page_purposes: string[];
+    confidence: number;
+    min_page_confidence: number;
+    status: 'auto_approved' | 'pending_review' | 'approved' | string;
+    threshold_used: number;
+}
+
+export interface DetectedSections {
+    classifier?: {
+        provider?: string;
+        model?: string;
+        version?: number;
+        [k: string]: any;
+    };
+    grouper?: {
+        strategy?: string;
+        version?: number;
+    };
+    candidate_slugs?: string[];
+    pages: DetectedPage[];
+    sections: DetectedSection[];
+    status: 'auto_approved' | 'pending_review' | 'skipped' | string;
+}
+
+// Per-section extraction (Phase 1, item #3 — v2 envelope).
+//
+// When the visual classifier is on AND it produces ≥1 section with extractable
+// pages, the worker fans out one AI call per section using registry-resolved
+// schemas. The result is stored as a v2 envelope: top-level keys are document
+// type slugs, values are ALWAYS arrays (even with a single section per slug)
+// so downstream consumers don't have to type-check.
+//
+// Detection: `extraction_metadata.result_envelope === 'v2'` (preferred) OR
+// shape inspection (top-level keys match `extraction_metadata.section_results[*].slug`).
+export type V2ResultEnvelope = Record<string, Array<Record<string, unknown>>>;
+
+export type SectionResultStatus =
+    | 'success'
+    | 'failed'
+    | 'skipped_no_schema'
+    | 'skipped_no_content'
+    | 'skipped_no_pages';
+
+export interface SectionResult {
+    section_index: number;
+    slug: string;
+    page_range: [number | null, number | null];
+    extraction_pages: number[];
+    status: SectionResultStatus;
+    error?: string;
+    duration_ms?: number;
+    ai_metadata?: Record<string, unknown>;
+}
+
+/**
+ * Returns true when `result` is a v2 envelope. Checks the explicit marker
+ * first (preferred), falls back to a shape-based heuristic when callers
+ * don't have the metadata available (e.g., realtime websocket events).
+ */
+export function isV2ResultEnvelope(
+    result: unknown,
+    metadata?: { result_envelope?: 'v1' | 'v2'; section_results?: SectionResult[] }
+): result is V2ResultEnvelope {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return false;
+    if (metadata?.result_envelope === 'v2') return true;
+    if (metadata?.result_envelope === 'v1') return false;
+
+    // Heuristic: every top-level key maps to an array of objects, AND there's
+    // at least one such key. This rules out v1 results which are flat field
+    // bags ({ name: '...', depth: 100 }) since their top-level values are
+    // primitives or single objects, not arrays-of-objects.
+    const entries = Object.entries(result as Record<string, unknown>);
+    if (entries.length === 0) return false;
+    return entries.every(([_, v]) =>
+        Array.isArray(v) && v.every((x) => x && typeof x === 'object' && !Array.isArray(x))
+    );
 }
 
 export interface JobDetails extends Job {
@@ -526,6 +703,184 @@ class ApiClient {
 
     async getFileResult(fileId: string): Promise<ApiResponse<{ file: JobFile }>> {
         return this.request(`/files/${fileId}/result`);
+    }
+
+    // List active document types from the schema registry. Powers the
+    // "restrict classifier to" multi-select on job creation/config.
+    async getDocumentTypes(opts?: { includeDeprecated?: boolean }): Promise<ApiResponse<{ documentTypes: DocumentTypeInfo[] }>> {
+        const params = new URLSearchParams();
+        if (opts?.includeDeprecated) params.set('includeDeprecated', 'true');
+        const qs = params.toString();
+        return this.request(`/document-types${qs ? `?${qs}` : ''}`);
+    }
+
+    // ── Schema registry admin (admin JWT only) ───────────────────────────
+    async registryGetDocumentTypeDetail(
+        slug: string
+    ): Promise<
+        ApiResponse<{
+            documentType: RegistryDocumentTypeDetail;
+            schemaVersions: RegistrySchemaVersionSummary[];
+        }>
+    > {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}/detail`);
+    }
+
+    async registryGetSchemaVersion(
+        slug: string,
+        version: number
+    ): Promise<ApiResponse<{ schema: RegistrySchemaVersionFull }>> {
+        return this.request(
+            `/registry/document-types/${encodeURIComponent(slug)}/schemas/${version}`
+        );
+    }
+
+    async registryCreateDocumentType(body: {
+        slug: string;
+        displayName: string;
+        description?: string | null;
+        defaultExtractor?: string;
+        routingConfidenceThreshold?: number;
+        initialSchema?: {
+            jsonSchema: Record<string, unknown>;
+            schemaName?: string | null;
+            setActive?: boolean;
+            notes?: string | null;
+        } | null;
+    }): Promise<ApiResponse<{ documentType: RegistryDocumentTypeDetail; initialSchemaRegistered: unknown }>> {
+        console.log({ body });
+        return this.request(`/registry/document-types`, {
+            method: 'POST',
+            body: JSON.stringify(body),
+        });
+    }
+
+    async registryPatchDocumentType(
+        slug: string,
+        patch: {
+            displayName?: string;
+            description?: string | null;
+            defaultExtractor?: string;
+            routingConfidenceThreshold?: number;
+            status?: 'active' | 'deprecated';
+        }
+    ): Promise<
+        ApiResponse<{
+            documentType: Partial<RegistryDocumentTypeDetail> & Record<string, unknown>;
+        }>
+    > {
+        console.log({ patch, slug });
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(patch),
+        });
+    }
+
+    async registryDeleteDocumentType(slug: string): Promise<ApiResponse<{ deleted: { slug: string; id: string } }>> {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}`, {
+            method: 'DELETE',
+        });
+    }
+
+    async registryPutClassifierHints(
+        slug: string,
+        hints: Record<string, unknown> | null
+    ): Promise<ApiResponse<{ classifier_hints: unknown; updated_at: string }>> {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}/classifier-hints`, {
+            method: 'PUT',
+            body: JSON.stringify({ hints }),
+        });
+    }
+
+    async registryRegisterSchemaVersion(
+        slug: string,
+        body: {
+            jsonSchema: Record<string, unknown>;
+            schemaName?: string | null;
+            setActive?: boolean;
+            notes?: string | null;
+        }
+    ): Promise<ApiResponse<{ schema: Record<string, unknown> }>> {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}/schemas`, {
+            method: 'POST',
+            body: JSON.stringify(body),
+        });
+    }
+
+    async registryPromoteSchemaVersion(
+        slug: string,
+        version: number
+    ): Promise<ApiResponse<{ promoted: Record<string, unknown> }>> {
+        return this.request(
+            `/registry/document-types/${encodeURIComponent(slug)}/schemas/${version}/promote`,
+            { method: 'POST' }
+        );
+    }
+
+    // ── Routing review writes (Phase 1, item #4) ─────────────────────────
+    // All three return the new `detected_sections` blob so callers can
+    // refresh local state without re-fetching the whole file.
+    async routingApproveSection(
+        fileId: string,
+        sectionIndex: number,
+    ): Promise<ApiResponse<{ detected_sections: DetectedSections }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/${sectionIndex}/approve`,
+            { method: 'POST' },
+        );
+    }
+
+    async routingChangeSectionSlug(
+        fileId: string,
+        sectionIndex: number,
+        slug: string,
+    ): Promise<ApiResponse<{ detected_sections: DetectedSections }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/${sectionIndex}/change-slug`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ slug }),
+            },
+        );
+    }
+
+    async routingSplitSection(
+        fileId: string,
+        sectionIndex: number,
+        atPage: number,
+    ): Promise<ApiResponse<{ detected_sections: DetectedSections }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/${sectionIndex}/split`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ atPage }),
+            },
+        );
+    }
+
+    // Fetch a rasterised JPEG of a single PDF page and return a blob URL
+    // ready to drop into <img src>. Caller is responsible for revoking the
+    // URL when the consumer unmounts (URL.revokeObjectURL).
+    async getFilePageThumbnail(
+        fileId: string,
+        pageNumber: number,
+        opts?: { width?: number; quality?: number; signal?: AbortSignal }
+    ): Promise<string> {
+        const params = new URLSearchParams();
+        if (opts?.width) params.set('width', String(opts.width));
+        if (opts?.quality) params.set('q', String(opts.quality));
+        const qs = params.toString();
+        const url = `${this.baseURL}/files/${fileId}/pages/${pageNumber}/thumbnail.jpg${qs ? `?${qs}` : ''}`;
+
+        const res = await fetch(url, {
+            signal: opts?.signal,
+            headers: this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {},
+        });
+        if (!res.ok) {
+            throw new Error(`Thumbnail fetch failed: ${res.status} ${res.statusText}`);
+        }
+        const blob = await res.blob();
+        return URL.createObjectURL(blob);
     }
 
     async getFilePdfUrl(fileId: string): Promise<string> {

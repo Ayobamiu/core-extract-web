@@ -41,6 +41,7 @@ export default function JobDetailPage() {
   const isAdmin = canPerformAdminActions(user);
 
   const [job, setJob] = useState<JobDetails | null>(null);
+  console.log("job", job);
   const [fileSummary, setFileSummary] = useState<{
     total: number;
     extraction_pending: number;
@@ -81,7 +82,7 @@ export default function JobDetailPage() {
     useState<JobFile | null>(null);
   const [showPreviewDrawer, setShowPreviewDrawer] = useState(false);
   const [selectedPreviewId, setSelectedPreviewId] = useState<string | null>(
-    null
+    null,
   );
   const [showBulkPreviewDrawer, setShowBulkPreviewDrawer] = useState(false);
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
@@ -91,6 +92,11 @@ export default function JobDetailPage() {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Use Job.name as the title
+  useEffect(() => {
+    document.title = job?.name || "Job Details";
+  }, [job?.name]);
 
   const refreshJobData = useCallback(async () => {
     try {
@@ -158,7 +164,7 @@ export default function JobDetailPage() {
 
         setTimeout(() => {
           console.log(
-            `🔄 Triggering FileTable refresh (attempt ${attempt}/${maxAttempts})...`
+            `🔄 Triggering FileTable refresh (attempt ${attempt}/${maxAttempts})...`,
           );
           setFileTableRefreshTrigger((prev) => {
             const newValue = prev + 1;
@@ -180,7 +186,7 @@ export default function JobDetailPage() {
         setRealtimeMessage(null);
       }, 5000);
     },
-    [jobId]
+    [jobId],
   );
 
   const handlePreviewUpdated = useCallback(
@@ -196,7 +202,7 @@ export default function JobDetailPage() {
         setRealtimeMessage(null);
       }, 5000);
     },
-    [refreshJobData]
+    [refreshJobData],
   );
 
   // WebSocket connection
@@ -221,7 +227,7 @@ export default function JobDetailPage() {
 
   // Handle file selection within modal
   const handleModalFileSelect = (
-    event: React.ChangeEvent<HTMLInputElement>
+    event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const files = event.target.files;
     if (files) {
@@ -296,7 +302,7 @@ export default function JobDetailPage() {
       const response = await apiClient.addFilesToJob(
         jobId,
         fileList,
-        Object.keys(selectedPagesObj).length > 0 ? selectedPagesObj : undefined
+        Object.keys(selectedPagesObj).length > 0 ? selectedPagesObj : undefined,
       );
 
       if (response.status === "success") {
@@ -367,7 +373,7 @@ export default function JobDetailPage() {
         message.success("Job configuration updated successfully");
       } else {
         throw new Error(
-          response.message || "Failed to update job configuration"
+          response.message || "Failed to update job configuration",
         );
       }
     } catch (error) {
@@ -375,7 +381,7 @@ export default function JobDetailPage() {
       message.error(
         error instanceof Error
           ? error.message
-          : "Failed to update job configuration"
+          : "Failed to update job configuration",
       );
       throw error;
     }
@@ -404,7 +410,7 @@ export default function JobDetailPage() {
 
   const handleBulkAddToPreview = async (
     fileIds: string[],
-    previewId: string
+    previewId: string,
   ) => {
     try {
       const response = await fetch(`/api/previews/${previewId}/files/bulk`, {
@@ -680,7 +686,7 @@ export default function JobDetailPage() {
                                           ...prev,
                                           schema_data: updatedSchema,
                                         }
-                                      : null
+                                      : null,
                                   );
                                   setSchemaDrawerActiveTab("view"); // Switch back to view tab
                                 }}
@@ -844,8 +850,8 @@ export default function JobDetailPage() {
                         {formatFileSize(
                           selectedFiles.reduce(
                             (total, file) => total + file.size,
-                            0
-                          )
+                            0,
+                          ),
                         )}
                       </div>
                     </div>
@@ -898,10 +904,16 @@ export default function JobDetailPage() {
                 fileId={selectedFileForResultsEdit.id}
                 filename={selectedFileForResultsEdit.filename}
                 initialResults={selectedFileForResultsEdit.result}
+                resultEnvelope={
+                  selectedFileForResultsEdit.extraction_metadata?.result_envelope
+                }
+                sectionResults={
+                  selectedFileForResultsEdit.extraction_metadata?.section_results
+                }
                 onSuccess={(updatedResults) => {
                   handleEditResults(
                     selectedFileForResultsEdit.id,
-                    updatedResults
+                    updatedResults,
                   );
                   setShowFileResultsEditor(false);
                   setSelectedFileForResultsEdit(null);
@@ -954,7 +966,7 @@ export default function JobDetailPage() {
                 onConfirm={(selectedPages) =>
                   handlePageSelectionConfirm(
                     currentFileForPageSelection,
-                    selectedPages
+                    selectedPages,
                   )
                 }
               />
