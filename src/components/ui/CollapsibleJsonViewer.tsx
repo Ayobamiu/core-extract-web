@@ -3,15 +3,19 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import JsonView from "@uiw/react-json-view";
+import { JsonViewer as UnifiedJsonViewer } from "@/components/json";
 
 interface CollapsibleJsonViewerProps {
-  data: any;
+  data: unknown;
   title: string;
   defaultOpen?: boolean;
   className?: string;
 }
 
+/**
+ * @deprecated Use `@/components/json` directly. This wrapper exists to keep
+ * legacy call sites working while we migrate.
+ */
 const CollapsibleJsonViewer: React.FC<CollapsibleJsonViewerProps> = ({
   data,
   title,
@@ -23,11 +27,21 @@ const CollapsibleJsonViewer: React.FC<CollapsibleJsonViewerProps> = ({
   return (
     <Card className={className}>
       <CardHeader>
-        <CardTitle
+        <div
           className="flex items-center justify-between cursor-pointer"
           onClick={() => setIsOpen(!isOpen)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setIsOpen((v) => !v);
+            }
+          }}
         >
-          <span>{title}</span>
+          <CardTitle>
+            <span>{title}</span>
+          </CardTitle>
           <motion.div
             animate={{ rotate: isOpen ? 180 : 0 }}
             transition={{ duration: 0.2 }}
@@ -46,7 +60,7 @@ const CollapsibleJsonViewer: React.FC<CollapsibleJsonViewerProps> = ({
               />
             </svg>
           </motion.div>
-        </CardTitle>
+        </div>
       </CardHeader>
 
       <AnimatePresence>
@@ -59,22 +73,14 @@ const CollapsibleJsonViewer: React.FC<CollapsibleJsonViewerProps> = ({
             className="overflow-hidden"
           >
             <CardContent>
-              <div className="bg-gray-50 rounded-lg p-4 overflow-auto">
-                <JsonView
-                  value={data}
-                  style={{
-                    backgroundColor: "transparent",
-                    fontSize: "14px",
-                    fontFamily:
-                      'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
-                  }}
-                  displayDataTypes={false}
-                  displayObjectSize={false}
-                  enableClipboard={true}
-                  collapsed={false}
-                  theme="light"
-                />
-              </div>
+              <UnifiedJsonViewer
+                value={data}
+                readOnly
+                bordered={false}
+                showStatusBar={false}
+                height={360}
+                toolbar={["mode", "search", "copy", "download"]}
+              />
             </CardContent>
           </motion.div>
         )}

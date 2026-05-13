@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Drawer, Tabs, Dropdown, Modal, message } from "antd";
+import { Drawer, Dropdown, Modal, message } from "antd";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
@@ -13,10 +13,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { canPerformAdminActions } from "@/utils/roleUtils";
 import { apiClient, JobDetails, JobFile } from "@/lib/api";
-import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import PreviewSelector from "@/components/preview/PreviewSelector";
 import PreviewDrawer from "@/components/preview/PreviewDrawer";
 import InlineSchemaEditor from "@/components/InlineSchemaEditor";
+import { JsonViewer } from "@/components/json";
 import FileResultsEditor from "@/components/FileResultsEditor";
 import FileTable from "@/components/FileTable";
 import JobConfigEditor from "@/components/JobConfigEditor";
@@ -59,7 +59,6 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSchemaDrawer, setShowSchemaDrawer] = useState(false);
-  const [schemaDrawerActiveTab, setSchemaDrawerActiveTab] = useState("view");
   const [showFileResults, setShowFileResults] = useState<
     Record<string, boolean>
   >({});
@@ -637,67 +636,49 @@ export default function JobDetailPage() {
               placement="right"
               width={800}
               open={showSchemaDrawer}
-              onClose={() => {
-                setShowSchemaDrawer(false);
-                setSchemaDrawerActiveTab("view"); // Reset to view tab when closing
+              onClose={() => setShowSchemaDrawer(false)}
+              styles={{
+                body: {
+                  padding: 16,
+                  display: "flex",
+                  flexDirection: "column",
+                },
               }}
             >
-              {job && (
-                <Tabs
-                  activeKey={schemaDrawerActiveTab}
-                  onChange={setSchemaDrawerActiveTab}
-                  items={[
-                    {
-                      key: "view",
-                      label: "View Schema",
-                      children: (
-                        <div className="mt-4">
-                          <TabbedDataViewer
-                            data={
-                              typeof job.schema_data === "string"
-                                ? JSON.parse(job.schema_data)
-                                : job.schema_data
+              {job &&
+                (isAdmin ? (
+                  <InlineSchemaEditor
+                    jobId={job.id}
+                    currentSchema={
+                      typeof job.schema_data === "string"
+                        ? job.schema_data
+                        : job.schema_data?.schema ||
+                          job.schema_data ||
+                          {}
+                    }
+                    onSuccess={(updatedSchema) => {
+                      setJob((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              schema_data: updatedSchema,
                             }
-                            filename="schema"
-                            schema={job.schema_data}
-                          />
-                        </div>
-                      ),
-                    },
-                    ...(isAdmin
-                      ? [
-                          {
-                            key: "edit",
-                            label: "Edit Schema",
-                            children: (
-                              <InlineSchemaEditor
-                                jobId={job.id}
-                                currentSchema={
-                                  typeof job.schema_data === "string"
-                                    ? job.schema_data
-                                    : job.schema_data?.schema ||
-                                      job.schema_data ||
-                                      {}
-                                }
-                                onSuccess={(updatedSchema) => {
-                                  setJob((prev) =>
-                                    prev
-                                      ? {
-                                          ...prev,
-                                          schema_data: updatedSchema,
-                                        }
-                                      : null,
-                                  );
-                                  setSchemaDrawerActiveTab("view"); // Switch back to view tab
-                                }}
-                              />
-                            ),
-                          },
-                        ]
-                      : []),
-                  ]}
-                />
-              )}
+                          : null,
+                      );
+                    }}
+                  />
+                ) : (
+                  <JsonViewer
+                    value={
+                      typeof job.schema_data === "string"
+                        ? JSON.parse(job.schema_data)
+                        : job.schema_data
+                    }
+                    readOnly
+                    height="100%"
+                    toolbar={["mode", "search", "copy", "download"]}
+                  />
+                ))}
             </Drawer>
 
             {/* File Preview Modal */}
