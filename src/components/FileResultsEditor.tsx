@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Button from "@/components/ui/Button";
-import JSONTreeEditor from "@/components/JSONTreeEditor";
+import { JsonViewer } from "@/components/json";
 import { XMarkIcon, CheckIcon } from "@heroicons/react/24/outline";
 import {
   isV2ResultEnvelope,
@@ -278,22 +278,34 @@ export default function FileResultsEditor({
               </div>
             )}
 
-            {/* JSON Tree Editor */}
-            <div className="flex-1 border border-gray-300 rounded-lg overflow-hidden">
+            {/* JSON Editor */}
+            <div className="flex-1 min-h-0">
               {results ? (
-                <JSONTreeEditor
-                  data={results}
-                  onChange={(newData) => {
-                    setResults(newData);
-                    setHasChanges(true);
-                    setError(null);
-                    setIsValid(true);
-                  }}
-                  onError={(error) => {
-                    setError(error);
-                    setIsValid(!error);
+                <JsonViewer
+                  value={results}
+                  onChange={({ value, isValid: valid, error: parseError }) => {
+                    if (valid) {
+                      setResults(value);
+                      setHasChanges(true);
+                      setError(null);
+                      setIsValid(true);
+                    } else {
+                      setError(parseError ?? "Invalid JSON");
+                      setIsValid(false);
+                    }
                   }}
                   readOnly={isSaving}
+                  defaultMode="code"
+                  height="100%"
+                  toolbar={[
+                    "mode",
+                    "format",
+                    "minify",
+                    "search",
+                    "copy",
+                    "download",
+                    "upload",
+                  ]}
                 />
               ) : (
                 <div className="flex items-center justify-center h-full text-gray-500">
@@ -305,10 +317,15 @@ export default function FileResultsEditor({
             {/* Footer Info */}
             <div className="mt-4 text-xs text-gray-500">
               <p>
-                • Click on keys and values to edit them inline • Use
-                expand/collapse arrows to navigate large objects • Hover over
-                items to see add/remove buttons • Changes are automatically
-                validated • Press Enter to save edits, Escape to cancel
+                • Switch between code and tree views from the toolbar • Press
+                <kbd className="px-1 py-0.5 bg-gray-100 border rounded">
+                  ⌘/Ctrl + F
+                </kbd>{" "}
+                to search • Use{" "}
+                <kbd className="px-1 py-0.5 bg-gray-100 border rounded">
+                  Format
+                </kbd>{" "}
+                to clean up indentation
               </p>
             </div>
           </div>

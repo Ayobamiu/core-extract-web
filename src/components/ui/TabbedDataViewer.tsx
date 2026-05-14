@@ -2,14 +2,13 @@
 
 import React, { useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import JsonView from "@uiw/react-json-view";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { jsonToCsv } from "@/lib/csvExport";
-import CompareDiffViewer from "./CompareDiffViewer";
 import { MessageSquare } from "lucide-react";
 import { Button, Input, message, Typography } from "antd";
+import { JsonViewer } from "@/components/json";
 import {
   isV2ResultEnvelope,
   type SectionResult,
@@ -18,16 +17,6 @@ import {
 
 const { TextArea } = Input;
 const { Text } = Typography;
-import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  createColumnHelper,
-  flexRender,
-  SortingState,
-  ColumnFiltersState,
-} from "@tanstack/react-table";
 
 /**
  * rehype-raw turns angle-bracket markup in markdown into custom element names.
@@ -135,14 +124,7 @@ function formatSectionLabel(entry: SectionPickerEntry): string {
   return parts.join(" · ");
 }
 
-type TabType =
-  | "preview"
-  | "json"
-  | "csv"
-  | "edit"
-  | "markdown"
-  | "compare"
-  | "comments";
+type TabType = "results" | "markdown" | "compare" | "comments";
 type MarkdownViewType = "full" | "pages" | "chunks";
 
 const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
@@ -161,11 +143,8 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   resultEnvelope,
   sectionResults,
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>("preview");
+  const [activeTab, setActiveTab] = useState<TabType>("results");
   const [markdownView, setMarkdownView] = useState<MarkdownViewType>("full");
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [editableJson, setEditableJson] = useState<string>("");
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -282,100 +261,6 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     }
   }, [sectionData]);
 
-  // Parse CSV line handling quoted values
-  const parseCsvLine = (line: string): string[] => {
-    const result: string[] = [];
-    let current = "";
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-
-      if (char === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          // Escaped quote
-          current += '"';
-          i++; // Skip next quote
-        } else {
-          // Toggle quote state
-          inQuotes = !inQuotes;
-        }
-      } else if (char === "," && !inQuotes) {
-        result.push(current.trim());
-        current = "";
-      } else {
-        current += char;
-      }
-    }
-
-    result.push(current.trim());
-    return result;
-  };
-
-  // Parse CSV data for table display
-  const tableData = useMemo(() => {
-    if (!csvData) return [];
-
-    const lines = csvData.split("\n").filter((line) => line.trim());
-    if (lines.length === 0) return [];
-
-    const headers = lines[0]
-      .split(",")
-      .map((header) => header.replace(/^"|"$/g, "").trim());
-
-    const rows = lines.slice(1).map((line) => {
-      const values = parseCsvLine(line);
-      const row: Record<string, string> = {};
-      headers.forEach((header, index) => {
-        row[header] = values[index] || "";
-      });
-      return row;
-    });
-
-    return rows;
-  }, [csvData]);
-
-  // Create table columns dynamically
-  const columns = useMemo(() => {
-    if (tableData.length === 0) return [];
-
-    const columnHelper = createColumnHelper<Record<string, string>>();
-    const headers = Object.keys(tableData[0] || {});
-
-    return headers.map((header) =>
-      columnHelper.accessor(header, {
-        header: header,
-        cell: ({ getValue }) => {
-          const value = getValue();
-          const stringValue = String(value);
-          return (
-            <div
-              className="max-w-xs truncate"
-              title={stringValue.length > 50 ? stringValue : undefined}
-            >
-              {stringValue}
-            </div>
-          );
-        },
-      })
-    );
-  }, [tableData]);
-
-  // Initialize table
-  const table = useReactTable({
-    data: tableData,
-    columns,
-    state: {
-      sorting,
-      columnFilters,
-    },
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-  });
-
   // Export handlers — JSON exports the full envelope (v2) so the user gets a
   // complete file-level snapshot; CSV stays scoped to the selected section
   // because flattening multiple sections together produces a confusing union.
@@ -424,194 +309,6 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     }
   };
 
-  // Render preview data in a collapsible tree format
-  const renderPreviewData = (data: unknown): React.ReactNode => {
-    if (!data || typeof data !== "object") {
-      return (
-        <div className="text-center py-8 text-gray-500">
-          <p>No data available for preview</p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="font-mono text-sm">
-        {Object.entries(data as Record<string, unknown>).map(([key, value]) => (
-          <div key={key}>{renderTreeItem(key, value, "")}</div>
-        ))}
-      </div>
-    );
-  };
-
-  // Toggle expansion state for a key
-  const toggleExpanded = (key: string) => {
-    setExpandedKeys((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(key)) {
-        newSet.delete(key);
-      } else {
-        newSet.add(key);
-      }
-      return newSet;
-    });
-  };
-
-  // Render a single tree item
-  const renderTreeItem = (
-    key: string,
-    value: unknown,
-    path: string
-  ): React.ReactNode => {
-    const fullPath = path ? `${path}.${key}` : key;
-    const isExpanded = expandedKeys.has(fullPath);
-
-    if (value === null) {
-      return (
-        <div className="flex items-center py-1">
-          <span className="text-gray-600 font-medium">{key}:</span>
-          <span className="ml-2 text-gray-400">null</span>
-        </div>
-      );
-    }
-
-    if (value === undefined) {
-      return (
-        <div className="flex items-center py-1">
-          <span className="text-gray-600 font-medium">{key}:</span>
-          <span className="ml-2 text-gray-400">undefined</span>
-        </div>
-      );
-    }
-
-    if (typeof value === "string") {
-      return (
-        <div className="flex items-center py-1">
-          <span className="text-gray-600 font-medium">{key}:</span>
-          <span className="ml-2 text-gray-800">&quot;{value}&quot;</span>
-        </div>
-      );
-    }
-
-    if (typeof value === "number") {
-      return (
-        <div className="flex items-center py-1">
-          <span className="text-gray-600 font-medium">{key}:</span>
-          <span className="ml-2 text-blue-600">{value}</span>
-        </div>
-      );
-    }
-
-    if (typeof value === "boolean") {
-      return (
-        <div className="flex items-center py-1">
-          <span className="text-gray-600 font-medium">{key}:</span>
-          <span className={`ml-2 ${value ? "text-green-600" : "text-red-600"}`}>
-            {value ? "true" : "false"}
-          </span>
-        </div>
-      );
-    }
-
-    if (Array.isArray(value)) {
-      const isEmpty = value.length === 0;
-      const canExpand = !isEmpty;
-
-      return (
-        <div>
-          <div
-            className="flex items-center py-1 cursor-pointer hover:bg-gray-50 rounded"
-            onClick={() => canExpand && toggleExpanded(fullPath)}
-          >
-            {canExpand && (
-              <svg
-                className={`w-3 h-3 mr-1 transition-transform ${
-                  isExpanded ? "rotate-90" : ""
-                }`}
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            )}
-            {!canExpand && <div className="w-3 h-3 mr-1" />}
-            <span className="text-gray-600 font-medium">{key}:</span>
-            <span className="ml-2 text-gray-500">
-              [{isEmpty ? "" : value.length}]
-            </span>
-          </div>
-
-          {isExpanded && (
-            <div className="ml-4 border-l border-gray-200 pl-2">
-              {value.map((item, index) => (
-                <div key={index}>
-                  {renderTreeItem(index.toString(), item, fullPath)}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (typeof value === "object") {
-      const obj = value as Record<string, unknown>;
-      const entries = Object.entries(obj);
-      const isEmpty = entries.length === 0;
-      const canExpand = !isEmpty;
-
-      return (
-        <div>
-          <div
-            className="flex items-center py-1 cursor-pointer hover:bg-gray-50 rounded"
-            onClick={() => canExpand && toggleExpanded(fullPath)}
-          >
-            {canExpand && (
-              <svg
-                className={`w-3 h-3 mr-1 transition-transform ${
-                  isExpanded ? "rotate-90" : ""
-                }`}
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            )}
-            {!canExpand && <div className="w-3 h-3 mr-1" />}
-            <span className="text-gray-600 font-medium">{key}:</span>
-            <span className="ml-2 text-gray-500">
-              {isEmpty ? "{}" : `{${entries.length}}`}
-            </span>
-          </div>
-
-          {isExpanded && (
-            <div className="ml-4 border-l border-gray-200 pl-2">
-              {entries.map(([nestedKey, nestedValue]) => (
-                <div key={nestedKey}>
-                  {renderTreeItem(nestedKey, nestedValue, fullPath)}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex items-center py-1">
-        <span className="text-gray-600 font-medium">{key}:</span>
-        <span className="ml-2 text-gray-800">{String(value)}</span>
-      </div>
-    );
-  };
-
   return (
     <div
       className={`bg-white flex flex-col h-full overflow-hidden ${className}`}
@@ -654,24 +351,14 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       <div className="flex items-center justify-between border-b border-gray-200 flex-shrink-0">
         <div className="flex space-x-1">
           <button
-            onClick={() => setActiveTab("preview")}
+            onClick={() => setActiveTab("results")}
             className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
-              activeTab === "preview"
+              activeTab === "results"
                 ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            Preview
-          </button>
-          <button
-            onClick={() => setActiveTab("json")}
-            className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
-              activeTab === "json"
-                ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            JSON
+            Results
           </button>
           {markdown && (
             <button
@@ -695,18 +382,6 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               }`}
             >
               Compare
-            </button>
-          )}
-          {editable && (
-            <button
-              onClick={() => setActiveTab("edit")}
-              className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
-                activeTab === "edit"
-                  ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              Edit
             </button>
           )}
           {(comments.length > 0 || onAddComment) && (
@@ -752,115 +427,52 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           transition={{ duration: 0.2 }}
           className="flex-1 overflow-hidden flex flex-col min-h-0"
         >
-          {activeTab === "preview" && (
-            <div className="overflow-auto flex-1 p-4 min-h-0">
-              <div className="space-y-4">{renderPreviewData(sectionData)}</div>
-            </div>
-          )}
-
-          {activeTab === "json" && (
-            <div className="overflow-auto flex-1 min-h-0">
-              <JsonView
-                value={sectionData as object}
-                style={{
-                  backgroundColor: "transparent",
-                  fontSize: "14px",
-                  fontFamily:
-                    'ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace',
+          {activeTab === "results" && (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <JsonViewer
+                text={editableJson}
+                onChange={({ text, isValid, error }) => {
+                  setEditableJson(text);
+                  setJsonError(isValid ? null : error ?? "Invalid JSON");
                 }}
-                displayDataTypes={false}
-                displayObjectSize={false}
-                enableClipboard={true}
-                collapsed={false}
+                readOnly={!editable}
+                bordered={false}
+                defaultMode="tree"
+                height="100%"
+                toolbar={
+                  editable
+                    ? [
+                        "mode",
+                        "format",
+                        "minify",
+                        "search",
+                        "copy",
+                        "download",
+                        "upload",
+                        "cancel",
+                        "save",
+                      ]
+                    : ["mode", "search", "copy", "download"]
+                }
+                onSave={
+                  editable
+                    ? async () => {
+                        await handleSave();
+                      }
+                    : undefined
+                }
+                onCancel={
+                  editable
+                    ? () => {
+                        setEditableJson(JSON.stringify(sectionData, null, 2));
+                        setJsonError(null);
+                      }
+                    : undefined
+                }
+                cancelLabel="Reset"
+                saveLabel={isSaving ? "Saving…" : "Update"}
+                saving={isSaving}
               />
-            </div>
-          )}
-
-          {activeTab === "edit" && editable && (
-            <div className="flex-1 flex flex-col overflow-hidden min-h-0 space-y-4 p-4">
-              {/* Error Display */}
-              {jsonError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                  <div className="flex items-center">
-                    <svg
-                      className="w-4 h-4 text-red-500 mr-2"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    <span className="text-red-700 text-sm font-medium">
-                      JSON Error:
-                    </span>
-                  </div>
-                  <p className="text-red-600 text-sm mt-1">{jsonError}</p>
-                </div>
-              )}
-
-              {/* JSON Editor */}
-              <div className="flex-1 overflow-hidden min-h-0">
-                <textarea
-                  value={editableJson}
-                  onChange={(e) => handleJsonChange(e.target.value)}
-                  className="w-full h-full p-4 font-mono text-sm bg-gray-50 border-0 resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  placeholder="Edit JSON data..."
-                  spellCheck={false}
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between p-2">
-                <div className="text-sm text-gray-500">
-                  Edit the JSON data above. Changes will be saved when you click
-                  "Update".
-                </div>
-                <div
-                  className="flex space-x-2"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setEditableJson(JSON.stringify(sectionData, null, 2));
-                      return false;
-                    }}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors duration-200"
-                    disabled={isSaving}
-                  >
-                    Reset
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleSave();
-                      return false;
-                    }}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    disabled={!!jsonError || isSaving || !onUpdate}
-                    className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded transition-colors duration-200"
-                  >
-                    {isSaving ? "Saving..." : "Update"}
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 
@@ -1301,7 +913,18 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
           {activeTab === "compare" && actual_result && (
             <div className="flex-1 overflow-hidden min-h-0">
-              <CompareDiffViewer original={actual_result} current={sectionData} />
+              <JsonViewer
+                value={sectionData}
+                compareWith={actual_result}
+                compareLabel="Original (AI)"
+                currentLabel="Current (Updated)"
+                mode="diff"
+                readOnly
+                bordered={false}
+                showStatusBar={false}
+                toolbar={false}
+                height="100%"
+              />
             </div>
           )}
 

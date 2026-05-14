@@ -25,6 +25,7 @@ import {
   RegistrySchemaVersionSummary,
 } from "@/lib/api";
 import { ReloadOutlined, PlusOutlined } from "@ant-design/icons";
+import { JsonViewer } from "@/components/json";
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -448,10 +449,12 @@ export default function SchemaRegistryAdmin() {
             label="Initial schema JSON (optional)"
             extra="Paste a full OpenAI-strict schema object, or a wrapper { schemaName, schema }."
           >
-            <TextArea
-              rows={12}
+            <JsonFormField
               placeholder="{}"
-              className="font-mono text-xs"
+              height={260}
+              defaultMode="code"
+              mode="code"
+              toolbar={["mode", "format", "minify", "search", "copy", "upload"]}
             />
           </Form.Item>
         </Form>
@@ -576,12 +579,14 @@ export default function SchemaRegistryAdmin() {
                       JSON merged into the VLM prompt for this slug (e.g.
                       skip_when / keep_when). Leave empty and save to clear.
                     </Paragraph>
-                    <TextArea
-                      rows={16}
-                      className="font-mono text-xs"
-                      value={hintsText}
-                      onChange={(e) => setHintsText(e.target.value)}
+                    <JsonViewer
+                      text={hintsText}
+                      onChange={({ text: t }) => setHintsText(t)}
                       placeholder={CLASSIFIER_HINTS_PLACEHOLDER}
+                      defaultMode="code"
+                      mode="code"
+                      height={360}
+                      toolbar={["mode", "format", "minify", "search", "copy", "upload"]}
                     />
                     <Space>
                       <Button type="primary" onClick={saveHints}>
@@ -605,13 +610,17 @@ export default function SchemaRegistryAdmin() {
         width="90vw"
         style={{ maxWidth: 960 }}
       >
-        <TextArea
-          rows={20}
-          className="font-mono text-xs mt-4"
-          value={newSchemaText}
-          onChange={(e) => setNewSchemaText(e.target.value)}
-          placeholder="{ type: object, properties: ..., additionalProperties: false, required: [...] }"
-        />
+        <div className="mt-4">
+          <JsonViewer
+            text={newSchemaText}
+            onChange={({ text: t }) => setNewSchemaText(t)}
+            placeholder="{ type: object, properties: ..., additionalProperties: false, required: [...] }"
+            defaultMode="code"
+            mode="code"
+            height={420}
+            toolbar={["mode", "format", "minify", "search", "copy", "upload"]}
+          />
+        </div>
       </Modal>
 
       <Modal
@@ -627,11 +636,43 @@ export default function SchemaRegistryAdmin() {
         style={{ maxWidth: 900 }}
       >
         {schemaView && (
-          <pre className="text-xs bg-gray-50 p-4 rounded max-h-[70vh] overflow-auto whitespace-pre-wrap break-all">
-            {schemaView.json}
-          </pre>
+          <JsonViewer
+            text={schemaView.json}
+            readOnly
+            defaultMode="tree"
+            height="70vh"
+            toolbar={["mode", "search", "copy", "download"]}
+          />
         )}
       </Modal>
     </div>
+  );
+}
+
+/**
+ * AntD `Form.Item` value adapter for `JsonViewer`. Stores the field as a
+ * string so the existing schema submission/import flow keeps working (it
+ * parses the string itself).
+ */
+function JsonFormField({
+  value,
+  onChange,
+  ...rest
+}: {
+  value?: string;
+  onChange?: (next: string) => void;
+} & Omit<React.ComponentProps<typeof JsonViewer>, "value" | "onChange" | "text">) {
+  const text =
+    typeof value === "string"
+      ? value
+      : value != null
+        ? JSON.stringify(value, null, 2)
+        : "";
+  return (
+    <JsonViewer
+      {...rest}
+      text={text}
+      onChange={({ text: t }) => onChange?.(t)}
+    />
   );
 }

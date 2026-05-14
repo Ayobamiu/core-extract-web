@@ -10,6 +10,7 @@ import { PROCESSING_METHODS, DEFAULT_MODELS } from "@/lib/processingConfig";
 import ExampleSchemaDropdown from "./ExampleSchemaPanel";
 import ProcessingConfigSelector from "../ProcessingConfigSelector";
 import PageSelectionModal from "../PageSelectionModal";
+import { JsonViewer } from "@/components/json";
 
 interface FileUploadProps {
   onUploadSuccess?: (jobId: string) => void;
@@ -289,12 +290,15 @@ const FileUpload: React.FC<FileUploadProps> = ({
                   onSelectSchema={handleSelectExampleSchema}
                 />
               </div>
-              <textarea
-                value={schema}
-                onChange={(e) => setSchema(e.target.value)}
+              <JsonViewer
+                text={schema}
+                onChange={({ text: t }) => setSchema(t)}
+                defaultMode="code"
+                mode="code"
                 placeholder='{"type": "object", "properties": {...}}'
-                rows={6}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm bg-white text-gray-900 dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                height={220}
+                toolbar={["mode", "format", "minify", "search", "copy", "upload"]}
+                showStatusBar
               />
             </div>
           </div>
