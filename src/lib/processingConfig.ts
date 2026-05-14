@@ -9,8 +9,14 @@ export const PROCESSING_METHODS = {
 } as const;
 
 export const OPENAI_MODELS = {
+    // gpt-4.1 family — 32k output cap; default for structured extraction (matches ai/src/config/processingConfig.js)
+    GPT_4_1: 'gpt-4.1',
+    GPT_4_1_MINI: 'gpt-4.1-mini',
+    GPT_4_1_NANO: 'gpt-4.1-nano',
+    // gpt-4o family — 16k output cap
     GPT_4O: 'gpt-4o',
     GPT_4O_2024_08_06: 'gpt-4o-2024-08-06',
+    GPT_4O_MINI: 'gpt-4o-mini',
     GPT_4: 'gpt-4',
     GPT_3_5_TURBO: 'gpt-3.5-turbo'
 } as const;
@@ -52,15 +58,19 @@ export const ALL_PROCESSING_METHODS = Object.values(PROCESSING_METHODS);
 
 // Default models for each method
 export const DEFAULT_MODELS = {
-    [PROCESSING_METHODS.OPENAI]: OPENAI_MODELS.GPT_4O,
+    [PROCESSING_METHODS.OPENAI]: OPENAI_MODELS.GPT_4_1,
     [PROCESSING_METHODS.QWEN]: QWEN_MODELS.QWEN3_MAX
 } as const;
 
 // Model display names for UI
 export const MODEL_DISPLAY_NAMES: Record<string, string> = {
     // OpenAI
+    [OPENAI_MODELS.GPT_4_1]: 'GPT-4.1 (Recommended)',
+    [OPENAI_MODELS.GPT_4_1_MINI]: 'GPT-4.1 Mini',
+    [OPENAI_MODELS.GPT_4_1_NANO]: 'GPT-4.1 Nano',
     [OPENAI_MODELS.GPT_4O]: 'GPT-4o',
     [OPENAI_MODELS.GPT_4O_2024_08_06]: 'GPT-4o (2024-08-06)',
+    [OPENAI_MODELS.GPT_4O_MINI]: 'GPT-4o Mini',
     [OPENAI_MODELS.GPT_4]: 'GPT-4',
     [OPENAI_MODELS.GPT_3_5_TURBO]: 'GPT-3.5 Turbo',
     

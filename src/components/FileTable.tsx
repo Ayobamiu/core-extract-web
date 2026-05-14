@@ -42,6 +42,7 @@ import {
 import { JobFile, ProcessingConfig } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import { apiClient } from "@/lib/api";
+import { DEFAULT_MODELS, PROCESSING_METHODS } from "@/lib/processingConfig";
 import { useAuth } from "@/contexts/AuthContext";
 import { canPerformAdminActions } from "@/utils/roleUtils";
 import moment from "moment";
@@ -231,7 +232,7 @@ const FileTable: React.FC<FileTableProps> = ({
       },
       processing: {
         method: "openai",
-        model: "gpt-4o",
+        model: DEFAULT_MODELS[PROCESSING_METHODS.OPENAI],
         options: {},
       },
       reprocess: {

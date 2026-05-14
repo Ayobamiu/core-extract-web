@@ -20,6 +20,7 @@ import {
   ReloadOutlined,
 } from "@ant-design/icons";
 import { apiClient, JobFile, ProcessingConfig } from "@/lib/api";
+import { DEFAULT_MODELS, PROCESSING_METHODS } from "@/lib/processingConfig";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import DocumentRoutingPanel from "@/components/DocumentRoutingPanel";
@@ -193,7 +194,7 @@ export default function FilePage() {
       },
       processing: {
         method: "openai",
-        model: "gpt-4o",
+        model: DEFAULT_MODELS[PROCESSING_METHODS.OPENAI],
         options: {},
       },
       reprocess: {
