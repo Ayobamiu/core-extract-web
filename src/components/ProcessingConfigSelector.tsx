@@ -248,7 +248,7 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
                 {getMethodDisplayName(PROCESSING_METHODS.OPENAI)}
               </div>
               <div className="text-sm text-gray-500">
-                OpenAI GPT models (Default)
+                OpenAI GPT-4.1 and GPT-4o family (default: GPT-4.1)
               </div>
             </div>
           </label>
@@ -283,7 +283,7 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
           AI Model
         </label>
         <select
-          value={config.processing.model}
+          value={config.processing.model || getDefaultModel(currentMethod)}
           onChange={(e) => handleProcessingModelChange(e.target.value)}
           disabled={disabled}
           className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
