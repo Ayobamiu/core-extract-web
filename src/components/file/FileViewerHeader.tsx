@@ -1,23 +1,19 @@
 "use client";
 
 import React from "react";
-import { Button, Dropdown, Tooltip, Typography } from "antd";
+import { Button, Tooltip, Typography } from "antd";
 import type { MenuProps } from "antd";
 import {
   CheckCircleOutlined,
   FilePdfOutlined,
-  FileTextOutlined,
-  InfoCircleOutlined,
   LeftOutlined,
   LinkOutlined,
-  MoreOutlined,
-  ReloadOutlined,
   RightOutlined,
-  ShrinkOutlined,
 } from "@ant-design/icons";
 import type { JobFile } from "@/lib/api";
-import { Loader } from "lucide-react";
 import FileViewerMetaChips from "./FileViewerMetaChips";
+import FileViewerActions from "./FileViewerActions";
+import { buildFileProcessingSummary } from "@/lib/fileProcessingMeta";
 
 const { Text } = Typography;
 
@@ -42,6 +38,8 @@ export interface FileViewerHeaderProps {
   verifyingFileId: string | null;
   reprocessingFileId: string | null;
   isAdmin: boolean;
+  /** Show Review & Verify as a primary toolbar button (file page). */
+  showReviewAndVerifyInBar?: boolean;
 }
 
 export default function FileViewerHeader({
@@ -62,14 +60,10 @@ export default function FileViewerHeader({
   verifyingFileId,
   reprocessingFileId,
   isAdmin,
+  showReviewAndVerifyInBar = false,
 }: FileViewerHeaderProps) {
-  const isProcessing =
-    reprocessingFileId === file.id ||
-    file.extraction_status === "processing" ||
-    file.processing_status === "processing";
-
   const moreMenuItems: MenuProps["items"] = [];
-  if (isAdmin) {
+  if (isAdmin && !showReviewAndVerifyInBar) {
     moreMenuItems.push({
       key: "review-verify",
       label: "Review & verify",
@@ -87,11 +81,20 @@ export default function FileViewerHeader({
     });
   }
 
+  const summary = buildFileProcessingSummary(file);
+  const hasMetaChips =
+    Boolean(summary.extractionMethod) ||
+    Boolean(summary.model) ||
+    summary.documentTypeSlugs.length > 0 ||
+    Boolean(summary.routingStatus) ||
+    file.review_status === "reviewed" ||
+    file.admin_verified;
+
   return (
-    <header className="flex-shrink-0 border-b border-gray-200 bg-white">
-      <div className="flex items-center gap-2 px-3 py-2 min-h-[44px]">
+    <header className="flex-shrink-0 bg-white">
+      <div className="flex items-center gap-2 px-3 py-1.5 min-h-[40px] border-b border-gray-200">
         {showNavigation && (
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-0.5 shrink-0">
             <Button
               type="text"
               size="small"
@@ -115,117 +118,45 @@ export default function FileViewerHeader({
           </div>
         )}
 
-        <FilePdfOutlined className="text-gray-400 flex-shrink-0 text-sm" />
+        <FilePdfOutlined className="text-gray-400 shrink-0 text-sm" />
 
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 flex items-center gap-2">
           <Tooltip title={file.filename}>
-            <Text className="!text-sm !font-medium !text-gray-900 block truncate">
+            <span className="text-sm font-medium text-gray-900 truncate">
               {file.filename}
-            </Text>
+            </span>
           </Tooltip>
           {showNavigation &&
             fileIndex !== undefined &&
             totalFiles !== undefined && (
-              <Text type="secondary" className="!text-[11px]">
-                {fileIndex + 1} of {totalFiles}
+              <Text type="secondary" className="!text-[11px] shrink-0">
+                {fileIndex + 1}/{totalFiles}
               </Text>
             )}
         </div>
 
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <Button
-            type={file.review_status === "reviewed" ? "default" : "primary"}
-            size="small"
-            icon={
-              reviewingFileId === file.id ? (
-                <Loader className="w-3 h-3 animate-spin" />
-              ) : file.review_status === "reviewed" ? (
-                <CheckCircleOutlined className="text-emerald-600" />
-              ) : (
-                <FileTextOutlined />
-              )
-            }
-            onClick={() =>
-              onUpdateReviewStatus(
-                file.id,
-                file.review_status === "reviewed" ? "pending" : "reviewed",
-              )
-            }
-            disabled={reviewingFileId === file.id}
-            loading={reviewingFileId === file.id}
-          >
-            {file.review_status === "reviewed" ? "Reviewed" : "Review"}
-          </Button>
+        <FileViewerActions
+          file={file}
+          isAdmin={isAdmin}
+          reviewingFileId={reviewingFileId}
+          verifyingFileId={verifyingFileId}
+          reprocessingFileId={reprocessingFileId}
+          onUpdateReviewStatus={onUpdateReviewStatus}
+          onVerifyFile={onVerifyFile}
+          onReviewAndVerifyFile={onReviewAndVerifyFile}
+          onReprocessFile={onReprocessFile}
+          onOpenFileDetails={onOpenFileDetails}
+          onClose={onClose}
+          moreMenuItems={moreMenuItems}
+          showReviewAndVerifyInBar={showReviewAndVerifyInBar}
+        />
+      </div>
 
-          {isAdmin && (
-            <Button
-              type={file.admin_verified ? "default" : "primary"}
-              size="small"
-              icon={
-                verifyingFileId === file.id ? (
-                  <Loader className="w-3 h-3 animate-spin" />
-                ) : (
-                  <CheckCircleOutlined />
-                )
-              }
-              onClick={() => onVerifyFile(file.id, !file.admin_verified)}
-              disabled={file.admin_verified || verifyingFileId === file.id}
-              loading={verifyingFileId === file.id}
-            >
-              {file.admin_verified ? "Verified" : "Verify"}
-            </Button>
-          )}
-
-          <Button
-            type="default"
-            size="small"
-            icon={
-              isProcessing ? (
-                <Loader className="w-3 h-3 animate-spin" />
-              ) : (
-                <ReloadOutlined />
-              )
-            }
-            onClick={() => onReprocessFile(file.id)}
-            disabled={isProcessing}
-            loading={isProcessing}
-          >
-            Reprocess
-          </Button>
-
-          {moreMenuItems.length > 0 && (
-            <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
-              <Button type="text" size="small" icon={<MoreOutlined />} />
-            </Dropdown>
-          )}
-
-          {onOpenFileDetails && (
-            <Tooltip title="File details">
-              <Button
-                type="text"
-                size="small"
-                icon={<InfoCircleOutlined />}
-                onClick={() => onOpenFileDetails(file)}
-              />
-            </Tooltip>
-          )}
-
-          {onClose && (
-            <Button
-              type="text"
-              size="small"
-              icon={<ShrinkOutlined />}
-              onClick={onClose}
-            >
-              Close
-            </Button>
-          )}
+      {hasMetaChips && (
+        <div className="px-3 py-1">
+          <FileViewerMetaChips file={file} />
         </div>
-      </div>
-
-      <div className="px-3 pb-2">
-        <FileViewerMetaChips file={file} />
-      </div>
+      )}
     </header>
   );
 }

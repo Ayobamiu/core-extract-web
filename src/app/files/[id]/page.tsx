@@ -2,34 +2,14 @@
 
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import {
-  Typography,
-  Button,
-  Spin,
-  Empty,
-  message,
-  Modal,
-  Checkbox,
-  Space,
-} from "antd";
-import {
-  CheckCircleOutlined,
-  ExclamationCircleOutlined,
-  FilePdfOutlined,
-  FileTextOutlined,
-  ReloadOutlined,
-} from "@ant-design/icons";
+import { Button, Spin, Empty, message, Modal, Checkbox, Space } from "antd";
 import { apiClient, JobFile, ProcessingConfig } from "@/lib/api";
 import { DEFAULT_MODELS, PROCESSING_METHODS } from "@/lib/processingConfig";
-import FileViewerRightPane from "@/components/file/FileViewerRightPane";
-import FileViewerMetaChips from "@/components/file/FileViewerMetaChips";
+import FileViewerLayout from "@/components/file/FileViewerLayout";
 import { useAuth } from "@/contexts/AuthContext";
-import { canPerformAdminActions, isReviewer, canEdit } from "@/utils/roleUtils";
+import { canPerformAdminActions, canEdit } from "@/utils/roleUtils";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import SidebarLayout from "@/components/layout/SidebarLayout";
-import { Loader } from "lucide-react";
-
-const { Text } = Typography;
 
 export default function FilePage() {
   const params = useParams();
@@ -54,12 +34,6 @@ export default function FilePage() {
     forceExtraction: false,
     preview: false,
   });
-  const [splitPosition, setSplitPosition] = useState(50); // Percentage
-  const [isResizing, setIsResizing] = useState(false);
-  const splitPositionRef = React.useRef(50);
-  const leftPaneRef = React.useRef<HTMLDivElement>(null);
-  const rightPaneRef = React.useRef<HTMLDivElement>(null);
-
   // Use File.filename as the title
   useEffect(() => {
     document.title = file?.filename || "File Details";
@@ -75,23 +49,6 @@ export default function FilePage() {
       createdAt: string;
     }>
   >([]);
-
-  const pageCountDisplay = React.useMemo(() => {
-    if (!file) return null;
-    if (
-      typeof file.page_count === "number" &&
-      Number.isFinite(file.page_count)
-    ) {
-      return file.page_count;
-    }
-    if (typeof file.pages === "number" && Number.isFinite(file.pages)) {
-      return file.pages;
-    }
-    if (Array.isArray(file.pages)) {
-      return file.pages.length;
-    }
-    return null;
-  }, [file]);
 
   // Fetch file data
   useEffect(() => {
@@ -359,71 +316,6 @@ export default function FilePage() {
     }
   };
 
-  // Resize handlers - optimized for smooth dragging
-  useEffect(() => {
-    let animationFrameId: number | null = null;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return;
-
-      // Cancel previous animation frame if exists
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-
-      animationFrameId = requestAnimationFrame(() => {
-        const container = document.querySelector(".file-page-content");
-        if (!container || !leftPaneRef.current || !rightPaneRef.current) return;
-
-        const rect = container.getBoundingClientRect();
-        const newPosition = ((e.clientX - rect.left) / rect.width) * 100;
-        const clampedPosition = Math.max(20, Math.min(80, newPosition));
-
-        // Update ref immediately
-        splitPositionRef.current = clampedPosition;
-
-        // Update DOM directly for smooth performance (no React re-render)
-        leftPaneRef.current.style.width = `${clampedPosition}%`;
-        rightPaneRef.current.style.width = `${100 - clampedPosition}%`;
-      });
-    };
-
-    const handleMouseUp = () => {
-      // Sync final position to React state
-      setSplitPosition(splitPositionRef.current);
-      setIsResizing(false);
-    };
-
-    if (isResizing) {
-      document.addEventListener("mousemove", handleMouseMove, {
-        passive: true,
-      });
-      document.addEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    }
-
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-  }, [isResizing]);
-
-  // Sync ref when state changes (e.g., initial load)
-  useEffect(() => {
-    splitPositionRef.current = splitPosition;
-  }, [splitPosition]);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-  };
-
   if (loading) {
     return (
       <ProtectedRoute>
@@ -450,203 +342,40 @@ export default function FilePage() {
 
   return (
     <ProtectedRoute>
-      <SidebarLayout
-        headerContent={
-          <div className="min-w-0 max-w-xl">
-            <div className="flex items-center gap-2 min-w-0">
-              <FilePdfOutlined className="text-gray-400 shrink-0" />
-              <span className="text-sm font-medium text-gray-900 truncate block">
-                {file.filename}
-              </span>
-            </div>
-            <FileViewerMetaChips file={file} />
-          </div>
-        }
-        headerActions={
-          <div className="flex items-center space-x-2">
-            <Button
-              size="small"
-              type={file.review_status === "reviewed" ? "default" : "primary"}
-              icon={
-                isReviewing ? (
-                  <Loader className="w-4 h-4 animate-spin" />
-                ) : file.review_status === "reviewed" ? (
-                  <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                ) : (
-                  <FileTextOutlined />
-                )
-              }
-              onClick={() =>
-                handleUpdateReviewStatus(
-                  file.id,
-                  file.review_status === "reviewed" ? "pending" : "reviewed",
-                )
-              }
-              disabled={isReviewing}
-              loading={isReviewing}
-              style={
-                file.review_status === "reviewed"
-                  ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
-                  : {}
-              }
-            >
-              {file.review_status === "reviewed" ? "Reviewed" : "Review"}
-            </Button>
-            {isAdmin && (
-              <Button
-                size="small"
-                type={file.admin_verified ? "default" : "primary"}
-                icon={
-                  isVerifying ? (
-                    <Loader className="w-4 h-4 animate-spin" />
-                  ) : file.admin_verified ? (
-                    <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                  ) : (
-                    <CheckCircleOutlined />
-                  )
-                }
-                onClick={() => handleVerifyFile(file.id, !file.admin_verified)}
-                disabled={file.admin_verified || isVerifying}
-                loading={isVerifying}
-                style={
-                  file.admin_verified
-                    ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
-                    : {}
-                }
-              >
-                {file.admin_verified ? "Verified" : "Verify"}
-              </Button>
-            )}
-            {isAdmin && (
-              <Button
-                size="small"
-                type="default"
-                icon={
-                  isReviewing || isVerifying ? (
-                    <Loader className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <CheckCircleOutlined />
-                  )
-                }
-                onClick={handleReviewAndVerifyFile}
-                disabled={isReviewing || isVerifying}
-                loading={isReviewing || isVerifying}
-              >
-                Review & Verify
-              </Button>
-            )}
-            <Button
-              size="small"
-              type="default"
-              icon={
-                isReprocessing ||
-                file.extraction_status === "processing" ||
-                file.processing_status === "processing" ? (
-                  <Loader className="w-4 h-4 animate-spin" />
-                ) : (
-                  <ReloadOutlined />
-                )
-              }
-              onClick={() => setReprocessModalVisible(true)}
-              disabled={
-                isReprocessing ||
-                file.extraction_status === "processing" ||
-                file.processing_status === "processing"
-              }
-              loading={
-                isReprocessing ||
-                file.extraction_status === "processing" ||
-                file.processing_status === "processing"
-              }
-            >
-              {isReprocessing ||
-              file.extraction_status === "processing" ||
-              file.processing_status === "processing"
-                ? "Processing..."
-                : "Reprocess"}
-            </Button>
-          </div>
-        }
-      >
-        <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden -m-6 bg-white">
-          {/* Content Area - Two Pane Layout with Independent Scrolling */}
-          <div className="flex flex-1 overflow-hidden min-h-0 file-page-content">
-            {/* Left Pane - PDF Viewer with Independent Scroll */}
-            <div
-              ref={leftPaneRef}
-              className="border-r border-gray-200 bg-gray-100 flex flex-col min-w-0 overflow-hidden"
-              style={{ width: `${splitPosition}%`, minWidth: "200px" }}
-            >
-              <div className="px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
-                <Text strong className="text-sm">
-                  PDF Document
-                </Text>
-                {pageCountDisplay !== null && (
-                  <Text className="text-xs text-gray-500 ml-2">
-                    ({pageCountDisplay} pages)
-                  </Text>
-                )}
-              </div>
-              <div className="flex-1 overflow-auto min-h-0 bg-gray-50">
-                {pdfUrlLoading ? (
-                  <div className="flex items-center justify-center h-full">
-                    <Loader className="w-8 h-8 animate-spin text-blue-500" />
-                  </div>
-                ) : pdfUrl ? (
-                  <iframe
-                    src={pdfUrl}
-                    className="w-full h-full border-0 bg-white"
-                    style={{ minHeight: "100%", display: "block" }}
-                    title={`PDF viewer for ${file.filename}`}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center">
-                      <ExclamationCircleOutlined className="text-gray-400 text-4xl mb-4" />
-                      <Text type="secondary" className="text-lg">
-                        Unable to load PDF
-                      </Text>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Resizable Divider */}
-            <div
-              className="w-1 bg-gray-300 hover:bg-blue-500 cursor-col-resize flex-shrink-0 relative group"
-              onMouseDown={handleMouseDown}
-              style={{ minWidth: "4px" }}
-            >
-              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1 group-hover:bg-blue-500 transition-colors" />
-            </div>
-
-            {/* Right Pane - Results Viewer with Independent Scroll */}
-            <div
-              ref={rightPaneRef}
-              className="bg-white flex flex-col min-w-0 overflow-hidden"
-              style={{ width: `${100 - splitPosition}%`, minWidth: "200px" }}
-            >
-              <div className="flex-1 overflow-hidden min-h-0">
-                <FileViewerRightPane
-                  file={file}
-                  jobSchema={jobSchema}
-                  editable={canEditFile}
-                  comments={comments}
-                  onAddComment={handleAddComment}
-                  onUpdate={handleUpdateResults}
-                  onSectionsUpdated={(next) =>
-                    setFile((prev) =>
-                      prev ? { ...prev, detected_sections: next } : prev,
-                    )
-                  }
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+      <SidebarLayout>
+        <FileViewerLayout
+          className="h-[calc(100vh-4rem)] -m-6"
+          file={file}
+          pdfUrl={pdfUrl}
+          pdfUrlLoading={pdfUrlLoading}
+          jobSchema={jobSchema}
+          editable={canEditFile}
+          comments={comments}
+          onAddComment={handleAddComment}
+          onUpdate={handleUpdateResults}
+          onSectionsUpdated={(next) =>
+            setFile((prev) =>
+              prev ? { ...prev, detected_sections: next } : prev,
+            )
+          }
+          splitContainerClassName="file-viewer-split-page"
+          showReviewAndVerifyInBar
+          onUpdateReviewStatus={handleUpdateReviewStatus}
+          onVerifyFile={handleVerifyFile}
+          onReviewAndVerifyFile={handleReviewAndVerifyFile}
+          onReprocessFile={() => setReprocessModalVisible(true)}
+          reviewingFileId={isReviewing ? file.id : null}
+          verifyingFileId={isVerifying ? file.id : null}
+          reprocessingFileId={
+            isReprocessing ||
+            file.extraction_status === "processing" ||
+            file.processing_status === "processing"
+              ? file.id
+              : null
+          }
+          isAdmin={isAdmin}
+        />
       </SidebarLayout>
-
       {/* Reprocess Confirmation Modal */}
       <Modal
         title="Reprocess File"
