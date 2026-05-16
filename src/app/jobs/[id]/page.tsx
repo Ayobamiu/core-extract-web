@@ -19,6 +19,7 @@ import InlineSchemaEditor from "@/components/InlineSchemaEditor";
 import { JsonViewer } from "@/components/json";
 import FileResultsEditor from "@/components/FileResultsEditor";
 import FileTable from "@/components/FileTable";
+import JobJobsRail from "@/components/jobs/JobJobsRail";
 import JobConfigEditor from "@/components/JobConfigEditor";
 import PageSelectionModal from "@/components/PageSelectionModal";
 import { useSocket } from "@/hooks/useSocket";
@@ -567,53 +568,56 @@ export default function JobDetailPage() {
             </Card>
           </div>
         ) : (
-          <div className="h-full -m-6">
-            {/* Files Table */}
-            <FileTable
-              jobId={job.id}
-              jobSchema={
-                typeof job.schema_data === "string"
-                  ? JSON.parse(job.schema_data)
-                  : job.schema_data
-              }
-              onShowResults={(fileId) =>
-                setShowFileResults((prev) => ({
-                  ...prev,
-                  [fileId]: !prev[fileId],
-                }))
-              }
-              onAddToPreview={(fileId) => handleAddToPreview(fileId)}
-              onEditResults={(file) => {
-                setSelectedFileForResultsEdit(file);
-                setShowFileResultsEditor(true);
-              }}
-              onBulkAddToPreview={(fileIds) => {
-                setSelectedFileIds(fileIds);
-                setShowBulkPreviewDrawer(true);
-              }}
-              onDataUpdate={refreshJobData}
-              showFileResults={showFileResults}
-              refreshTrigger={fileTableRefreshTrigger}
-              fileSummary={fileSummary}
-              isConnected={isConnected}
-              isGoingLive={isGoingLive}
-              isRefreshing={isRefreshing}
-              onGoLive={handleGoLive}
-              onRefresh={async () => {
-                setIsRefreshing(true);
-                try {
-                  await refreshJobData();
-                  setFileTableRefreshTrigger((prev) => prev + 1);
-                } finally {
-                  setIsRefreshing(false);
+          <div className="flex flex-col lg:flex-row h-full min-h-0 -m-6">
+            <JobJobsRail currentJobId={job.id} jobName={job.name} />
+            <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+              {/* Files Table */}
+              <FileTable
+                jobId={job.id}
+                jobSchema={
+                  typeof job.schema_data === "string"
+                    ? JSON.parse(job.schema_data)
+                    : job.schema_data
                 }
-              }}
-              onAddFiles={() => setShowFilePreviewModal(true)}
-              onEditConfig={() => setShowConfigEditor(true)}
-              onShowSchema={() => setShowSchemaDrawer(true)}
-              jobStatus={job.status}
-              getJobStatusColor={getJobStatusColor}
-            />
+                onShowResults={(fileId) =>
+                  setShowFileResults((prev) => ({
+                    ...prev,
+                    [fileId]: !prev[fileId],
+                  }))
+                }
+                onAddToPreview={(fileId) => handleAddToPreview(fileId)}
+                onEditResults={(file) => {
+                  setSelectedFileForResultsEdit(file);
+                  setShowFileResultsEditor(true);
+                }}
+                onBulkAddToPreview={(fileIds) => {
+                  setSelectedFileIds(fileIds);
+                  setShowBulkPreviewDrawer(true);
+                }}
+                onDataUpdate={refreshJobData}
+                showFileResults={showFileResults}
+                refreshTrigger={fileTableRefreshTrigger}
+                fileSummary={fileSummary}
+                isConnected={isConnected}
+                isGoingLive={isGoingLive}
+                isRefreshing={isRefreshing}
+                onGoLive={handleGoLive}
+                onRefresh={async () => {
+                  setIsRefreshing(true);
+                  try {
+                    await refreshJobData();
+                    setFileTableRefreshTrigger((prev) => prev + 1);
+                  } finally {
+                    setIsRefreshing(false);
+                  }
+                }}
+                onAddFiles={() => setShowFilePreviewModal(true)}
+                onEditConfig={() => setShowConfigEditor(true)}
+                onShowSchema={() => setShowSchemaDrawer(true)}
+                jobStatus={job.status}
+                getJobStatusColor={getJobStatusColor}
+              />
+            </div>
 
             {/* Floating Real-time Message */}
             {realtimeMessage && (
