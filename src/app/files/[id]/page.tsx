@@ -21,9 +21,8 @@ import {
 } from "@ant-design/icons";
 import { apiClient, JobFile, ProcessingConfig } from "@/lib/api";
 import { DEFAULT_MODELS, PROCESSING_METHODS } from "@/lib/processingConfig";
-import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
-import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
-import DocumentRoutingPanel from "@/components/DocumentRoutingPanel";
+import FileViewerRightPane from "@/components/file/FileViewerRightPane";
+import FileViewerMetaChips from "@/components/file/FileViewerMetaChips";
 import { useAuth } from "@/contexts/AuthContext";
 import { canPerformAdminActions, isReviewer, canEdit } from "@/utils/roleUtils";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -40,7 +39,6 @@ export default function FilePage() {
   const canEditFile = canEdit(user);
 
   const [file, setFile] = useState<JobFile | null>(null);
-  console.log({ fileId, file });
   const [jobSchema, setJobSchema] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +103,6 @@ export default function FilePage() {
         setError(null);
 
         const response = await apiClient.getFileResult(fileId);
-        console.log("File result response:", response);
 
         if (response.status === "success") {
           const fileData =
@@ -158,7 +155,6 @@ export default function FilePage() {
       setPdfUrlLoading(true);
       try {
         const url = await apiClient.getFilePdfUrl(file.id);
-        console.log({ url });
         setPdfUrl(url);
       } catch (err) {
         console.error("Failed to fetch PDF URL:", err);
@@ -456,14 +452,20 @@ export default function FilePage() {
     <ProtectedRoute>
       <SidebarLayout
         headerContent={
-          <div className="flex items-center space-x-2 text-sm text-gray-600">
-            <FilePdfOutlined className="text-blue-500" />
-            <span className="font-medium">{file.filename}</span>
+          <div className="min-w-0 max-w-xl">
+            <div className="flex items-center gap-2 min-w-0">
+              <FilePdfOutlined className="text-gray-400 shrink-0" />
+              <span className="text-sm font-medium text-gray-900 truncate block">
+                {file.filename}
+              </span>
+            </div>
+            <FileViewerMetaChips file={file} />
           </div>
         }
         headerActions={
           <div className="flex items-center space-x-2">
             <Button
+              size="small"
               type={file.review_status === "reviewed" ? "default" : "primary"}
               icon={
                 isReviewing ? (
@@ -488,14 +490,11 @@ export default function FilePage() {
                   : {}
               }
             >
-              {isReviewing
-                ? "Updating..."
-                : file.review_status === "reviewed"
-                  ? "Reviewed"
-                  : "Mark as Reviewed"}
+              {file.review_status === "reviewed" ? "Reviewed" : "Review"}
             </Button>
             {isAdmin && (
               <Button
+                size="small"
                 type={file.admin_verified ? "default" : "primary"}
                 icon={
                   isVerifying ? (
@@ -515,17 +514,13 @@ export default function FilePage() {
                     : {}
                 }
               >
-                {isVerifying
-                  ? "Verifying..."
-                  : file.admin_verified
-                    ? "Verified"
-                    : "Verify"}
+                {file.admin_verified ? "Verified" : "Verify"}
               </Button>
             )}
             {isAdmin && (
               <Button
-                type="primary"
-                style={{ backgroundColor: "#fa8c16", borderColor: "#fa8c16" }}
+                size="small"
+                type="default"
                 icon={
                   isReviewing || isVerifying ? (
                     <Loader className="w-4 h-4 animate-spin" />
@@ -537,10 +532,11 @@ export default function FilePage() {
                 disabled={isReviewing || isVerifying}
                 loading={isReviewing || isVerifying}
               >
-                {isReviewing || isVerifying ? "Updating..." : "Review & Verify"}
+                Review & Verify
               </Button>
             )}
             <Button
+              size="small"
               type="default"
               icon={
                 isReprocessing ||
@@ -631,78 +627,20 @@ export default function FilePage() {
               className="bg-white flex flex-col min-w-0 overflow-hidden"
               style={{ width: `${100 - splitPosition}%`, minWidth: "200px" }}
             >
-              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0 flex items-center justify-between">
-                <Text strong className="text-sm">
-                  Extracted Results
-                </Text>
-                <ConstraintErrorIcon file={file} />
-              </div>
-              <div className="flex-1 overflow-auto min-h-0 flex flex-col">
-                {/* Document Routing — collapsible section above the results.
-                    Only shown when the visual classifier ran on this file
-                    (detected_sections present). */}
-                {file.detected_sections && (
-                  <details
-                    className="border-b border-gray-200 bg-white flex-shrink-0"
-                    open
-                  >
-                    <summary className="px-4 py-2 cursor-pointer select-none text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2">
-                      <span>📍</span>
-                      <span>Document Routing</span>
-                      <span className="text-xs text-gray-500 font-normal">
-                        ({file.detected_sections.sections?.length ?? 0} section
-                        {(file.detected_sections.sections?.length ?? 0) === 1
-                          ? ""
-                          : "s"}
-                        , status: {file.detected_sections.status})
-                      </span>
-                    </summary>
-                    <DocumentRoutingPanel
-                      fileId={file.id}
-                      detectedSections={file.detected_sections}
-                      visualClassifierMeta={
-                        (file.extraction_metadata as any)
-                          ?.visual_page_classifier ?? null
-                      }
-                      onSectionsUpdated={(next) =>
-                        setFile((prev) =>
-                          prev ? { ...prev, detected_sections: next } : prev,
-                        )
-                      }
-                    />
-                  </details>
-                )}
-
-                {file.processing_status !== "completed" || !file.result ? (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center">
-                      <ExclamationCircleOutlined className="text-gray-400 text-4xl mb-4" />
-                      <Text type="secondary" className="text-lg">
-                        No results available for this file.
-                      </Text>
-                      <br />
-                      <Text type="secondary" className="text-sm">
-                        File status: {file.processing_status}
-                      </Text>
-                    </div>
-                  </div>
-                ) : (
-                  <TabbedDataViewer
-                    data={file.result}
-                    filename={file.filename}
-                    schema={jobSchema}
-                    editable={canEditFile}
-                    markdown={file.markdown}
-                    actual_result={file.actual_result}
-                    pages={Array.isArray(file.pages) ? file.pages : undefined}
-                    onUpdate={handleUpdateResults}
-                    comments={comments}
-                    onAddComment={handleAddComment}
-                    fileId={file.id}
-                    resultEnvelope={file.extraction_metadata?.result_envelope}
-                    sectionResults={file.extraction_metadata?.section_results}
-                  />
-                )}
+              <div className="flex-1 overflow-hidden min-h-0">
+                <FileViewerRightPane
+                  file={file}
+                  jobSchema={jobSchema}
+                  editable={canEditFile}
+                  comments={comments}
+                  onAddComment={handleAddComment}
+                  onUpdate={handleUpdateResults}
+                  onSectionsUpdated={(next) =>
+                    setFile((prev) =>
+                      prev ? { ...prev, detected_sections: next } : prev,
+                    )
+                  }
+                />
               </div>
             </div>
           </div>

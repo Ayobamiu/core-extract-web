@@ -88,7 +88,7 @@ export const WellboreDiagramDrawer: React.FC<WellboreDiagramDrawerProps> = ({
       width="90vw"
       mask={true}
       maskClosable={true}
-      destroyOnClose
+      destroyOnHidden
     >
       <div className="py-4 overflow-auto">
         <div className="flex justify-center">

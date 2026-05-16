@@ -566,7 +566,7 @@ export default function DocumentRoutingPanel({
           actionLoadingFor === activeAction.sectionIndex
         }
         okButtonProps={{ disabled: !pickedSlug }}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="space-y-3">
           <div className="text-xs text-gray-500">
@@ -605,7 +605,7 @@ export default function DocumentRoutingPanel({
           actionLoadingFor === activeAction.sectionIndex
         }
         okButtonProps={{ disabled: pickedSplitPage == null }}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="space-y-3">
           <div className="text-xs text-gray-500">

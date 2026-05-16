@@ -10,7 +10,7 @@ export interface JsonViewerDrawerProps extends JsonViewerProps {
   drawerTitle?: React.ReactNode;
   width?: number | string;
   placement?: "left" | "right" | "top" | "bottom";
-  destroyOnClose?: boolean;
+  destroyOnHidden?: boolean;
 }
 
 const JsonViewerDrawer: React.FC<JsonViewerDrawerProps> = ({
@@ -19,7 +19,7 @@ const JsonViewerDrawer: React.FC<JsonViewerDrawerProps> = ({
   drawerTitle,
   width = "min(720px, 92vw)",
   placement = "right",
-  destroyOnClose = true,
+  destroyOnHidden = true,
   height = "100%",
   onCancel,
   ...rest
@@ -31,7 +31,7 @@ const JsonViewerDrawer: React.FC<JsonViewerDrawerProps> = ({
       title={drawerTitle ?? rest.title ?? "JSON"}
       width={width}
       placement={placement}
-      destroyOnClose={destroyOnClose}
+      destroyOnHidden={destroyOnHidden}
       styles={{ body: { padding: 0, display: "flex", flexDirection: "column" } }}
     >
       <JsonViewer

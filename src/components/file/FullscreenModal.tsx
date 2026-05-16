@@ -1,21 +1,11 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { Modal, Button, Typography } from "antd";
-import {
-  FilePdfOutlined,
-  CheckCircleOutlined,
-  FileTextOutlined,
-  ReloadOutlined,
-  InfoCircleOutlined,
-  LeftOutlined,
-  RightOutlined,
-  ShrinkOutlined,
-  ExclamationCircleOutlined,
-} from "@ant-design/icons";
+import { Modal, Typography } from "antd";
+import { ExclamationCircleOutlined } from "@ant-design/icons";
 import { JobFile } from "@/lib/api";
-import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
-import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
+import FileViewerHeader from "./FileViewerHeader";
+import FileViewerRightPane from "./FileViewerRightPane";
 import { Loader } from "lucide-react";
 
 const { Text } = Typography;
@@ -25,6 +15,7 @@ interface FullscreenModalProps {
   open: boolean;
   onClose: () => void;
   onOpenFileDetails: (file: JobFile) => void;
+  onOpenFilePage?: (fileId: string) => void;
   onPreviousFile: () => void;
   onNextFile: () => void;
   onUpdateReviewStatus: (
@@ -34,7 +25,11 @@ interface FullscreenModalProps {
   onVerifyFile: (fileId: string, verified: boolean) => void;
   onReviewAndVerifyFile: (fileId: string) => void;
   onReprocessFile: (fileId: string) => void;
-  onUpdateResults: (fileId: string, updatedData: any) => Promise<void>;
+  onUpdateResults: (fileId: string, updatedData: unknown) => Promise<void>;
+  onSectionsUpdated?: (
+    fileId: string,
+    sections: JobFile["detected_sections"],
+  ) => void;
   onDataUpdate?: (() => void) | (() => Promise<void>);
   reviewingFileId: string | null;
   verifyingFileId: string | null;
@@ -48,11 +43,12 @@ interface FullscreenModalProps {
     createdAt: string;
   }>;
   onAddComment: (text: string) => Promise<void>;
-  jobSchema: any;
+  jobSchema: unknown;
   pdfUrl: string | null;
   pdfUrlLoading: boolean;
   fileIndex: number;
   totalFiles: number;
+  detailLoading?: boolean;
 }
 
 const FullscreenModal: React.FC<FullscreenModalProps> = ({
@@ -60,6 +56,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
   open,
   onClose,
   onOpenFileDetails,
+  onOpenFilePage,
   onPreviousFile,
   onNextFile,
   onUpdateReviewStatus,
@@ -67,6 +64,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
   onReviewAndVerifyFile,
   onReprocessFile,
   onUpdateResults,
+  onSectionsUpdated,
   onDataUpdate,
   reviewingFileId,
   verifyingFileId,
@@ -79,12 +77,11 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
   pdfUrlLoading,
   fileIndex,
   totalFiles,
+  detailLoading = false,
 }) => {
   const [splitPosition, setSplitPosition] = useState(50);
-  const [isResizing, setIsResizing] = useState(false);
   const splitPositionRef = useRef(50);
   const leftPaneRef = useRef<HTMLDivElement>(null);
-  const rightPaneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     splitPositionRef.current = splitPosition;
@@ -92,26 +89,20 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
-    setIsResizing(true);
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!leftPaneRef.current || !rightPaneRef.current) return;
-
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!leftPaneRef.current) return;
       const container = leftPaneRef.current.parentElement;
       if (!container) return;
-
       const containerRect = container.getBoundingClientRect();
       const newPosition =
-        ((e.clientX - containerRect.left) / containerRect.width) * 100;
-
-      // Constrain between 20% and 80%
+        ((moveEvent.clientX - containerRect.left) / containerRect.width) * 100;
       const constrainedPosition = Math.max(20, Math.min(80, newPosition));
       setSplitPosition(constrainedPosition);
       splitPositionRef.current = constrainedPosition;
     };
 
     const handleMouseUp = () => {
-      setIsResizing(false);
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
     };
@@ -120,14 +111,12 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
     document.addEventListener("mouseup", handleMouseUp);
   };
 
-  const handleUpdate = async (updatedData: any) => {
+  const handleUpdate = async (updatedData: unknown) => {
     if (!file) return;
     await onUpdateResults(file.id, updatedData);
     if (onDataUpdate) {
       const result = onDataUpdate();
-      if (result instanceof Promise) {
-        await result;
-      }
+      if (result instanceof Promise) await result;
     }
   };
 
@@ -141,11 +130,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
       footer={null}
       width="100vw"
       styles={{
-        body: {
-          height: "100vh",
-          padding: 0,
-          overflow: "hidden",
-        },
+        body: { height: "100vh", padding: 0, overflow: "hidden" },
         content: {
           top: 0,
           paddingBottom: 0,
@@ -153,276 +138,91 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
           borderRadius: 0,
           boxShadow: "none",
         },
-        wrapper: {
-          padding: 0,
-          top: 0,
-          overflow: "hidden",
-        },
+        wrapper: { padding: 0, top: 0, overflow: "hidden" },
       }}
-      style={{
-        top: 0,
-        paddingBottom: 0,
-        maxWidth: "100vw",
-        margin: 0,
-      }}
+      style={{ top: 0, paddingBottom: 0, maxWidth: "100vw", margin: 0 }}
       closeIcon={null}
       maskClosable={false}
     >
-      <div className="flex flex-col h-full overflow-hidden border border-gray-200">
-        {/* Navigation Header */}
-        <div className="flex items-center justify-between p-2 border-b border-gray-200 flex-shrink-0">
-          <div className="flex items-center space-x-4 flex-1">
-            <div className="flex items-center space-x-2">
-              <Button
-                type="default"
-                icon={<LeftOutlined />}
-                onClick={onPreviousFile}
-                disabled={fileIndex === 0}
-              >
-                Previous
-              </Button>
-              <Button
-                type="default"
-                icon={<RightOutlined />}
-                iconPosition="end"
-                onClick={onNextFile}
-                disabled={fileIndex === totalFiles - 1}
-              >
-                Next
-              </Button>
-            </div>
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <FilePdfOutlined className="text-blue-500" />
-              <span className="font-medium">{file.filename}</span>
-              <span className="text-gray-400">
-                ({fileIndex + 1} of {totalFiles})
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              type="text"
-              icon={<InfoCircleOutlined />}
-              onClick={() => onOpenFileDetails(file)}
-              title="View File Details"
-            />
-            <Button
-              type={file.review_status === "reviewed" ? "default" : "primary"}
-              icon={
-                reviewingFileId === file.id ? (
-                  <Loader className="w-4 h-4 animate-spin" />
-                ) : file.review_status === "reviewed" ? (
-                  <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                ) : (
-                  <FileTextOutlined />
-                )
-              }
-              onClick={() =>
-                onUpdateReviewStatus(
-                  file.id,
-                  file.review_status === "reviewed" ? "pending" : "reviewed",
-                )
-              }
-              disabled={reviewingFileId === file.id}
-              loading={reviewingFileId === file.id}
-              style={
-                file.review_status === "reviewed"
-                  ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
-                  : {}
-              }
-            >
-              {reviewingFileId === file.id
-                ? "Updating..."
-                : file.review_status === "reviewed"
-                  ? "Reviewed"
-                  : "Mark as Reviewed"}
-            </Button>
-            {isAdmin && (
-              <Button
-                type={file.admin_verified ? "default" : "primary"}
-                icon={
-                  verifyingFileId === file.id ? (
-                    <Loader className="w-4 h-4 animate-spin" />
-                  ) : file.admin_verified ? (
-                    <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                  ) : (
-                    <CheckCircleOutlined />
-                  )
-                }
-                onClick={() => onVerifyFile(file.id, !file.admin_verified)}
-                disabled={file.admin_verified || verifyingFileId === file.id}
-                loading={verifyingFileId === file.id}
-                style={
-                  file.admin_verified
-                    ? { backgroundColor: "#f6ffed", borderColor: "#52c41a" }
-                    : {}
-                }
-              >
-                {verifyingFileId === file.id
-                  ? "Verifying..."
-                  : file.admin_verified
-                    ? "Verified"
-                    : "Verify"}
-              </Button>
-            )}
-            {isAdmin && (
-              <Button
-                type="primary"
-                style={{
-                  backgroundColor: "#fa8c16",
-                  borderColor: "#fa8c16",
-                }}
-                icon={
-                  reviewingFileId === file.id || verifyingFileId === file.id ? (
-                    <Loader className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <CheckCircleOutlined />
-                  )
-                }
-                onClick={() => onReviewAndVerifyFile(file.id)}
-                disabled={
-                  reviewingFileId === file.id || verifyingFileId === file.id
-                }
-                loading={
-                  reviewingFileId === file.id || verifyingFileId === file.id
-                }
-              >
-                {reviewingFileId === file.id || verifyingFileId === file.id
-                  ? "Updating..."
-                  : "Review & Verify"}
-              </Button>
-            )}
-            <Button
-              type="default"
-              icon={
-                reprocessingFileId === file.id ||
-                file.extraction_status === "processing" ||
-                file.processing_status === "processing" ? (
-                  <Loader className="w-4 h-4 animate-spin" />
-                ) : (
-                  <ReloadOutlined />
-                )
-              }
-              onClick={() => onReprocessFile(file.id)}
-              disabled={
-                reprocessingFileId === file.id ||
-                file.extraction_status === "processing" ||
-                file.processing_status === "processing"
-              }
-              loading={
-                reprocessingFileId === file.id ||
-                file.extraction_status === "processing" ||
-                file.processing_status === "processing"
-              }
-            >
-              {reprocessingFileId === file.id ||
-              file.extraction_status === "processing" ||
-              file.processing_status === "processing"
-                ? "Processing..."
-                : "Reprocess"}
-            </Button>
-            <Button type="text" icon={<ShrinkOutlined />} onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        </div>
+      <div className="flex flex-col h-full overflow-hidden bg-gray-50">
+        <FileViewerHeader
+          file={file}
+          fileIndex={fileIndex}
+          totalFiles={totalFiles}
+          showNavigation
+          onPrevious={onPreviousFile}
+          onNext={onNextFile}
+          onClose={onClose}
+          onOpenFileDetails={onOpenFileDetails}
+          onOpenFilePage={onOpenFilePage}
+          onUpdateReviewStatus={onUpdateReviewStatus}
+          onVerifyFile={onVerifyFile}
+          onReviewAndVerifyFile={onReviewAndVerifyFile}
+          onReprocessFile={onReprocessFile}
+          reviewingFileId={reviewingFileId}
+          verifyingFileId={verifyingFileId}
+          reprocessingFileId={reprocessingFileId}
+          isAdmin={isAdmin}
+        />
 
-        {/* Content Area - Two Pane Layout */}
-        <div className="flex flex-1 overflow-hidden min-h-0 fullscreen-modal-content">
-          {/* Left Pane - PDF Viewer */}
+        <div className="flex flex-1 overflow-hidden min-h-0 relative">
+          {detailLoading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
+              <Loader className="w-6 h-6 animate-spin text-gray-500" />
+            </div>
+          )}
+
           <div
             ref={leftPaneRef}
-            className="bg-gray-100 flex flex-col min-w-0 overflow-hidden"
+            className="flex flex-col min-w-0 overflow-hidden border-r border-gray-200 bg-gray-100"
             style={{ width: `${splitPosition}%`, minWidth: "200px" }}
           >
-            <div className="px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
-              <Text strong className="text-sm">
-                PDF Document
-              </Text>
+            <div className="px-3 py-1.5 bg-white border-b border-gray-200 flex-shrink-0">
+              <Text className="text-xs font-medium text-gray-600">PDF</Text>
             </div>
             <div className="flex-1 overflow-hidden min-h-0">
               {pdfUrlLoading ? (
                 <div className="flex items-center justify-center h-full">
-                  <Loader className="w-8 h-8 animate-spin text-blue-500" />
+                  <Loader className="w-6 h-6 animate-spin text-gray-400" />
                 </div>
               ) : pdfUrl ? (
                 <iframe
                   src={pdfUrl}
                   className="w-full h-full border-0 bg-white"
-                  style={{ display: "block", height: "100%" }}
                   title={`PDF viewer for ${file.filename}`}
                 />
               ) : (
                 <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <ExclamationCircleOutlined className="text-gray-400 text-4xl mb-4" />
-                    <Text type="secondary" className="text-lg">
-                      Unable to load PDF
-                    </Text>
-                  </div>
+                  <Text type="secondary" className="text-sm">
+                    <ExclamationCircleOutlined className="mr-2" />
+                    Unable to load PDF
+                  </Text>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Resizable Divider */}
           <div
-            className="w-1 bg-gray-300 hover:bg-blue-500 cursor-col-resize flex-shrink-0 relative group"
-            onMouseDown={handleMouseDown}
+            className="w-1 bg-gray-200 hover:bg-gray-400 cursor-col-resize flex-shrink-0"
             style={{ minWidth: "4px" }}
-          >
-            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1 group-hover:bg-blue-500 transition-colors" />
-          </div>
+            onMouseDown={handleMouseDown}
+            role="separator"
+            aria-orientation="vertical"
+          />
 
-          {/* Right Pane - Results Viewer */}
           <div
-            ref={rightPaneRef}
-            className="bg-white flex flex-col min-w-0 overflow-hidden"
-            style={{ width: `${100 - splitPosition}%`, minWidth: "200px" }}
+            className="flex flex-col min-w-0 overflow-hidden bg-white"
+            style={{ width: `${100 - splitPosition}%`, minWidth: "280px" }}
           >
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex-shrink-0 flex items-center justify-between">
-              <Text strong className="text-sm">
-                Extracted Results
-                {file.selected_pages &&
-                  file.selected_pages.length > 0 &&
-                  ` - Selected pages: ${file.selected_pages
-                    .sort((a, b) => a - b)
-                    .join(", ")}`}
-              </Text>
-              <ConstraintErrorIcon file={file} defaultOpen={false} />
-            </div>
-            <div className="flex-1 overflow-hidden min-h-0">
-              {file.processing_status !== "completed" || !file.result ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <ExclamationCircleOutlined className="text-gray-400 text-4xl mb-4" />
-                    <Text type="secondary" className="text-lg">
-                      No results available for this file.
-                    </Text>
-                    <br />
-                    <Text type="secondary" className="text-sm">
-                      File status: {file.processing_status}
-                    </Text>
-                  </div>
-                </div>
-              ) : (
-                <TabbedDataViewer
-                  data={file.result}
-                  filename={file.filename}
-                  schema={jobSchema}
-                  editable={true}
-                  markdown={file.markdown}
-                  actual_result={file.actual_result}
-                  pages={Array.isArray(file.pages) ? file.pages : undefined}
-                  onUpdate={handleUpdate}
-                  comments={comments}
-                  onAddComment={onAddComment}
-                  fileId={file.id}
-                  resultEnvelope={file.extraction_metadata?.result_envelope}
-                  sectionResults={file.extraction_metadata?.section_results}
-                />
-              )}
-            </div>
+            <FileViewerRightPane
+              file={file}
+              jobSchema={jobSchema}
+              editable
+              comments={comments}
+              onAddComment={onAddComment}
+              onUpdate={handleUpdate}
+              onSectionsUpdated={(next) => onSectionsUpdated?.(file.id, next)}
+            />
           </div>
         </div>
       </div>

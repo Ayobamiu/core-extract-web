@@ -7,7 +7,7 @@ import {
   Form,
   Input,
   InputNumber,
-  message,
+  App,
   Modal,
   Popconfirm,
   Select,
@@ -50,6 +50,7 @@ const CLASSIFIER_HINTS_PLACEHOLDER = `{
 }`;
 
 export default function SchemaRegistryAdmin() {
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(true);
   const [types, setTypes] = useState<DocumentTypeInfo[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -79,7 +80,7 @@ export default function SchemaRegistryAdmin() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [message]);
 
   useEffect(() => {
     loadTypes();
@@ -473,7 +474,7 @@ export default function SchemaRegistryAdmin() {
         width={720}
         open={!!manageSlug}
         onClose={() => setManageSlug(null)}
-        destroyOnClose
+        destroyOnHidden
       >
         {detailLoading ? (
           <Text type="secondary">Loading…</Text>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import type { GetProp, TableProps } from "antd";
 import {
   Table,
@@ -155,6 +156,7 @@ const FileTable: React.FC<FileTableProps> = ({
   getJobStatusColor,
 }) => {
   const { user } = useAuth();
+  const router = useRouter();
   const isAdmin = canPerformAdminActions(user);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -184,6 +186,10 @@ const FileTable: React.FC<FileTableProps> = ({
   const [singleFileReprocessMode, setSingleFileReprocessMode] = useState(false);
   const [fullscreenModalVisible, setFullscreenModalVisible] = useState(false);
   const [fullscreenFileIndex, setFullscreenFileIndex] = useState<number>(0);
+  const [fullscreenFileDetail, setFullscreenFileDetail] =
+    useState<JobFile | null>(null);
+  const [fullscreenDetailLoading, setFullscreenDetailLoading] =
+    useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfUrlLoading, setPdfUrlLoading] = useState(false);
   const [verifyingFileId, setVerifyingFileId] = useState<string | null>(null);
@@ -365,12 +371,37 @@ const FileTable: React.FC<FileTableProps> = ({
     setSelectedFileForDetails(null);
   };
 
+  const fetchFullscreenFileDetail = async (fileId: string) => {
+    setFullscreenDetailLoading(true);
+    try {
+      const response = await apiClient.getFileResult(fileId);
+      if (response.status === "success") {
+        const fileData =
+          (response as { file?: JobFile }).file ||
+          (response.data as { file?: JobFile })?.file ||
+          (response.data as JobFile | undefined);
+        if (fileData && typeof fileData === "object" && "id" in fileData) {
+          setFullscreenFileDetail(fileData);
+          setData((prev) =>
+            prev.map((f) => (f.id === fileData.id ? { ...f, ...fileData } : f)),
+          );
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load file details:", err);
+    } finally {
+      setFullscreenDetailLoading(false);
+    }
+  };
+
   // Fullscreen modal handlers
   const handleOpenFullscreen = async (record: JobFile) => {
     const fileIndex = data.findIndex((f) => f.id === record.id);
     if (fileIndex !== -1) {
       setFullscreenFileIndex(fileIndex);
+      setFullscreenFileDetail(record);
       setFullscreenModalVisible(true);
+      void fetchFullscreenFileDetail(record.id);
 
       // Fetch PDF URL
       setPdfUrlLoading(true);
@@ -400,6 +431,7 @@ const FileTable: React.FC<FileTableProps> = ({
   const handleCloseFullscreen = () => {
     setFullscreenModalVisible(false);
     setFullscreenFileIndex(0);
+    setFullscreenFileDetail(null);
     setPdfUrl(null);
     setFullscreenComments([]);
   };
@@ -432,6 +464,8 @@ const FileTable: React.FC<FileTableProps> = ({
       // Fetch PDF URL for the new file
       const newFile = data[newIndex];
       if (newFile) {
+        setFullscreenFileDetail(newFile);
+        void fetchFullscreenFileDetail(newFile.id);
         setPdfUrlLoading(true);
         try {
           const url = await getFilePdfUrl(newFile.id);
@@ -454,6 +488,8 @@ const FileTable: React.FC<FileTableProps> = ({
       // Fetch PDF URL for the new file
       const newFile = data[newIndex];
       if (newFile) {
+        setFullscreenFileDetail(newFile);
+        void fetchFullscreenFileDetail(newFile.id);
         setPdfUrlLoading(true);
         try {
           const url = await getFilePdfUrl(newFile.id);
@@ -468,8 +504,9 @@ const FileTable: React.FC<FileTableProps> = ({
     }
   };
 
-  // Get current file in fullscreen modal
-  const currentFullscreenFile = data[fullscreenFileIndex] || null;
+  // Get current file in fullscreen modal (enriched with routing / metadata when loaded)
+  const currentFullscreenFile =
+    fullscreenFileDetail ?? data[fullscreenFileIndex] ?? null;
 
   // Handle file verification
   const handleVerifyFile = async (fileId: string, adminVerified: boolean) => {
@@ -2500,8 +2537,20 @@ const FileTable: React.FC<FileTableProps> = ({
         open={fullscreenModalVisible}
         onClose={handleCloseFullscreen}
         onOpenFileDetails={handleOpenFileDetails}
+        onOpenFilePage={(fileId) => router.push(`/files/${fileId}`)}
         onPreviousFile={handlePreviousFile}
         onNextFile={handleNextFile}
+        detailLoading={fullscreenDetailLoading}
+        onSectionsUpdated={(fileId, sections) => {
+          setFullscreenFileDetail((prev) =>
+            prev?.id === fileId ? { ...prev, detected_sections: sections } : prev,
+          );
+          setData((prev) =>
+            prev.map((f) =>
+              f.id === fileId ? { ...f, detected_sections: sections } : f,
+            ),
+          );
+        }}
         onUpdateReviewStatus={handleUpdateReviewStatus}
         onVerifyFile={handleVerifyFile}
         onReviewAndVerifyFile={handleReviewAndVerifyFile}
