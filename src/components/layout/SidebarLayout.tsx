@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,7 +12,6 @@ import {
   FileText,
   Briefcase,
   User,
-  Building2,
   LogOut,
   Menu,
   X,
@@ -21,8 +20,8 @@ import {
   ChevronRight,
   Settings,
   Upload,
-  BarChart3,
   Library,
+  Building2,
 } from "lucide-react";
 import OrganizationSelector from "@/components/organization/OrganizationSelector";
 import CreateOrganizationModal from "@/components/organization/CreateOrganizationModal";
@@ -31,11 +30,11 @@ interface SidebarLayoutProps {
   children: React.ReactNode;
   pageTitle?: string;
   pageDescription?: string;
-  headerActions?: React.ReactNode; // Custom header actions (right side)
-  headerContent?: React.ReactNode; // Custom header content (left side, replaces pageTitle)
+  headerActions?: React.ReactNode;
+  headerContent?: React.ReactNode;
 }
 
-const navigationItems = [
+const mainNavigationItems = [
   {
     name: "Dashboard",
     href: "/",
@@ -62,7 +61,7 @@ const navigationItems = [
   },
 ];
 
-/** Shown below main nav for admin JWTs only — schema registry CRUD UI. */
+/** Shown in an “Admin” group for admin JWTs only. */
 const adminRegistryNavItem = {
   name: "Schema registry",
   href: "/registry",
@@ -82,13 +81,13 @@ export default function SidebarLayout({
   const isAdmin = canPerformAdminActions(user);
   const router = useRouter();
   const pathname = usePathname();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Start with sidebar open
-  const [isCollapsed, setIsCollapsed] = useState(false); // Collapsed state for desktop
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [isCreateOrgModalOpen, setIsCreateOrgModalOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(true); // Assume desktop initially
+  const [isDesktop, setIsDesktop] = useState(true);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Load collapse state from localStorage
   useEffect(() => {
     const savedCollapseState = localStorage.getItem("sidebarCollapsed");
     if (savedCollapseState !== null) {
@@ -111,6 +110,34 @@ export default function SidebarLayout({
     window.addEventListener("resize", checkScreenSize);
     return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
+
+  useEffect(() => {
+    if (!isUserMenuOpen) return;
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      const el = userMenuRef.current;
+      if (el && !el.contains(e.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsUserMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [isUserMenuOpen]);
+
+  useEffect(() => {
+    if (!isSidebarOpen || isDesktop) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsSidebarOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isSidebarOpen, isDesktop]);
 
   const handleLogout = async () => {
     try {
@@ -135,282 +162,368 @@ export default function SidebarLayout({
     localStorage.setItem("sidebarCollapsed", String(newCollapsedState));
   };
 
+  const navLinkIsActive = (href: string) =>
+    href !== "/"
+      ? pathname === href || pathname?.startsWith(href + "/")
+      : pathname === href;
+
+  const renderNavLink = (item: (typeof mainNavigationItems)[0]) => {
+    const isActive = navLinkIsActive(item.href);
+    const Icon = item.icon;
+    const collapsed = isDesktop && isCollapsed;
+
+    return (
+      <Link
+        key={item.name}
+        href={item.href}
+        onClick={closeSidebar}
+        aria-current={isActive ? "page" : undefined}
+        title={collapsed ? item.name : undefined}
+        className={`group flex items-center text-sm font-medium rounded-lg transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
+          collapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"
+        } ${
+          isActive
+            ? "bg-blue-50 text-blue-800 border border-blue-200 shadow-sm"
+            : "text-gray-700 hover:bg-gray-50 hover:text-gray-900 border border-transparent"
+        }`}
+      >
+        <Icon
+          className={`h-5 w-5 transition-colors flex-shrink-0 ${
+            collapsed ? "" : "mr-3"
+          } ${
+            isActive
+              ? "text-blue-600"
+              : "text-gray-400 group-hover:text-gray-600"
+          }`}
+          aria-hidden
+        />
+        {(!isDesktop || !isCollapsed) && (
+          <div className="flex-1 min-w-0">
+            <div className="font-medium">{item.name}</div>
+            <div className="text-xs text-gray-500 line-clamp-2">
+              {item.description}
+            </div>
+          </div>
+        )}
+      </Link>
+    );
+  };
+
   if (!isAuthenticated) {
     return <>{children}</>;
   }
 
   return (
     <div className="min-h-screen bg-gray-50 flex layout-container">
-      {/* Mobile sidebar overlay */}
       <AnimatePresence>
-        {isSidebarOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
-              onClick={closeSidebar}
-            />
-          </>
+        {isSidebarOpen && !isDesktop && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+            onClick={closeSidebar}
+            aria-hidden
+          />
         )}
       </AnimatePresence>
 
-      {/* Sidebar */}
-      <motion.div
+      <motion.aside
+        id="app-sidebar"
         initial={false}
         animate={{
           x: isDesktop ? 0 : isSidebarOpen ? 0 : "-100%",
           width:
             isDesktop && isCollapsed ? "4rem" : isDesktop ? "18rem" : "18rem",
         }}
-        transition={{ type: "spring", damping: 25, stiffness: 200 }}
-        className={`fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 lg:relative lg:translate-x-0 lg:block lg:h-screen sidebar-desktop ${
+        transition={{ type: "spring", damping: 28, stiffness: 260 }}
+        className={`fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 shadow-sm lg:relative lg:translate-x-0 lg:block lg:h-screen lg:shadow-none sidebar-desktop ${
           isDesktop && isCollapsed ? "w-16" : "w-72"
         }`}
       >
         <div className="flex h-full flex-col overflow-hidden">
-          {/* Logo */}
           <div
-            className={`flex h-16 items-center justify-between border-b border-gray-200 flex-shrink-0 ${
-              isDesktop && isCollapsed ? "px-3 justify-center" : "px-6"
+            className={`flex h-16 items-center justify-between border-b border-gray-200 flex-shrink-0 gap-2 ${
+              isDesktop && isCollapsed ? "px-2" : "pl-4 pr-3"
             }`}
           >
             <Link
               href="/"
-              className={`flex items-center ${
-                isDesktop && isCollapsed ? "justify-center" : "space-x-3"
+              onClick={closeSidebar}
+              className={`flex items-center min-w-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                isDesktop && isCollapsed ? "justify-center p-1.5" : "space-x-3 py-1"
               }`}
+              aria-label="Core Extract — Home"
             >
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
                 <span className="text-white font-bold text-sm">CE</span>
               </div>
               {(!isDesktop || !isCollapsed) && (
-                <div>
-                  <span className="text-lg font-bold text-gray-900">
+                <div className="min-w-0">
+                  <span className="text-lg font-bold text-gray-900 truncate block">
                     Core Extract
                   </span>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-500 truncate">
                     Document AI Platform
                   </div>
                 </div>
               )}
             </Link>
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center flex-shrink-0 gap-0.5">
               {isDesktop && (
                 <button
+                  type="button"
                   onClick={toggleCollapse}
-                  className="p-1 rounded-md hover:bg-gray-100 transition-colors"
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-800"
                   title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  aria-expanded={!isCollapsed}
+                  aria-controls="app-sidebar"
+                  aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                 >
                   {isCollapsed ? (
-                    <ChevronRight className="h-5 w-5 text-gray-500" />
+                    <ChevronRight className="h-5 w-5" />
                   ) : (
-                    <ChevronLeft className="h-5 w-5 text-gray-500" />
+                    <ChevronLeft className="h-5 w-5" />
                   )}
                 </button>
               )}
               <button
+                type="button"
                 onClick={closeSidebar}
-                className="lg:hidden p-1 rounded-md hover:bg-gray-100"
+                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+                aria-label="Close menu"
               >
-                <X className="h-5 w-5 text-gray-500" />
+                <X className="h-5 w-5" />
               </button>
             </div>
           </div>
 
-          {/* Organization Selector */}
-          {(!isDesktop || !isCollapsed) && (
-            <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
-              <div className="mb-2">
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Organization
-                </label>
-              </div>
+          <div
+            className={`border-b border-gray-200 flex-shrink-0 ${
+              isDesktop && isCollapsed ? "px-2 py-3 flex justify-center" : "px-4 py-3"
+            }`}
+          >
+            {isDesktop && isCollapsed ? (
               <OrganizationSelector
+                compact
                 onCreateOrganization={
                   isAdmin ? () => setIsCreateOrgModalOpen(true) : undefined
                 }
               />
-            </div>
-          )}
-          {isDesktop && isCollapsed && isAdmin && (
-            <div className="px-3 py-4 border-b border-gray-200 flex-shrink-0 flex justify-center">
-              <button
-                onClick={() => setIsCreateOrgModalOpen(true)}
-                className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
-                title="Organization"
-              >
-                <Building2 className="h-5 w-5 text-gray-600" />
-              </button>
-            </div>
-          )}
+            ) : (
+              <>
+                <div className="mb-2">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Organization
+                  </label>
+                </div>
+                <OrganizationSelector
+                  onCreateOrganization={
+                    isAdmin ? () => setIsCreateOrgModalOpen(true) : undefined
+                  }
+                />
+              </>
+            )}
+          </div>
 
-          {/* Navigation */}
           <nav
-            className={`flex-1 py-6 space-y-1 overflow-y-auto ${
-              isDesktop && isCollapsed ? "px-2" : "px-4"
+            className={`flex-1 py-4 space-y-4 overflow-y-auto overflow-x-hidden [scrollbar-width:thin] [scrollbar-color:rgb(203_213_225)_transparent] ${
+              isDesktop && isCollapsed ? "px-2" : "px-3"
             }`}
+            aria-label="Main navigation"
           >
-            {[...navigationItems, ...(isAdmin ? [adminRegistryNavItem] : [])].map(
-              (item) => {
-              const isActive =
-                item.href !== "/"
-                  ? pathname === item.href || pathname?.startsWith(item.href + "/")
-                  : pathname === item.href;
-              const Icon = item.icon;
+            <div className="space-y-1">
+              {(!isDesktop || !isCollapsed) && (
+                <p className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                  Navigate
+                </p>
+              )}
+              {mainNavigationItems.map(renderNavLink)}
+            </div>
 
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  onClick={closeSidebar}
-                  className={`group flex items-center text-sm font-medium rounded-lg transition-all duration-200 ${
-                    isDesktop && isCollapsed
-                      ? "justify-center px-2 py-3"
-                      : "px-3 py-2.5"
-                  } ${
-                    isActive
-                      ? "bg-blue-50 text-blue-700 border border-blue-200"
-                      : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
-                  }`}
-                  title={isDesktop && isCollapsed ? item.name : undefined}
-                >
-                  <Icon
-                    className={`h-5 w-5 transition-colors flex-shrink-0 ${
-                      isDesktop && isCollapsed ? "" : "mr-3"
-                    } ${
-                      isActive
-                        ? "text-blue-600"
-                        : "text-gray-400 group-hover:text-gray-600"
-                    }`}
-                  />
-                  {(!isDesktop || !isCollapsed) && (
-                    <div className="flex-1">
-                      <div className="font-medium">{item.name}</div>
-                      <div className="text-xs text-gray-500">
-                        {item.description}
-                      </div>
-                    </div>
-                  )}
-                </Link>
-              );
-            }
+            {isAdmin && (
+              <div className="space-y-1 pt-2 border-t border-gray-100">
+                {(!isDesktop || !isCollapsed) && (
+                  <p className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                    Admin
+                  </p>
+                )}
+                {(() => {
+                  const item = adminRegistryNavItem;
+                  const isActive = navLinkIsActive(item.href);
+                  const Icon = item.icon;
+                  const collapsed = isDesktop && isCollapsed;
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      onClick={closeSidebar}
+                      aria-current={isActive ? "page" : undefined}
+                      title={collapsed ? item.name : undefined}
+                      className={`group flex items-center text-sm font-medium rounded-lg transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
+                        collapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"
+                      } ${
+                        isActive
+                          ? "bg-violet-50 text-violet-900 border border-violet-200 shadow-sm"
+                          : "text-gray-700 hover:bg-gray-50 hover:text-gray-900 border border-transparent"
+                      }`}
+                    >
+                      <Icon
+                        className={`h-5 w-5 flex-shrink-0 ${
+                          collapsed ? "" : "mr-3"
+                        } ${
+                          isActive
+                            ? "text-violet-600"
+                            : "text-gray-400 group-hover:text-gray-600"
+                        }`}
+                        aria-hidden
+                      />
+                      {(!isDesktop || !isCollapsed) && (
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium">{item.name}</div>
+                          <div className="text-xs text-gray-500 line-clamp-2">
+                            {item.description}
+                          </div>
+                        </div>
+                      )}
+                    </Link>
+                  );
+                })()}
+              </div>
             )}
           </nav>
 
-          {/* User Profile */}
           <div
-            className={`border-t border-gray-200 flex-shrink-0 ${
-              isDesktop && isCollapsed ? "p-2" : "p-4"
+            ref={userMenuRef}
+            className={`border-t border-gray-200 flex-shrink-0 relative ${
+              isDesktop && isCollapsed ? "p-2" : "p-3"
             }`}
           >
             {isDesktop && isCollapsed ? (
-              <div className="flex flex-col items-center space-y-2">
+              <div className="flex flex-col items-center">
                 <button
+                  type="button"
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center hover:opacity-90 transition-opacity"
-                  title={user?.name || "User"}
+                  className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  title={user?.name || "Account menu"}
+                  aria-haspopup="menu"
+                  aria-expanded={isUserMenuOpen}
+                  aria-label="Account menu"
                 >
                   <span className="text-white font-medium text-sm">
                     {user?.name?.charAt(0).toUpperCase()}
                   </span>
                 </button>
-                {/* User Menu Dropdown for collapsed state */}
                 <AnimatePresence>
                   {isUserMenuOpen && (
                     <motion.div
-                      initial={{ opacity: 0, y: -10 }}
+                      initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="absolute left-full bottom-4 ml-2 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50"
+                      exit={{ opacity: 0, y: 8 }}
+                      className="absolute left-full bottom-0 ml-2 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-[55] min-w-[11rem]"
+                      role="menu"
                     >
                       <Link
                         href="/profile"
+                        role="menuitem"
                         onClick={() => setIsUserMenuOpen(false)}
                         className="flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 whitespace-nowrap"
                       >
-                        <User className="mr-2 h-4 w-4" />
+                        <User className="mr-2 h-4 w-4" aria-hidden />
                         Profile
                       </Link>
                       <Link
                         href="/settings"
+                        role="menuitem"
                         onClick={() => setIsUserMenuOpen(false)}
                         className="flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 whitespace-nowrap"
                       >
-                        <Settings className="mr-2 h-4 w-4" />
+                        <Settings className="mr-2 h-4 w-4" aria-hidden />
                         Settings
                       </Link>
-                      <hr className="my-1" />
+                      <hr className="my-1 border-gray-100" />
                       <button
+                        type="button"
+                        role="menuitem"
                         onClick={handleLogout}
                         className="flex w-full items-center px-3 py-2 text-sm text-red-600 hover:bg-red-50 whitespace-nowrap"
                       >
-                        <LogOut className="mr-2 h-4 w-4" />
-                        Sign Out
+                        <LogOut className="mr-2 h-4 w-4" aria-hidden />
+                        Sign out
                       </button>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
             ) : (
-              <div className="relative">
+              <div>
                 <button
+                  type="button"
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex w-full items-center justify-between rounded-lg p-2 hover:bg-gray-50 transition-colors"
+                  className="flex w-full items-center justify-between rounded-lg p-2 hover:bg-gray-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  aria-haspopup="menu"
+                  aria-expanded={isUserMenuOpen}
+                  aria-label="Account menu"
                 >
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
                       <span className="text-white font-medium text-sm">
                         {user?.name?.charAt(0).toUpperCase()}
                       </span>
                     </div>
-                    <div className="text-left">
-                      <div className="text-sm font-medium text-gray-900">
+                    <div className="text-left min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">
                         {user?.name}
                       </div>
-                      <div className="text-xs text-gray-500">{user?.email}</div>
+                      <div className="text-xs text-gray-500 truncate max-w-[12rem]">
+                        {user?.email}
+                      </div>
                     </div>
                   </div>
                   <ChevronDown
-                    className={`h-4 w-4 text-gray-400 transition-transform ${
+                    className={`h-4 w-4 text-gray-400 flex-shrink-0 transition-transform ${
                       isUserMenuOpen ? "rotate-180" : ""
                     }`}
+                    aria-hidden
                   />
                 </button>
 
-                {/* User Menu Dropdown */}
                 <AnimatePresence>
                   {isUserMenuOpen && (
                     <motion.div
-                      initial={{ opacity: 0, y: -10 }}
+                      initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg py-1"
+                      exit={{ opacity: 0, y: 8 }}
+                      className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-[55]"
+                      role="menu"
                     >
                       <Link
                         href="/profile"
+                        role="menuitem"
                         onClick={() => setIsUserMenuOpen(false)}
                         className="flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                       >
-                        <User className="mr-2 h-4 w-4" />
+                        <User className="mr-2 h-4 w-4" aria-hidden />
                         Profile
                       </Link>
                       <Link
                         href="/settings"
+                        role="menuitem"
                         onClick={() => setIsUserMenuOpen(false)}
                         className="flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                       >
-                        <Settings className="mr-2 h-4 w-4" />
+                        <Settings className="mr-2 h-4 w-4" aria-hidden />
                         Settings
                       </Link>
-                      <hr className="my-1" />
+                      <hr className="my-1 border-gray-100" />
                       <button
+                        type="button"
+                        role="menuitem"
                         onClick={handleLogout}
                         className="flex w-full items-center px-3 py-2 text-sm text-red-600 hover:bg-red-50"
                       >
-                        <LogOut className="mr-2 h-4 w-4" />
-                        Sign Out
+                        <LogOut className="mr-2 h-4 w-4" aria-hidden />
+                        Sign out
                       </button>
                     </motion.div>
                   )}
@@ -419,57 +532,63 @@ export default function SidebarLayout({
             )}
           </div>
         </div>
-      </motion.div>
+      </motion.aside>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-h-screen main-content">
-        {/* Top bar */}
-        <div className="sticky top-0 z-30 flex h-16 items-center justify-between bg-white border-b border-gray-200 px-6">
+      <div className="flex-1 flex flex-col min-h-screen min-w-0 main-content">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 bg-white/95 backdrop-blur-sm border-b border-gray-200 px-4 sm:px-6 supports-[backdrop-filter]:bg-white/85">
           <button
+            type="button"
             onClick={toggleSidebar}
-            className="lg:hidden p-2 rounded-md hover:bg-gray-100"
+            className="lg:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            aria-label="Open navigation menu"
+            aria-expanded={isSidebarOpen}
+            aria-controls="app-sidebar"
           >
-            <Menu className="h-5 w-5 text-gray-600" />
+            <Menu className="h-5 w-5" />
           </button>
 
-          <div className="flex items-center space-x-4 flex-1">
-            {/* Breadcrumb or page title can go here */}
+          <div className="flex items-center min-w-0 flex-1">
             {headerContent ? (
               headerContent
             ) : (
-              <div className="hidden sm:block">
-                <h1 className="text-lg font-semibold text-gray-900">
+              <div className="min-w-0 hidden sm:block">
+                <h1 className="text-lg font-semibold text-gray-900 truncate">
                   {pageTitle ||
-                    navigationItems.find((item) => item.href === pathname)
+                    mainNavigationItems.find((item) => item.href === pathname)
                       ?.name ||
                     "Dashboard"}
                 </h1>
                 {pageDescription && (
-                  <p className="text-sm text-gray-500">{pageDescription}</p>
+                  <p className="text-sm text-gray-500 line-clamp-1">
+                    {pageDescription}
+                  </p>
                 )}
               </div>
             )}
           </div>
 
-          {/* Right side actions */}
-          <div className="flex items-center space-x-4">
-            {headerActions || (
-              <>
-                {/* Status indicators or notifications can go here */}
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                  <span className="text-sm text-gray-500">System Online</span>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {headerActions ||
+              (currentOrganization && (
+                <div
+                  className="hidden sm:flex items-center gap-2 max-w-[14rem] xl:max-w-xs rounded-full border border-gray-200 bg-gray-50/80 px-3 py-1.5"
+                  title={currentOrganization.name}
+                >
+                  <Building2
+                    className="h-4 w-4 text-gray-500 flex-shrink-0"
+                    aria-hidden
+                  />
+                  <span className="text-sm text-gray-700 truncate">
+                    {currentOrganization.name}
+                  </span>
                 </div>
-              </>
-            )}
+              ))}
           </div>
-        </div>
+        </header>
 
-        {/* Page content */}
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
 
-      {/* Create Organization Modal */}
       <CreateOrganizationModal
         isOpen={isCreateOrgModalOpen}
         onClose={() => setIsCreateOrgModalOpen(false)}
