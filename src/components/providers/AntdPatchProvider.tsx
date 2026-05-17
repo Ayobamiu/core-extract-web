@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { App, ConfigProvider } from "antd";
 
 // This must be imported before any antd components
 // Import at the top level to ensure it runs first
@@ -34,5 +35,9 @@ export default function AntdPatchProvider({
     }
   }, []);
 
-  return <>{children}</>;
+  return (
+    <ConfigProvider>
+      <App>{children}</App>
+    </ConfigProvider>
+  );
 }

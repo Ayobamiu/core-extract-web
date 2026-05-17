@@ -328,10 +328,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                 <button
                   key={`${entry.slug}-${entry.instanceIndex}`}
                   onClick={() => setSelectedSectionIdx(entry.globalIndex)}
-                  className={`px-3 py-1 text-xs rounded-full border whitespace-nowrap transition-colors ${
+                  className={`px-2.5 py-0.5 text-xs rounded border whitespace-nowrap transition-colors ${
                     isActive
-                      ? "bg-blue-600 border-blue-600 text-white"
-                      : "bg-white border-gray-300 text-gray-700 hover:border-blue-400 hover:text-blue-600"
+                      ? "bg-gray-900 border-gray-900 text-white"
+                      : "bg-white border-gray-200 text-gray-600 hover:border-gray-400 hover:text-gray-900"
                   }`}
                   title={
                     entry.pageRange && entry.pageRange[0] != null

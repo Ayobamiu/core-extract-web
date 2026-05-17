@@ -10,7 +10,7 @@ export interface JsonViewerModalProps extends JsonViewerProps {
   modalTitle?: React.ReactNode;
   width?: number | string;
   maskClosable?: boolean;
-  destroyOnClose?: boolean;
+  destroyOnHidden?: boolean;
 }
 
 const JsonViewerModal: React.FC<JsonViewerModalProps> = ({
@@ -19,7 +19,7 @@ const JsonViewerModal: React.FC<JsonViewerModalProps> = ({
   modalTitle,
   width = "min(960px, 92vw)",
   maskClosable = false,
-  destroyOnClose = true,
+  destroyOnHidden = true,
   height = "70vh",
   onCancel,
   ...rest
@@ -32,7 +32,7 @@ const JsonViewerModal: React.FC<JsonViewerModalProps> = ({
       footer={null}
       width={width}
       maskClosable={maskClosable}
-      destroyOnClose={destroyOnClose}
+      destroyOnHidden={destroyOnHidden}
       styles={{ body: { padding: 0 } }}
     >
       <JsonViewer
