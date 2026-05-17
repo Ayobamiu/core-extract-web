@@ -32,6 +32,7 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { WellboreDiagramDrawer } from "@/components/well/WellboreDiagramModal";
+import { trackPreviewAnalytics } from "@/lib/previewAnalytics";
 
 // Styles for truncation and proper spacing
 const tableStyles = `
@@ -330,6 +331,18 @@ const PreviewPage: React.FC = () => {
                       setSelectedWellData(record);
                       setSelectedFilename(text);
                       setWellboreModalOpen(true);
+                      trackPreviewAnalytics(previewId, [
+                        {
+                          type: "wellbore_open",
+                          jobFileId: record._fileId,
+                          wellLabel: text,
+                        },
+                        {
+                          type: "well_view",
+                          jobFileId: record._fileId,
+                          wellLabel: text,
+                        },
+                      ]);
                     }}
                   />
                 </Tooltip>
@@ -604,6 +617,19 @@ const PreviewPage: React.FC = () => {
   useEffect(() => {
     fetchPreviewStatistics();
   }, [fetchPreviewStatistics]);
+
+  // Record preview page visit (once per browser session per preview)
+  useEffect(() => {
+    if (!previewId || loading) return;
+    const key = `preview_visit_tracked_${previewId}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      /* sessionStorage unavailable */
+    }
+    trackPreviewAnalytics(previewId, [{ type: "preview_visit" }]);
+  }, [previewId, loading]);
 
   // Handle search input change with debouncing
   useEffect(() => {

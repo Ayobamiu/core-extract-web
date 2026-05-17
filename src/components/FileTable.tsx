@@ -1443,19 +1443,28 @@ const FileTable: React.FC<FileTableProps> = ({
             style={{ overflow: "hidden", whiteSpace: "nowrap" }}
           >
             {visiblePreviews.map((preview, index) => (
-              <a
-                key={preview.id}
-                href={`/preview/${preview.id}`}
-                target="_blank"
-                style={{
-                  color: "#1890ff",
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
-                }}
-              >
-                {preview.name}
+              <span key={preview.id} className="inline-flex items-center gap-0.5 shrink-0">
+                <a
+                  href={`/preview/${preview.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "#1890ff", whiteSpace: "nowrap" }}
+                >
+                  {preview.name}
+                </a>
+                {isAdmin && (
+                  <a
+                    href={`/preview/${preview.id}/analytics`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Preview monitoring"
+                    className="text-[10px] text-gray-400 hover:text-gray-700 ml-0.5"
+                  >
+                    stats
+                  </a>
+                )}
                 {index < visiblePreviews.length - 1 && ", "}
-              </a>
+              </span>
             ))}
             {remainingCount > 0 && (
               <Popover

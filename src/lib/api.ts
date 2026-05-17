@@ -402,6 +402,51 @@ export interface PreviewJobFile {
     review_status?: 'pending' | 'in_review' | 'reviewed' | 'approved' | 'rejected';
 }
 
+export interface PreviewAnalyticsReport {
+    preview: { id: string; name: string };
+    periodDays: number;
+    since: string;
+    summary: {
+        uniqueSessions: number;
+        previewVisits: number;
+        wellViews: number;
+        wellboreEvents: number;
+        uniqueWellsViewed: number;
+        sessionsUsingWellbore: number;
+        wellboreAdoptionRate: number;
+    };
+    wellboreBreakdown: Array<{ event_type: string; count: number }>;
+    topWells: Array<{
+        well_label: string;
+        job_file_id: string | null;
+        view_count: number;
+        unique_sessions: number;
+        last_viewed_at: string;
+    }>;
+    sessions: Array<{
+        id: string;
+        client_session_id: string;
+        ip_address: string | null;
+        country_code: string | null;
+        region: string | null;
+        user_agent: string | null;
+        first_seen_at: string;
+        last_seen_at: string;
+        event_count: number;
+        wellbore_event_count: number;
+    }>;
+    recentEvents: Array<{
+        id: string;
+        event_type: string;
+        job_file_id: string | null;
+        well_label: string | null;
+        metadata: Record<string, unknown>;
+        created_at: string;
+        ip_address: string | null;
+        country_code: string | null;
+    }>;
+}
+
 class ApiClient {
     private baseURL: string;
     private accessToken: string | null = null;
@@ -1142,6 +1187,42 @@ class ApiClient {
         allVerified: boolean;
     }>> {
         return this.request(`/previews/${id}/statistics`);
+    }
+
+    async recordPreviewAnalyticsEvents(
+        previewId: string,
+        body: {
+            clientSessionId: string;
+            events: Array<{
+                type: string;
+                jobFileId?: string;
+                wellLabel?: string;
+                metadata?: Record<string, unknown>;
+            }>;
+        },
+    ): Promise<ApiResponse<{ sessionId: string; inserted: number }>> {
+        return this.request(`/previews/${previewId}/analytics/events`, {
+            method: 'POST',
+            body: JSON.stringify(body),
+        });
+    }
+
+    async getPreviewAnalytics(
+        previewId: string,
+        params?: { days?: number; sessionLimit?: number; eventLimit?: number },
+    ): Promise<ApiResponse<PreviewAnalyticsReport>> {
+        const qs = new URLSearchParams();
+        if (params?.days != null) qs.set('days', String(params.days));
+        if (params?.sessionLimit != null) {
+            qs.set('sessionLimit', String(params.sessionLimit));
+        }
+        if (params?.eventLimit != null) {
+            qs.set('eventLimit', String(params.eventLimit));
+        }
+        const query = qs.toString();
+        return this.request(
+            `/previews/${previewId}/analytics${query ? `?${query}` : ''}`,
+        );
     }
 
     async createPreview(name: string, schema: any, logo?: string): Promise<ApiResponse<PreviewDataTable>> {
