@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Building2 } from "lucide-react";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -29,17 +30,25 @@ export default function OrganizationSelector({
   const { user } = useAuth();
   const isAdmin = canPerformAdminActions(user);
   const [isOpen, setIsOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
     const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
       if (
-        rootRef.current &&
-        !rootRef.current.contains(e.target as Node)
+        rootRef.current?.contains(target) ||
+        menuRef.current?.contains(target)
       ) {
-        setIsOpen(false);
+        return;
       }
+      setIsOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setIsOpen(false);
@@ -51,6 +60,47 @@ export default function OrganizationSelector({
       document.removeEventListener("keydown", onKey);
     };
   }, [isOpen]);
+
+  useLayoutEffect(() => {
+    if (!compact || !isOpen) {
+      setMenuPosition(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+
+      const rect = trigger.getBoundingClientRect();
+      const gap = 8;
+      const menuWidth = menuRef.current?.offsetWidth ?? 224;
+      const menuHeight = menuRef.current?.offsetHeight ?? 280;
+      const viewportPadding = 8;
+
+      let left = rect.right + gap;
+      if (left + menuWidth > window.innerWidth - viewportPadding) {
+        left = Math.max(viewportPadding, rect.left - gap - menuWidth);
+      }
+
+      let top = rect.top;
+      if (top + menuHeight > window.innerHeight - viewportPadding) {
+        top = Math.max(
+          viewportPadding,
+          window.innerHeight - viewportPadding - menuHeight
+        );
+      }
+
+      setMenuPosition({ top, left });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [compact, isOpen, organizations.length]);
 
   if (isLoadingOrganizations) {
     return (
@@ -85,9 +135,112 @@ export default function OrganizationSelector({
   }
 
   if (compact) {
+    const resolvedPosition =
+      menuPosition ??
+      (() => {
+        const trigger = triggerRef.current;
+        if (!trigger) return null;
+        const rect = trigger.getBoundingClientRect();
+        return { top: rect.top, left: rect.right + 8 };
+      })();
+
+    const compactMenu =
+      isOpen &&
+      resolvedPosition &&
+      typeof document !== "undefined" &&
+      createPortal(
+        <div
+          ref={menuRef}
+          role="listbox"
+          aria-label="Organizations"
+          style={{
+            position: "fixed",
+            top: resolvedPosition.top,
+            left: resolvedPosition.left,
+            zIndex: 100,
+          }}
+          className="min-w-[14rem] max-w-[min(20rem,calc(100vw-1rem))] bg-white border border-gray-200 rounded-md shadow-lg py-1"
+        >
+          <div className="px-3 py-2 border-b border-gray-100">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Organization
+            </p>
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {currentOrganization?.name}
+            </p>
+          </div>
+          <div className="py-1 max-h-64 overflow-y-auto">
+            {organizations.map((org) => (
+              <button
+                key={org.id}
+                type="button"
+                role="option"
+                aria-selected={currentOrganization?.id === org.id}
+                onClick={() => {
+                  switchOrganization(org.id);
+                  setIsOpen(false);
+                }}
+                className={`w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 ${
+                  currentOrganization?.id === org.id
+                    ? "bg-blue-50 text-blue-700"
+                    : "text-gray-700"
+                }`}
+              >
+                <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
+                <span className="truncate">{org.name}</span>
+                {currentOrganization?.id === org.id && (
+                  <svg
+                    className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                    aria-hidden
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+          {isAdmin && (
+            <div className="border-t border-gray-200 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  onCreateOrganization?.();
+                }}
+                className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-600 flex items-center gap-2 text-sm"
+              >
+                <svg
+                  className="w-4 h-4 flex-shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                  />
+                </svg>
+                <span>Create organization</span>
+              </button>
+            </div>
+          )}
+        </div>,
+        document.body
+      );
+
     return (
       <div ref={rootRef} className={`relative flex justify-center ${className}`}>
         <button
+          ref={triggerRef}
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className="relative w-10 h-10 flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 hover:border-gray-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
@@ -99,87 +252,7 @@ export default function OrganizationSelector({
           <Building2 className="h-5 w-5" aria-hidden />
           <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-green-500 ring-2 ring-white" />
         </button>
-
-        {isOpen && (
-          <div
-            className="absolute top-0 left-full ml-2 min-w-[14rem] max-w-[min(20rem,calc(100vw-5rem))] bg-white border border-gray-200 rounded-md shadow-lg z-[60] py-1"
-            role="listbox"
-            aria-label="Organizations"
-          >
-            <div className="px-3 py-2 border-b border-gray-100">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Organization
-              </p>
-              <p className="text-sm font-medium text-gray-900 truncate">
-                {currentOrganization?.name}
-              </p>
-            </div>
-            <div className="py-1 max-h-64 overflow-y-auto">
-              {organizations.map((org) => (
-                <button
-                  key={org.id}
-                  type="button"
-                  role="option"
-                  aria-selected={currentOrganization?.id === org.id}
-                  onClick={() => {
-                    switchOrganization(org.id);
-                    setIsOpen(false);
-                  }}
-                  className={`w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 ${
-                    currentOrganization?.id === org.id
-                      ? "bg-blue-50 text-blue-700"
-                      : "text-gray-700"
-                  }`}
-                >
-                  <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
-                  <span className="truncate">{org.name}</span>
-                  {currentOrganization?.id === org.id && (
-                    <svg
-                      className="w-4 h-4 text-blue-600 ml-auto flex-shrink-0"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                      aria-hidden
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  )}
-                </button>
-              ))}
-            </div>
-            {isAdmin && (
-              <div className="border-t border-gray-200 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsOpen(false);
-                    onCreateOrganization?.();
-                  }}
-                  className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-600 flex items-center gap-2 text-sm"
-                >
-                  <svg
-                    className="w-4 h-4 flex-shrink-0"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    aria-hidden
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                    />
-                  </svg>
-                  <span>Create organization</span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        {compactMenu}
       </div>
     );
   }
