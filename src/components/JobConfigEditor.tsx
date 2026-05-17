@@ -275,8 +275,6 @@ export default function JobConfigEditor({
           >
             <Select placeholder="Select extraction method">
               <Option value="paddleocr">PaddleOCR</Option>
-              <Option value="mineru">MinerU</Option>
-              <Option value="documentai">Document AI</Option>
               <Option value="extendai">Extend AI</Option>
             </Select>
           </Form.Item>
