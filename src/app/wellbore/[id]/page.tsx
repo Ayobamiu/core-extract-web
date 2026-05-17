@@ -7,6 +7,7 @@ import { WellboreDiagram } from "@/components/well/WellboreDiagram";
 import { Button } from "antd";
 import { ArrowLeftOutlined, PrinterOutlined } from "@ant-design/icons";
 import Link from "next/link";
+import { trackPreviewAnalytics } from "@/lib/previewAnalytics";
 
 interface PreviewData {
   preview: PreviewDataTable;
@@ -94,6 +95,13 @@ const WellborePreviewContent: React.FC = () => {
         }
 
         setWellData(wellData);
+        trackPreviewAnalytics(previewId, [
+          {
+            type: "wellbore_fullscreen",
+            jobFileId: record.id,
+            wellLabel: filename || record.filename,
+          },
+        ]);
       } catch (err: any) {
         console.error("Error fetching well data:", err);
         setError(

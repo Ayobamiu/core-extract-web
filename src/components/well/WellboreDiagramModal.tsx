@@ -13,6 +13,7 @@ import { WellboreDiagram } from "./WellboreDiagram";
 // Import the interface from WellboreDiagram to ensure consistency
 import type { MGSWellData } from "./WellboreDiagram";
 import Link from "next/link";
+import { trackPreviewAnalytics } from "@/lib/previewAnalytics";
 
 // Re-export for backward compatibility
 export type { MGSWellData };
@@ -50,8 +51,25 @@ export const WellboreDiagramDrawer: React.FC<WellboreDiagramDrawerProps> = ({
       filename ? `?filename=${encodeURIComponent(filename)}` : ""
     }`;
 
-    // Open in new tab
     window.open(url, "_blank");
+    if (id) {
+      trackPreviewAnalytics(id, [
+        {
+          type: "wellbore_fullscreen",
+          wellLabel: filename,
+        },
+      ]);
+    }
+  };
+
+  const handlePrintClick = () => {
+    if (!previewId) return;
+    trackPreviewAnalytics(previewId, [
+      {
+        type: "wellbore_print",
+        wellLabel: filename,
+      },
+    ]);
   };
 
   return (
@@ -72,9 +90,10 @@ export const WellboreDiagramDrawer: React.FC<WellboreDiagramDrawerProps> = ({
           </Button>
           <Link
             href={`/wellbore/${previewId}/print?filename=${encodeURIComponent(
-              filename || ""
+              filename || "",
             )}`}
             target="_blank"
+            onClick={handlePrintClick}
           >
             <Button type="link" icon={<PrinterOutlined />} size="small">
               Print View

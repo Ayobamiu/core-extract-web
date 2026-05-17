@@ -6,6 +6,7 @@ import { apiClient, PreviewJobFile } from "@/lib/api";
 import { WellboreDiagramPrint } from "@/components/well/WellboreDiagramPrint";
 import { Button } from "antd";
 import { ArrowLeftOutlined, PrinterOutlined } from "@ant-design/icons";
+import { trackPreviewAnalytics } from "@/lib/previewAnalytics";
 
 const WellborePrintContent: React.FC = () => {
   const params = useParams();
@@ -84,6 +85,13 @@ const WellborePrintContent: React.FC = () => {
         }
 
         setWellData(wellData);
+        trackPreviewAnalytics(previewId, [
+          {
+            type: "wellbore_print",
+            jobFileId: record.id,
+            wellLabel: filename || record.filename,
+          },
+        ]);
       } catch (err: any) {
         console.error("Error fetching well data:", err);
         setError(
