@@ -32,9 +32,9 @@ const { TextArea } = Input;
 
 const EXTRACTORS = [
   { label: "ExtendAI", value: "extendai" },
-  { label: "MinerU", value: "mineru" },
+  // { label: "MinerU", value: "mineru" },
   { label: "PaddleOCR", value: "paddleocr" },
-  { label: "Document AI", value: "documentai" },
+  // { label: "Document AI", value: "documentai" },
 ];
 
 /** Shown when the hints editor is empty; mirrors real slug-specific guidance shape. */
@@ -587,7 +587,14 @@ export default function SchemaRegistryAdmin() {
                       defaultMode="code"
                       mode="code"
                       height={360}
-                      toolbar={["mode", "format", "minify", "search", "copy", "upload"]}
+                      toolbar={[
+                        "mode",
+                        "format",
+                        "minify",
+                        "search",
+                        "copy",
+                        "upload",
+                      ]}
                     />
                     <Space>
                       <Button type="primary" onClick={saveHints}>
@@ -662,7 +669,10 @@ function JsonFormField({
 }: {
   value?: string;
   onChange?: (next: string) => void;
-} & Omit<React.ComponentProps<typeof JsonViewer>, "value" | "onChange" | "text">) {
+} & Omit<
+  React.ComponentProps<typeof JsonViewer>,
+  "value" | "onChange" | "text"
+>) {
   const text =
     typeof value === "string"
       ? value

@@ -44,7 +44,7 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
   }, [config.processing.method]);
 
   const handleExtractionMethodChange = (
-    method: "mineru" | "documentai" | "extendai" | "paddleocr"
+    method: "extendai" | "paddleocr"
   ) => {
     onChange({
       ...config,
@@ -152,39 +152,20 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
             <input
               type="radio"
               name="extraction_method"
-              value="mineru"
-              checked={config.extraction.method === "mineru"}
-              onChange={() => handleExtractionMethodChange("mineru")}
+              value="paddleocr"
+              checked={config.extraction.method === "paddleocr"}
+              onChange={() => handleExtractionMethodChange("paddleocr")}
               disabled={disabled}
               className="h-4 w-4 text-blue-600"
             />
             <div>
-              <div className="font-medium text-gray-900">MinerU</div>
+              <div className="font-medium text-gray-900">PaddleOCR</div>
               <div className="text-sm text-gray-500">
-                High-quality extraction with formatting preservation
+                OCR-based extraction with layout parsing and table detection (Default)
               </div>
             </div>
           </label>
 
-          <label className="flex items-center space-x-3 p-3 border rounded-md hover:bg-white cursor-pointer transition-colors">
-            <input
-              type="radio"
-              name="extraction_method"
-              value="documentai"
-              checked={config.extraction.method === "documentai"}
-              onChange={() => handleExtractionMethodChange("documentai")}
-              disabled={disabled}
-              className="h-4 w-4 text-blue-600"
-            />
-            <div>
-              <div className="font-medium text-gray-900">
-                Google Document AI
-              </div>
-              <div className="text-sm text-gray-500">
-                Fast extraction with table detection
-              </div>
-            </div>
-          </label>
 
           <label className="flex items-center space-x-3 p-3 border rounded-md hover:bg-white cursor-pointer transition-colors">
             <input
@@ -199,29 +180,12 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
             <div>
               <div className="font-medium text-gray-900">Extend AI</div>
               <div className="text-sm text-gray-500">
-                Cloud-based extraction with automatic fallback to MinerU
+                Cloud-based extraction with automatic fallback to PaddleOCR
               </div>
             </div>
           </label>
 
-          <label className="flex items-center space-x-3 p-3 border rounded-md hover:bg-white cursor-pointer transition-colors">
-            <input
-              type="radio"
-              name="extraction_method"
-              value="paddleocr"
-              checked={config.extraction.method === "paddleocr"}
-              onChange={() => handleExtractionMethodChange("paddleocr")}
-              disabled={disabled}
-              className="h-4 w-4 text-blue-600"
-            />
-            <div>
-              <div className="font-medium text-gray-900">PaddleOCR</div>
-              <div className="text-sm text-gray-500">
-                OCR-based extraction with layout parsing and table detection
-                (Default)
-              </div>
-            </div>
-          </label>
+
         </div>
       </div>
 
@@ -384,13 +348,9 @@ const ProcessingConfigSelector: React.FC<ProcessingConfigSelectorProps> = ({
       <div className="pt-4 border-t border-gray-200">
         <div className="text-sm text-gray-600">
           <span className="font-medium">Current configuration:</span>{" "}
-          {config.extraction.method === "documentai"
-            ? "Document AI"
-            : config.extraction.method === "extendai"
+          {config.extraction.method === "extendai"
             ? "Extend AI"
-            : config.extraction.method === "paddleocr"
-            ? "PaddleOCR"
-            : "MinerU"}{" "}
+            : "PaddleOCR"}{" "}
           + {getMethodDisplayName(currentMethod)}{" "}
           {getModelDisplayName(config.processing.model)}
           {useVisualClassifier && (
