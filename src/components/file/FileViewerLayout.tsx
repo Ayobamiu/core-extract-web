@@ -156,6 +156,7 @@ export default function FileViewerLayout({
               </div>
             ) : pdfUrl ? (
               <iframe
+                key={file.id}
                 src={pdfUrl}
                 className="w-full h-full border-0 bg-white"
                 title={`PDF viewer for ${file.filename}`}

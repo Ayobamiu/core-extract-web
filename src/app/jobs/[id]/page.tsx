@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Drawer, Dropdown, Modal, message } from "antd";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
@@ -33,9 +33,10 @@ import {
 } from "@heroicons/react/24/outline";
 import { Loader } from "lucide-react";
 
-export default function JobDetailPage() {
+function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
   const jobId = params.id as string;
@@ -60,9 +61,6 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSchemaDrawer, setShowSchemaDrawer] = useState(false);
-  const [showFileResults, setShowFileResults] = useState<
-    Record<string, boolean>
-  >({});
   const [realtimeMessage, setRealtimeMessage] = useState<string | null>(null);
   const [isAddingFiles, setIsAddingFiles] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -92,6 +90,22 @@ export default function JobDetailPage() {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const activeFileId = searchParams.get("file");
+
+  const setActiveFileId = useCallback(
+    (fileId: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (fileId) {
+        params.set("file", fileId);
+      } else {
+        params.delete("file");
+      }
+      const qs = params.toString();
+      router.replace(`/jobs/${jobId}${qs ? `?${qs}` : ""}`, { scroll: false });
+    },
+    [jobId, router, searchParams],
+  );
 
   // Use Job.name as the title
   useEffect(() => {
@@ -579,12 +593,8 @@ export default function JobDetailPage() {
                     ? JSON.parse(job.schema_data)
                     : job.schema_data
                 }
-                onShowResults={(fileId) =>
-                  setShowFileResults((prev) => ({
-                    ...prev,
-                    [fileId]: !prev[fileId],
-                  }))
-                }
+                activeFileId={activeFileId}
+                onActiveFileIdChange={setActiveFileId}
                 onAddToPreview={(fileId) => handleAddToPreview(fileId)}
                 onEditResults={(file) => {
                   setSelectedFileForResultsEdit(file);
@@ -595,7 +605,6 @@ export default function JobDetailPage() {
                   setShowBulkPreviewDrawer(true);
                 }}
                 onDataUpdate={refreshJobData}
-                showFileResults={showFileResults}
                 refreshTrigger={fileTableRefreshTrigger}
                 fileSummary={fileSummary}
                 isConnected={isConnected}
@@ -960,5 +969,19 @@ export default function JobDetailPage() {
         )}
       </SidebarLayout>
     </ProtectedRoute>
+  );
+}
+
+export default function JobDetailPageWithSuspense() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <Loader className="w-8 h-8 animate-spin text-gray-400" />
+        </div>
+      }
+    >
+      <JobDetailPage />
+    </Suspense>
   );
 }

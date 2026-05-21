@@ -10,7 +10,6 @@ interface FullscreenModalProps {
   open: boolean;
   onClose: () => void;
   onOpenFileDetails: (file: JobFile) => void;
-  onOpenFilePage?: (fileId: string) => void;
   onPreviousFile: () => void;
   onNextFile: () => void;
   onUpdateReviewStatus: (
@@ -51,7 +50,6 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
   open,
   onClose,
   onOpenFileDetails,
-  onOpenFilePage,
   onPreviousFile,
   onNextFile,
   onUpdateReviewStatus,
@@ -138,7 +136,6 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
         onNext={onNextFile}
         onClose={onClose}
         onOpenFileDetails={onOpenFileDetails}
-        onOpenFilePage={onOpenFilePage}
         onUpdateReviewStatus={onUpdateReviewStatus}
         onVerifyFile={onVerifyFile}
         onReviewAndVerifyFile={onReviewAndVerifyFile}

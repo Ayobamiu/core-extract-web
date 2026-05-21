@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -210,40 +210,77 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   // Save changes. For v2 we splice the edited section back into the envelope
   // and call onUpdate with the full envelope so the file's persisted result
   // shape stays consistent (downstream consumers always see V2ResultEnvelope).
-  const handleSave = async (e?: React.MouseEvent) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-
-    if (!onUpdate) return;
-
-    try {
-      setIsSaving(true);
-      const parsedSectionData = JSON.parse(editableJson);
-
-      if (isV2 && selectedSection) {
-        const envelope = data as V2ResultEnvelope;
-        const slugInstances = Array.isArray(envelope[selectedSection.slug])
-          ? [...envelope[selectedSection.slug]]
-          : [];
-        slugInstances[selectedSection.instanceIndex] = parsedSectionData;
-        const nextEnvelope: V2ResultEnvelope = {
-          ...envelope,
-          [selectedSection.slug]: slugInstances,
-        };
-        await onUpdate(nextEnvelope);
-      } else {
-        await onUpdate(parsedSectionData);
+  const handleSave = useCallback(
+    async (e?: React.MouseEvent) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
       }
 
-      setJsonError(null);
-    } catch (error) {
-      setJsonError(error instanceof Error ? error.message : "Failed to save");
-    } finally {
-      setIsSaving(false);
-    }
-  };
+      if (!onUpdate || jsonError || isSaving) return;
+
+      try {
+        setIsSaving(true);
+        const parsedSectionData = JSON.parse(editableJson);
+
+        if (isV2 && selectedSection) {
+          const envelope = data as V2ResultEnvelope;
+          const slugInstances = Array.isArray(envelope[selectedSection.slug])
+            ? [...envelope[selectedSection.slug]]
+            : [];
+          slugInstances[selectedSection.instanceIndex] = parsedSectionData;
+          const nextEnvelope: V2ResultEnvelope = {
+            ...envelope,
+            [selectedSection.slug]: slugInstances,
+          };
+          await onUpdate(nextEnvelope);
+        } else {
+          await onUpdate(parsedSectionData);
+        }
+
+        setJsonError(null);
+      } catch (error) {
+        setJsonError(
+          error instanceof Error ? error.message : "Failed to save",
+        );
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [
+      onUpdate,
+      jsonError,
+      isSaving,
+      editableJson,
+      isV2,
+      selectedSection,
+      data,
+    ],
+  );
+
+  useEffect(() => {
+    if (!editable || !onUpdate) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (activeTab !== "results") return;
+      if (!(e.metaKey || e.ctrlKey) || e.key !== "Enter") return;
+      if (e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      void handleSave();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editable, onUpdate, activeTab, handleSave]);
+
+  const saveLabel = useMemo(() => {
+    const shortcut =
+      typeof navigator !== "undefined" &&
+      /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+        ? "⌘↵"
+        : "Ctrl+↵";
+    return isSaving ? "Saving…" : `Update (${shortcut})`;
+  }, [isSaving]);
 
   // Convert data to CSV format. Scoped to the selected section in v2 so the
   // CSV columns line up with that section's schema instead of mashing every
@@ -470,7 +507,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                     : undefined
                 }
                 cancelLabel="Reset"
-                saveLabel={isSaving ? "Saving…" : "Update"}
+                saveLabel={saveLabel}
                 saving={isSaving}
               />
             </div>

@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, useRef } from "react";
 import type { GetProp, TableProps } from "antd";
 import {
   Table,
@@ -32,7 +31,6 @@ import {
   CopyOutlined,
   ArrowsAltOutlined,
   FullscreenOutlined,
-  ExportOutlined,
   InfoCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -61,7 +59,6 @@ import {
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import ConstraintList from "@/components/ui/ConstraintList";
 import FileDetailsDrawer from "@/components/file/FileDetailsDrawer";
-import FileResultsDrawer from "@/components/file/FileResultsDrawer";
 import FullscreenModal from "@/components/file/FullscreenModal";
 import styles from "./FileTable.module.css";
 import { Loader, MessageSquare } from "lucide-react";
@@ -94,12 +91,12 @@ type TablePaginationConfig = Exclude<
 interface FileTableProps {
   jobId: string;
   jobSchema: any;
-  onShowResults: (fileId: string) => void;
+  activeFileId?: string | null;
+  onActiveFileIdChange?: (fileId: string | null) => void;
   onAddToPreview: (fileId: string) => void;
   onEditResults: (file: JobFile) => void;
   onBulkAddToPreview: (fileIds: string[]) => void;
   onDataUpdate?: () => void;
-  showFileResults: Record<string, boolean>;
   refreshTrigger?: number;
   fileSummary?: {
     total: number;
@@ -140,12 +137,12 @@ const DEFAULT_PAGE_SIZE = 20;
 const FileTable: React.FC<FileTableProps> = ({
   jobId,
   jobSchema,
-  onShowResults,
+  activeFileId = null,
+  onActiveFileIdChange,
   onAddToPreview,
   onEditResults,
   onBulkAddToPreview,
   onDataUpdate,
-  showFileResults,
   refreshTrigger,
   fileSummary,
   isConnected = false,
@@ -160,11 +157,8 @@ const FileTable: React.FC<FileTableProps> = ({
   getJobStatusColor,
 }) => {
   const { user } = useAuth();
-  const router = useRouter();
   const isAdmin = canPerformAdminActions(user);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [drawerVisible, setDrawerVisible] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<JobFile | null>(null);
   const [retryModalVisible, setRetryModalVisible] = useState(false);
   const [retryFileId, setRetryFileId] = useState<string | null>(null);
   const [retryFile, setRetryFile] = useState<File | null>(null);
@@ -188,7 +182,6 @@ const FileTable: React.FC<FileTableProps> = ({
     null
   );
   const [singleFileReprocessMode, setSingleFileReprocessMode] = useState(false);
-  const [fullscreenModalVisible, setFullscreenModalVisible] = useState(false);
   const [fullscreenFileIndex, setFullscreenFileIndex] = useState<number>(0);
   const [fullscreenFileDetail, setFullscreenFileDetail] =
     useState<JobFile | null>(null);
@@ -203,17 +196,6 @@ const FileTable: React.FC<FileTableProps> = ({
     useState<JobFile | null>(null);
   const selectedFilePageCount = computePageCount(selectedFileForDetails);
 
-  // Comments state for drawer
-  const [drawerComments, setDrawerComments] = useState<
-    Array<{
-      id: string;
-      userId: string;
-      userEmail: string;
-      text: string;
-      createdAt: string;
-    }>
-  >([]);
-
   // Comments state for fullscreen modal
   const [fullscreenComments, setFullscreenComments] = useState<
     Array<{
@@ -224,6 +206,7 @@ const FileTable: React.FC<FileTableProps> = ({
       createdAt: string;
     }>
   >([]);
+  const viewerLoadedFileIdRef = useRef<string | null>(null);
 
   // Reprocess options state
   const [reprocessOptions, setReprocessOptions] = useState({
@@ -377,45 +360,6 @@ const FileTable: React.FC<FileTableProps> = ({
     }
   };
 
-  // Handle drawer functions
-  const handleOpenDrawer = async (record: JobFile) => {
-    setSelectedFile(record);
-    setDrawerVisible(true);
-    // Fetch comments for this file
-    try {
-      const commentsResponse = await apiClient.getFileComments(record.id);
-      if (commentsResponse.success && commentsResponse.data?.comments) {
-        setDrawerComments(commentsResponse.data.comments);
-      }
-    } catch (err) {
-      console.error("Failed to load comments:", err);
-      setDrawerComments([]);
-    }
-  };
-
-  const handleCloseDrawer = () => {
-    setDrawerVisible(false);
-    setSelectedFile(null);
-    setDrawerComments([]);
-  };
-
-  // Handle adding comment in drawer
-  const handleDrawerAddComment = async (text: string) => {
-    if (!selectedFile) return;
-
-    try {
-      const response = await apiClient.addFileComment(selectedFile.id, text);
-
-      if (response.success && response.data?.comment) {
-        setDrawerComments((prev) => [...prev, response.data!.comment]);
-      } else {
-        throw new Error(response.message || "Failed to add comment");
-      }
-    } catch (err: any) {
-      throw err; // Re-throw to let TabbedDataViewer handle the error message
-    }
-  };
-
   // Handle file details drawer
   const handleOpenFileDetails = async (record: JobFile) => {
     setSelectedFileForDetails(record);
@@ -450,46 +394,14 @@ const FileTable: React.FC<FileTableProps> = ({
     }
   };
 
-  // Fullscreen modal handlers
-  const handleOpenFullscreen = async (record: JobFile) => {
-    const fileIndex = data.findIndex((f) => f.id === record.id);
-    if (fileIndex !== -1) {
-      setFullscreenFileIndex(fileIndex);
-      setFullscreenFileDetail(record);
-      setFullscreenModalVisible(true);
-      void fetchFullscreenFileDetail(record.id);
+  const fullscreenModalOpen = Boolean(activeFileId);
 
-      // Fetch PDF URL
-      setPdfUrlLoading(true);
-      try {
-        const url = await getFilePdfUrl(record.id);
-        setPdfUrl(url);
-      } catch (error) {
-        console.error("Error fetching PDF URL:", error);
-        setPdfUrl(null);
-      } finally {
-        setPdfUrlLoading(false);
-      }
-
-      // Fetch comments for this file
-      try {
-        const commentsResponse = await apiClient.getFileComments(record.id);
-        if (commentsResponse.success && commentsResponse.data?.comments) {
-          setFullscreenComments(commentsResponse.data.comments);
-        }
-      } catch (err) {
-        console.error("Failed to load comments:", err);
-        setFullscreenComments([]);
-      }
-    }
+  const handleOpenFullscreen = (record: JobFile) => {
+    onActiveFileIdChange?.(record.id);
   };
 
   const handleCloseFullscreen = () => {
-    setFullscreenModalVisible(false);
-    setFullscreenFileIndex(0);
-    setFullscreenFileDetail(null);
-    setPdfUrl(null);
-    setFullscreenComments([]);
+    onActiveFileIdChange?.(null);
   };
 
   // Handle adding comment in fullscreen modal
@@ -512,51 +424,15 @@ const FileTable: React.FC<FileTableProps> = ({
     }
   };
 
-  const handlePreviousFile = async () => {
+  const handlePreviousFile = () => {
     if (fullscreenFileIndex > 0) {
-      const newIndex = fullscreenFileIndex - 1;
-      setFullscreenFileIndex(newIndex);
-
-      // Fetch PDF URL for the new file
-      const newFile = data[newIndex];
-      if (newFile) {
-        setFullscreenFileDetail(newFile);
-        void fetchFullscreenFileDetail(newFile.id);
-        setPdfUrlLoading(true);
-        try {
-          const url = await getFilePdfUrl(newFile.id);
-          setPdfUrl(url);
-        } catch (error) {
-          console.error("Error fetching PDF URL:", error);
-          setPdfUrl(null);
-        } finally {
-          setPdfUrlLoading(false);
-        }
-      }
+      onActiveFileIdChange?.(data[fullscreenFileIndex - 1].id);
     }
   };
 
-  const handleNextFile = async () => {
+  const handleNextFile = () => {
     if (fullscreenFileIndex < data.length - 1) {
-      const newIndex = fullscreenFileIndex + 1;
-      setFullscreenFileIndex(newIndex);
-
-      // Fetch PDF URL for the new file
-      const newFile = data[newIndex];
-      if (newFile) {
-        setFullscreenFileDetail(newFile);
-        void fetchFullscreenFileDetail(newFile.id);
-        setPdfUrlLoading(true);
-        try {
-          const url = await getFilePdfUrl(newFile.id);
-          setPdfUrl(url);
-        } catch (error) {
-          console.error("Error fetching PDF URL:", error);
-          setPdfUrl(null);
-        } finally {
-          setPdfUrlLoading(false);
-        }
-      }
+      onActiveFileIdChange?.(data[fullscreenFileIndex + 1].id);
     }
   };
 
@@ -992,58 +868,132 @@ const FileTable: React.FC<FileTableProps> = ({
     refreshTrigger,
   ]);
 
-  // Fetch PDF URL when file index changes in fullscreen modal
+  // Keep viewer file row in sync with table refreshes without reloading PDF
   useEffect(() => {
-    if (!fullscreenModalVisible || !currentFullscreenFile) return;
+    if (!activeFileId) return;
+    const indexInTable = data.findIndex((f) => f.id === activeFileId);
+    if (indexInTable < 0) return;
 
-    setPdfUrlLoading(true);
-    getFilePdfUrl(currentFullscreenFile.id)
-      .then((url) => {
-        setPdfUrl(url);
-      })
-      .catch((error) => {
+    setFullscreenFileIndex(indexInTable);
+    setFullscreenFileDetail((prev) => {
+      const row = data[indexInTable];
+      if (prev?.id === activeFileId) {
+        return { ...prev, ...row };
+      }
+      return row;
+    });
+  }, [activeFileId, data]);
+
+  // Load viewer assets only when the opened file id changes (not on table poll)
+  useEffect(() => {
+    if (!activeFileId) {
+      viewerLoadedFileIdRef.current = null;
+      setFullscreenFileIndex(0);
+      setFullscreenFileDetail(null);
+      setPdfUrl(null);
+      setFullscreenComments([]);
+      return;
+    }
+
+    if (viewerLoadedFileIdRef.current === activeFileId) {
+      return;
+    }
+    viewerLoadedFileIdRef.current = activeFileId;
+
+    let cancelled = false;
+
+    const openFile = async () => {
+      const indexInTable = data.findIndex((f) => f.id === activeFileId);
+      let record: JobFile | undefined =
+        indexInTable >= 0 ? data[indexInTable] : undefined;
+
+      if (!record) {
+        try {
+          const response = await apiClient.getFileResult(activeFileId);
+          if (response.status === "success") {
+            const fileData =
+              (response as { file?: JobFile }).file ||
+              (response.data as { file?: JobFile })?.file ||
+              (response.data as JobFile | undefined);
+            if (
+              fileData &&
+              typeof fileData === "object" &&
+              "id" in fileData
+            ) {
+              record = fileData;
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load file for viewer:", err);
+        }
+      }
+
+      if (cancelled || !record) return;
+
+      setFullscreenFileIndex(indexInTable >= 0 ? indexInTable : 0);
+      setFullscreenFileDetail(record);
+      void fetchFullscreenFileDetail(record.id);
+
+      setPdfUrlLoading(true);
+      try {
+        const url = await getFilePdfUrl(record.id);
+        if (!cancelled) setPdfUrl(url);
+      } catch (error) {
         console.error("Error fetching PDF URL:", error);
-        setPdfUrl(null);
-      })
-      .finally(() => {
-        setPdfUrlLoading(false);
-      });
+        if (!cancelled) setPdfUrl(null);
+      } finally {
+        if (!cancelled) setPdfUrlLoading(false);
+      }
 
-    // Fetch comments when file changes
-    apiClient
-      .getFileComments(currentFullscreenFile.id)
-      .then((commentsResponse) => {
-        if (commentsResponse.success && commentsResponse.data?.comments) {
+      try {
+        const commentsResponse = await apiClient.getFileComments(record.id);
+        if (
+          !cancelled &&
+          commentsResponse.success &&
+          commentsResponse.data?.comments
+        ) {
           setFullscreenComments(commentsResponse.data.comments);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("Failed to load comments:", err);
-        setFullscreenComments([]);
-      });
-  }, [fullscreenModalVisible, fullscreenFileIndex, currentFullscreenFile?.id]);
+        if (!cancelled) setFullscreenComments([]);
+      }
+    };
+
+    void openFile();
+    return () => {
+      cancelled = true;
+      if (viewerLoadedFileIdRef.current === activeFileId) {
+        viewerLoadedFileIdRef.current = null;
+      }
+    };
+  }, [activeFileId]);
 
   // Keyboard navigation for fullscreen modal
   useEffect(() => {
-    if (!fullscreenModalVisible) return;
+    if (!fullscreenModalOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowLeft" && fullscreenFileIndex > 0) {
-        setFullscreenFileIndex((prev) => Math.max(0, prev - 1));
+        onActiveFileIdChange?.(data[fullscreenFileIndex - 1].id);
       } else if (
         e.key === "ArrowRight" &&
         fullscreenFileIndex < data.length - 1
       ) {
-        setFullscreenFileIndex((prev) => Math.min(data.length - 1, prev + 1));
+        onActiveFileIdChange?.(data[fullscreenFileIndex + 1].id);
       } else if (e.key === "Escape") {
-        setFullscreenModalVisible(false);
-        setFullscreenFileIndex(0);
+        onActiveFileIdChange?.(null);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [fullscreenModalVisible, fullscreenFileIndex, data.length]);
+  }, [
+    fullscreenModalOpen,
+    fullscreenFileIndex,
+    data,
+    onActiveFileIdChange,
+  ]);
 
   // Refresh data when onDataUpdate changes
   useEffect(() => {
@@ -1342,20 +1292,7 @@ const FileTable: React.FC<FileTableProps> = ({
         >
           {record.processing_status === "completed" && record.result && (
             <>
-              <Tooltip title="Open in new tab">
-                <ExportOutlined
-                  style={{
-                    cursor: "pointer",
-                    color: "#1890ff",
-                    flexShrink: 0,
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(`/files/${id}`, "_blank");
-                  }}
-                />
-              </Tooltip>
-              <Tooltip title="Fullscreen view">
+              <Tooltip title="View results">
                 <FullscreenOutlined
                   style={{
                     cursor: "pointer",
@@ -1861,14 +1798,7 @@ const FileTable: React.FC<FileTableProps> = ({
           menuItems.push({
             key: "show",
             label: (
-              <a
-                onClick={() => {
-                  onShowResults(record.id);
-                  handleOpenDrawer(record);
-                }}
-              >
-                Show Results
-              </a>
+              <a onClick={() => handleOpenFullscreen(record)}>Show Results</a>
             ),
           });
 
@@ -2614,39 +2544,12 @@ const FileTable: React.FC<FileTableProps> = ({
         </div>
       </Modal>
 
-      {/* File Results Drawer */}
-      <FileResultsDrawer
-        file={selectedFile}
-        open={drawerVisible}
-        onClose={handleCloseDrawer}
-        onOpenFileDetails={handleOpenFileDetails}
-        onUpdateReviewStatus={handleUpdateReviewStatus}
-        onVerifyFile={handleVerifyFile}
-        onReviewAndVerifyFile={handleReviewAndVerifyFile}
-        onReprocessFile={handleSingleFileReprocess}
-        onUpdateResults={async (fileId, updatedData) => {
-          await apiClient.updateFileResults(fileId, updatedData);
-          setSelectedFile((prev) =>
-            prev ? { ...prev, result: updatedData } : null
-          );
-        }}
-        onDataUpdate={onDataUpdate}
-        reviewingFileId={reviewingFileId}
-        verifyingFileId={verifyingFileId}
-        reprocessingFileId={reprocessingFileId}
-        isAdmin={isAdmin}
-        comments={drawerComments}
-        onAddComment={handleDrawerAddComment}
-        jobSchema={jobSchema}
-      />
-
       {/* Fullscreen Modal */}
       <FullscreenModal
         file={currentFullscreenFile}
-        open={fullscreenModalVisible}
+        open={fullscreenModalOpen}
         onClose={handleCloseFullscreen}
         onOpenFileDetails={handleOpenFileDetails}
-        onOpenFilePage={(fileId) => router.push(`/files/${fileId}`)}
         onPreviousFile={handlePreviousFile}
         onNextFile={handleNextFile}
         detailLoading={fullscreenDetailLoading}
