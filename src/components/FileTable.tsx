@@ -53,6 +53,10 @@ import {
   getViolationSeverityIcon,
   checkFileConstraints,
   checkFormationContinuity,
+  extractPermitFromFilename,
+  extractPermitFromData,
+  MGS_MICHIGAN_WELL_JOB_ID,
+  getConstraintPresentation,
 } from "@/lib/constraintUtils";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import ConstraintList from "@/components/ui/ConstraintList";
@@ -252,6 +256,9 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // AJAX loading state
   const [data, setData] = useState<JobFile[]>([]);
+  const [mgsCountyByPermit, setMgsCountyByPermit] = useState<
+    Map<string, string>
+  >(new Map());
 
   const [loading, setLoading] = useState(false);
   const [tableParams, setTableParams] = useState<TableParams>({
@@ -293,6 +300,55 @@ const FileTable: React.FC<FileTableProps> = ({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (jobId !== MGS_MICHIGAN_WELL_JOB_ID || data.length === 0) {
+      setMgsCountyByPermit(new Map());
+      return;
+    }
+
+    const permits = [
+      ...new Set(
+        data
+          .map((file) => {
+            if (file.processing_status !== "completed" || !file.result) {
+              return null;
+            }
+            return (
+              extractPermitFromData(file.result) ||
+              extractPermitFromFilename(file.filename)
+            );
+          })
+          .filter((p): p is string => Boolean(p))
+      ),
+    ];
+
+    if (permits.length === 0) {
+      setMgsCountyByPermit(new Map());
+      return;
+    }
+
+    let cancelled = false;
+
+    apiClient
+      .getMgsCountiesByPermits(permits)
+      .then((response) => {
+        if (cancelled || response.status !== "success" || !response.data) {
+          return;
+        }
+        const counties = response.data.counties || {};
+        setMgsCountyByPermit(new Map(Object.entries(counties)));
+      })
+      .catch((error) => {
+        console.warn("Failed to load MGS county map:", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, data, refreshTrigger]);
+
+  const constraintOptions = { mgsCountyByPermit };
 
   // Handle table change
   const handleTableChange: TableProps<JobFile>["onChange"] = (
@@ -1642,8 +1698,8 @@ const FileTable: React.FC<FileTableProps> = ({
       key: "constraints",
       width: 120,
       sorter: (a: JobFile, b: JobFile) => {
-        const aConstraints = checkFileConstraints(a);
-        const bConstraints = checkFileConstraints(b);
+        const aConstraints = checkFileConstraints(a, constraintOptions);
+        const bConstraints = checkFileConstraints(b, constraintOptions);
         const aFailedCount = aConstraints.filter((c) => !c.passed).length;
         const bFailedCount = bConstraints.filter((c) => !c.passed).length;
         return aFailedCount - bFailedCount;
@@ -1652,11 +1708,14 @@ const FileTable: React.FC<FileTableProps> = ({
         // Use checkFileConstraints to get all constraints including new ones
         if (
           record.processing_status === "completed" &&
-          record.job_id === "5667fe82-63e1-47fa-a640-b182b5c5d034" &&
+          record.job_id === MGS_MICHIGAN_WELL_JOB_ID &&
           record.result
         ) {
-          const constraints = checkFileConstraints(record);
+          const constraints = checkFileConstraints(record, constraintOptions);
           const failedConstraints = constraints.filter((c) => !c.passed);
+          const countyFailed = failedConstraints.find(
+            (c) => c.emphasis === "county"
+          );
 
           // Show checkmark if all constraints pass
           if (failedConstraints.length === 0 && constraints.length > 0) {
@@ -1684,9 +1743,16 @@ const FileTable: React.FC<FileTableProps> = ({
               (c) => c.severity === "warning"
             );
 
-            // Determine the primary severity to display
             const primarySeverity =
-              errorConstraints.length > 0 ? "error" : "warning";
+              countyFailed
+                ? "critical"
+                : errorConstraints.length > 0
+                  ? "error"
+                  : "warning";
+
+            const countyPresentation = countyFailed
+              ? getConstraintPresentation(countyFailed)
+              : null;
 
             return (
               <Tooltip
@@ -1700,24 +1766,58 @@ const FileTable: React.FC<FileTableProps> = ({
                     >
                       Failed Constraints ({failedConstraints.length}):
                     </div>
-                    {failedConstraints.map((check, index) => (
-                      <div key={index} style={{ marginBottom: "4px" }}>
-                        <div style={{ fontWeight: "bold" }}>{check.name}</div>
-                        <div style={{ fontSize: "12px", color: "#ccc" }}>
-                          {check.message}
+                    {failedConstraints.map((check, index) => {
+                      const presentation = getConstraintPresentation(check);
+                      return (
+                        <div key={index} style={{ marginBottom: "4px" }}>
+                          <div
+                            style={{
+                              fontWeight: "bold",
+                              color:
+                                check.emphasis === "county"
+                                  ? presentation.color
+                                  : undefined,
+                            }}
+                          >
+                            {presentation.badgeLetter
+                              ? `[${presentation.badgeLetter}] `
+                              : ""}
+                            {check.name}
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#ccc" }}>
+                            {check.message}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 }
               >
                 <div
-                  className="flex items-center space-x-0.5"
+                  className="flex items-center gap-1"
                   style={{ whiteSpace: "nowrap" }}
                 >
-                  {/* <span style={{ flexShrink: 0, fontSize: "10px" }}>
-                    {getViolationSeverityIcon(primarySeverity)}
-                  </span> */}
+                  {countyFailed && countyPresentation?.badgeLetter && (
+                    <span
+                      title={countyFailed.message}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 18,
+                        height: 18,
+                        borderRadius: 4,
+                        backgroundColor: countyPresentation.color,
+                        color: "#fff",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        flexShrink: 0,
+                        boxShadow: "0 0 0 2px #ede9fe",
+                      }}
+                    >
+                      {countyPresentation.badgeLetter}
+                    </span>
+                  )}
                   <Badge
                     count={failedConstraints.length}
                     style={{
@@ -2591,6 +2691,7 @@ const FileTable: React.FC<FileTableProps> = ({
         file={selectedFileForDetails}
         open={fileDetailsDrawerVisible}
         onClose={handleCloseFileDetails}
+        constraintOptions={constraintOptions}
       />
     </div>
   );

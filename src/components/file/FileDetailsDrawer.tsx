@@ -21,6 +21,7 @@ import {
 import { JobFile } from "@/lib/api";
 import moment from "moment";
 import ConstraintList from "@/components/ui/ConstraintList";
+import type { CheckFileConstraintsOptions } from "@/lib/constraintUtils";
 import { Loader } from "lucide-react";
 
 const { Text } = Typography;
@@ -29,6 +30,7 @@ interface FileDetailsDrawerProps {
   file: JobFile | null;
   open: boolean;
   onClose: () => void;
+  constraintOptions?: CheckFileConstraintsOptions;
 }
 
 const computePageCount = (file?: JobFile | null): number | null => {
@@ -113,6 +115,7 @@ const FileDetailsDrawer: React.FC<FileDetailsDrawerProps> = ({
   file,
   open,
   onClose,
+  constraintOptions,
 }) => {
   const selectedFilePageCount = computePageCount(file);
 
@@ -823,7 +826,7 @@ const FileDetailsDrawer: React.FC<FileDetailsDrawerProps> = ({
           })()}
 
           {/* Constraints */}
-          <ConstraintList file={file} />
+          <ConstraintList file={file} constraintOptions={constraintOptions} />
         </div>
       )}
     </Drawer>

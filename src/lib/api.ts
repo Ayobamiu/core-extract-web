@@ -1304,6 +1304,15 @@ class ApiClient {
         return this.request(`/previews/file/${fileId}/schema`);
     }
 
+    async getMgsCountiesByPermits(
+        permitNumbers: string[]
+    ): Promise<ApiResponse<{ counties: Record<string, string> }>> {
+        return this.request('/mgs/counties-by-permit', {
+            method: 'POST',
+            body: JSON.stringify({ permitNumbers }),
+        });
+    }
+
     async enrichFileWithMGSData(fileId: string): Promise<ApiResponse<{ fileId: string; mgsData: any; message: string }>> {
         return this.request(`/previews/file/${fileId}/enrich-with-mgs`, {
             method: 'POST',
