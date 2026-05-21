@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Modal } from "antd";
+import { Modal, Spin } from "antd";
 import { JobFile } from "@/lib/api";
 import FileViewerLayout from "./FileViewerLayout";
 
@@ -116,6 +116,11 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
       closeIcon={null}
       maskClosable={false}
     >
+      {!file ? (
+        <div className="flex h-full items-center justify-center bg-gray-50">
+          <Spin size="large" />
+        </div>
+      ) : (
       <FileViewerLayout
         className="h-full"
         file={file}
@@ -145,6 +150,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
         reprocessingFileId={reprocessingFileId}
         isAdmin={isAdmin}
       />
+      )}
     </Modal>
   );
 };

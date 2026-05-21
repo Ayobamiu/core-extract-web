@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import type { GetProp, TableProps } from "antd";
 import {
   Table,
@@ -371,28 +371,43 @@ const FileTable: React.FC<FileTableProps> = ({
     setSelectedFileForDetails(null);
   };
 
-  const fetchFullscreenFileDetail = async (fileId: string) => {
-    setFullscreenDetailLoading(true);
+  const parseFileResultResponse = (
+    response: Awaited<ReturnType<typeof apiClient.getFileResult>>,
+  ): JobFile | undefined => {
+    if (response.status !== "success") return undefined;
+    const fileData =
+      (response as { file?: JobFile }).file ||
+      (response.data as { file?: JobFile })?.file ||
+      (response.data as JobFile | undefined);
+    if (fileData && typeof fileData === "object" && "id" in fileData) {
+      return fileData;
+    }
+    return undefined;
+  };
+
+  /** Background enrich (routing sections, etc.). Skips table remap to avoid re-rendering the grid. */
+  const enrichFullscreenFileDetail = async (
+    fileId: string,
+    { showLoading = false }: { showLoading?: boolean } = {},
+  ) => {
+    if (showLoading) setFullscreenDetailLoading(true);
     try {
       const response = await apiClient.getFileResult(fileId);
-      if (response.status === "success") {
-        const fileData =
-          (response as { file?: JobFile }).file ||
-          (response.data as { file?: JobFile })?.file ||
-          (response.data as JobFile | undefined);
-        if (fileData && typeof fileData === "object" && "id" in fileData) {
-          setFullscreenFileDetail(fileData);
-          setData((prev) =>
-            prev.map((f) => (f.id === fileData.id ? { ...f, ...fileData } : f)),
-          );
-        }
+      const fileData = parseFileResultResponse(response);
+      if (fileData) {
+        setFullscreenFileDetail((prev) =>
+          prev?.id === fileId ? { ...prev, ...fileData } : fileData,
+        );
       }
     } catch (err) {
       console.error("Failed to load file details:", err);
     } finally {
-      setFullscreenDetailLoading(false);
+      if (showLoading) setFullscreenDetailLoading(false);
     }
   };
+
+  const tableRowCanShowViewer = (record: JobFile) =>
+    record.processing_status === "completed" && record.result != null;
 
   const fullscreenModalOpen = Boolean(activeFileId);
 
@@ -436,9 +451,15 @@ const FileTable: React.FC<FileTableProps> = ({
     }
   };
 
-  // Get current file in fullscreen modal (enriched with routing / metadata when loaded)
-  const currentFullscreenFile =
-    fullscreenFileDetail ?? data[fullscreenFileIndex] ?? null;
+  const currentFullscreenFile = useMemo(() => {
+    if (!activeFileId) return null;
+    if (fullscreenFileDetail?.id === activeFileId) {
+      return fullscreenFileDetail;
+    }
+    const fromTable = data.find((f) => f.id === activeFileId);
+    if (fromTable) return fromTable;
+    return fullscreenFileDetail ?? data[fullscreenFileIndex] ?? null;
+  }, [activeFileId, fullscreenFileDetail, data, fullscreenFileIndex]);
 
   // Handle file verification
   const handleVerifyFile = async (fileId: string, adminVerified: boolean) => {
@@ -910,19 +931,7 @@ const FileTable: React.FC<FileTableProps> = ({
       if (!record) {
         try {
           const response = await apiClient.getFileResult(activeFileId);
-          if (response.status === "success") {
-            const fileData =
-              (response as { file?: JobFile }).file ||
-              (response.data as { file?: JobFile })?.file ||
-              (response.data as JobFile | undefined);
-            if (
-              fileData &&
-              typeof fileData === "object" &&
-              "id" in fileData
-            ) {
-              record = fileData;
-            }
-          }
+          record = parseFileResultResponse(response);
         } catch (err) {
           console.error("Failed to load file for viewer:", err);
         }
@@ -932,32 +941,44 @@ const FileTable: React.FC<FileTableProps> = ({
 
       setFullscreenFileIndex(indexInTable >= 0 ? indexInTable : 0);
       setFullscreenFileDetail(record);
-      void fetchFullscreenFileDetail(record.id);
 
-      setPdfUrlLoading(true);
-      try {
-        const url = await getFilePdfUrl(record.id);
-        if (!cancelled) setPdfUrl(url);
-      } catch (error) {
-        console.error("Error fetching PDF URL:", error);
-        if (!cancelled) setPdfUrl(null);
-      } finally {
-        if (!cancelled) setPdfUrlLoading(false);
-      }
+      const fromTable = indexInTable >= 0;
+      const showEnrichLoading = !fromTable || !tableRowCanShowViewer(record);
 
-      try {
-        const commentsResponse = await apiClient.getFileComments(record.id);
-        if (
-          !cancelled &&
-          commentsResponse.success &&
-          commentsResponse.data?.comments
-        ) {
-          setFullscreenComments(commentsResponse.data.comments);
+      const pdfTask = (async () => {
+        setPdfUrlLoading(true);
+        try {
+          const url = await getFilePdfUrl(record.id);
+          if (!cancelled) setPdfUrl(url);
+        } catch (error) {
+          console.error("Error fetching PDF URL:", error);
+          if (!cancelled) setPdfUrl(null);
+        } finally {
+          if (!cancelled) setPdfUrlLoading(false);
         }
-      } catch (err) {
-        console.error("Failed to load comments:", err);
-        if (!cancelled) setFullscreenComments([]);
-      }
+      })();
+
+      const commentsTask = (async () => {
+        try {
+          const commentsResponse = await apiClient.getFileComments(record.id);
+          if (
+            !cancelled &&
+            commentsResponse.success &&
+            commentsResponse.data?.comments
+          ) {
+            setFullscreenComments(commentsResponse.data.comments);
+          }
+        } catch (err) {
+          console.error("Failed to load comments:", err);
+          if (!cancelled) setFullscreenComments([]);
+        }
+      })();
+
+      const enrichTask = enrichFullscreenFileDetail(record.id, {
+        showLoading: showEnrichLoading,
+      });
+
+      await Promise.all([pdfTask, commentsTask, enrichTask]);
     };
 
     void openFile();

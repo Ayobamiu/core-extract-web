@@ -1,6 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+  Suspense,
+  startTransition,
+} from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Drawer, Dropdown, Modal, message } from "antd";
@@ -91,21 +99,37 @@ function JobDetailPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const activeFileId = searchParams.get("file");
+  const fileFromUrl = searchParams.get("file");
+  const [viewerFileId, setViewerFileId] = useState<string | null>(fileFromUrl);
+
+  // Sync from URL on back/forward or initial load with ?file=
+  useEffect(() => {
+    setViewerFileId(fileFromUrl);
+  }, [fileFromUrl]);
 
   const setActiveFileId = useCallback(
     (fileId: string | null) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (fileId) {
-        params.set("file", fileId);
-      } else {
-        params.delete("file");
-      }
-      const qs = params.toString();
-      router.replace(`/jobs/${jobId}${qs ? `?${qs}` : ""}`, { scroll: false });
+      setViewerFileId(fileId);
+      startTransition(() => {
+        const params = new URLSearchParams(searchParams.toString());
+        if (fileId) {
+          params.set("file", fileId);
+        } else {
+          params.delete("file");
+        }
+        const qs = params.toString();
+        router.replace(`/jobs/${jobId}${qs ? `?${qs}` : ""}`, { scroll: false });
+      });
     },
     [jobId, router, searchParams],
   );
+
+  const jobSchema = useMemo(() => {
+    if (!job?.schema_data) return undefined;
+    return typeof job.schema_data === "string"
+      ? JSON.parse(job.schema_data)
+      : job.schema_data;
+  }, [job?.schema_data]);
 
   // Use Job.name as the title
   useEffect(() => {
@@ -588,12 +612,8 @@ function JobDetailPage() {
               {/* Files Table */}
               <FileTable
                 jobId={job.id}
-                jobSchema={
-                  typeof job.schema_data === "string"
-                    ? JSON.parse(job.schema_data)
-                    : job.schema_data
-                }
-                activeFileId={activeFileId}
+                jobSchema={jobSchema}
+                activeFileId={viewerFileId}
                 onActiveFileIdChange={setActiveFileId}
                 onAddToPreview={(fileId) => handleAddToPreview(fileId)}
                 onEditResults={(file) => {
