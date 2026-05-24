@@ -830,7 +830,7 @@ const FileDetailsDrawer: React.FC<FileDetailsDrawerProps> = ({
                 {file.previews.map((p) => (
                   <a
                     key={p.id}
-                    href={`/previews/${p.slug || p.id}`}
+                    href={`/previews/${p.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block text-sm text-blue-600 hover:underline"
