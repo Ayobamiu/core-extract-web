@@ -421,7 +421,8 @@ const FileTable: React.FC<FileTableProps> = ({
   };
 
   const tableRowCanShowViewer = (record: JobFile) =>
-    record.processing_status === "completed" && record.result != null;
+    record.processing_status === "completed" &&
+    ((record as any).has_result ?? record.result != null);
 
   const fullscreenModalOpen = Boolean(activeFileId);
 
@@ -1274,7 +1275,8 @@ const FileTable: React.FC<FileTableProps> = ({
           className="flex items-center space-x-1"
           style={{ whiteSpace: "nowrap", overflow: "hidden" }}
         >
-          {record.processing_status === "completed" && record.result && (
+          {record.processing_status === "completed" &&
+            ((record as any).has_result ?? record.result) && (
             <>
               <Tooltip title="View results">
                 <FullscreenOutlined
@@ -1399,11 +1401,13 @@ const FileTable: React.FC<FileTableProps> = ({
     {
       title: "Previews",
       key: "previews",
-      width: 150,
+      width: 100,
       render: (_: any, record: JobFile) => {
-        const previews = record.previews || [];
+        // Phase 1: use previews_count (skinny) or fall back to full array
+        const count =
+          (record as any).previews_count ?? record.previews?.length ?? 0;
 
-        if (previews.length === 0) {
+        if (count === 0) {
           return (
             <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
               None
@@ -1411,74 +1415,10 @@ const FileTable: React.FC<FileTableProps> = ({
           );
         }
 
-        const visiblePreviews = previews.slice(0, 2);
-        const remainingCount = previews.length - 2;
-
         return (
-          <div
-            className="flex items-center space-x-1"
-            style={{ overflow: "hidden", whiteSpace: "nowrap" }}
-          >
-            {visiblePreviews.map((preview, index) => (
-              <span
-                key={preview.id}
-                className="inline-flex items-center gap-0.5 shrink-0"
-              >
-                <a
-                  href={`/preview/${preview.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: "#1890ff", whiteSpace: "nowrap" }}
-                >
-                  {preview.name}
-                </a>
-                {isAdmin && (
-                  <a
-                    href={`/preview/${preview.id}/analytics`}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Preview monitoring"
-                    className="text-[10px] text-gray-400 hover:text-gray-700 ml-0.5"
-                  >
-                    stats
-                  </a>
-                )}
-                {index < visiblePreviews.length - 1 && ", "}
-              </span>
-            ))}
-            {remainingCount > 0 && (
-              <Popover
-                content={
-                  <div>
-                    {previews.slice(2).map((preview) => (
-                      <div key={preview.id}>
-                        <a
-                          href={`/preview/${preview.id}`}
-                          target="_blank"
-                          style={{ color: "#1890ff" }}
-                        >
-                          {preview.name}
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                }
-                title="More Previews"
-                trigger="hover"
-              >
-                <a
-                  style={{
-                    color: "#1890ff",
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                    flexShrink: 0,
-                  }}
-                >
-                  +{remainingCount}
-                </a>
-              </Popover>
-            )}
-          </div>
+          <Text style={{ whiteSpace: "nowrap", color: "#1890ff" }}>
+            {count} preview{count !== 1 ? "s" : ""}
+          </Text>
         );
       },
     },
@@ -1553,11 +1493,15 @@ const FileTable: React.FC<FileTableProps> = ({
       key: "config",
       width: 150,
       render: (_: any, record: JobFile) => {
-        // Get extraction method from extraction_metadata
+        // Get extraction method — prefer the skinny scalar from Phase 1,
+        // fall back to the full metadata blob for backward compat.
         const extractionMethod =
-          (record.extraction_metadata as any)?.extraction_method || "unknown";
+          (record as any).extraction_method ||
+          (record.extraction_metadata as any)?.extraction_method ||
+          "unknown";
 
-        // Get model from processing_metadata
+        // Model is no longer in the list payload (Phase 1).
+        // Show "unknown" until the detail view is opened.
         const model = (record.processing_metadata as any)?.model || "unknown";
 
         // If both are unknown, show dash
@@ -1629,7 +1573,9 @@ const FileTable: React.FC<FileTableProps> = ({
         return aFailedCount - bFailedCount;
       },
       render: (_: any, record: JobFile) => {
-        // Use checkFileConstraints to get all constraints including new ones
+        // Use checkFileConstraints to get all constraints including new ones.
+        // Phase 1: result is no longer in list payload; constraints require it.
+        // Phase 3 will replace this with server-computed flags.
         if (
           record.processing_status === "completed" &&
           record.job_id === MGS_MICHIGAN_WELL_JOB_ID &&
@@ -1779,8 +1725,11 @@ const FileTable: React.FC<FileTableProps> = ({
           });
         }
 
-        // Show other actions only for completed files
-        if (record.processing_status === "completed" && record.result) {
+        // Show other actions only for completed files with results
+        if (
+          record.processing_status === "completed" &&
+          ((record as any).has_result ?? record.result)
+        ) {
           menuItems.push({
             key: "show",
             label: (
@@ -1804,7 +1753,10 @@ const FileTable: React.FC<FileTableProps> = ({
           // }
 
           // Mark as Reviewed - for reviewers (non-admins) and admins
-          if (record.processing_status === "completed" && record.result) {
+          if (
+            record.processing_status === "completed" &&
+            ((record as any).has_result ?? record.result)
+          ) {
             const isReviewed =
               record.review_status === "reviewed" ||
               record.review_status === "approved";

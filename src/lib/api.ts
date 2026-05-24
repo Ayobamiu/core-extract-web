@@ -171,6 +171,11 @@ export interface JobFile {
         };
         [key: string]: any;
     };
+    // Phase 1: skinny list fields (replace heavy columns in list view)
+    has_result?: boolean;
+    extraction_method?: string;
+    flags?: any[];
+    previews_count?: number;
     previews?: Array<{
         id: string;
         name: string;
