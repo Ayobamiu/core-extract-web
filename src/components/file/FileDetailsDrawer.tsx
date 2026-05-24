@@ -21,6 +21,7 @@ import {
 import { JobFile } from "@/lib/api";
 import moment from "moment";
 import ConstraintList from "@/components/ui/ConstraintList";
+import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import { Loader } from "lucide-react";
 
 const { Text } = Typography;
@@ -843,6 +844,7 @@ const FileDetailsDrawer: React.FC<FileDetailsDrawerProps> = ({
           )}
 
           {/* Constraints */}
+          <ConstraintErrorIcon file={file} />
           <ConstraintList file={file} />
         </div>
       )}

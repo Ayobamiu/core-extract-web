@@ -47,7 +47,7 @@ const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
 
   return (
     <Tooltip
-      open={defaultOpen}
+      defaultOpen={defaultOpen}
       title={
         <div>
           <div
