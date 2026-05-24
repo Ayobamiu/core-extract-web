@@ -5,48 +5,40 @@ import { Tooltip, Badge } from "antd";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import { JobFile } from "@/lib/api";
 import {
-  checkFileConstraints,
   getViolationSeverityColor,
   getConstraintPresentation,
-  CheckFileConstraintsOptions,
 } from "@/lib/constraintUtils";
 
 interface ConstraintErrorIconProps {
   file: JobFile | null;
   className?: string;
   defaultOpen?: boolean;
-  constraintOptions?: CheckFileConstraintsOptions;
 }
 
 /**
- * Reusable component that displays a constraint error icon with badge count
- * Shows failed constraints count and details in a tooltip
+ * Reusable component that displays a constraint error icon with badge count.
+ * Phase 3: reads flags directly from file record (server-computed).
  */
 const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
   file,
   className = "",
   defaultOpen = false,
-  constraintOptions,
 }) => {
-  if (
-    !file ||
-    file.processing_status !== "completed" ||
-    !file.result
-  ) {
+  if (!file) {
     return null;
   }
 
-  const constraints = checkFileConstraints(file, constraintOptions);
-  const failedConstraints = constraints.filter((c) => !c.passed);
+  const flags = file.flags || [];
+  const failedFlags = flags.filter((f) => !f.passed);
 
-  if (failedConstraints.length === 0) {
+  if (failedFlags.length === 0) {
     return null;
   }
 
-  const countyFailed = failedConstraints.find((c) => c.emphasis === "county");
+  const countyFailed = failedFlags.find((f) => f.emphasis === "county");
   const primarySeverity = countyFailed
     ? "critical"
-    : failedConstraints.some((c) => c.severity === "error")
+    : failedFlags.some((f) => f.severity === "error")
       ? "error"
       : "warning";
   const countyPresentation = countyFailed
@@ -64,17 +56,17 @@ const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
               marginBottom: "8px",
             }}
           >
-            Failed Constraints ({failedConstraints.length}):
+            Failed Constraints ({failedFlags.length}):
           </div>
-          {failedConstraints.map((check, index) => {
-            const presentation = getConstraintPresentation(check);
+          {failedFlags.map((flag, index) => {
+            const presentation = getConstraintPresentation(flag);
             return (
               <div key={index} style={{ marginBottom: "4px" }}>
                 <div
                   style={{
                     fontWeight: "bold",
                     color:
-                      check.emphasis === "county"
+                      flag.emphasis === "county"
                         ? presentation.color
                         : undefined,
                   }}
@@ -82,10 +74,10 @@ const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
                   {presentation.badgeLetter
                     ? `[${presentation.badgeLetter}] `
                     : ""}
-                  {check.name}
+                  {flag.name}
                 </div>
                 <div style={{ fontSize: "12px", color: "#ccc" }}>
-                  {check.message}
+                  {flag.message}
                 </div>
               </div>
             );
@@ -120,7 +112,7 @@ const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
           }}
         />
         <Badge
-          count={failedConstraints.length}
+          count={failedFlags.length}
           style={{
             backgroundColor: getViolationSeverityColor(primarySeverity),
             minWidth: "18px",

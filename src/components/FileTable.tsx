@@ -46,18 +46,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { canPerformAdminActions } from "@/utils/roleUtils";
 import moment from "moment";
 import {
-  checkPermitNumberMatch,
   getViolationSeverityColor,
-  getViolationSeverityIcon,
-  checkFileConstraints,
-  checkFormationContinuity,
-  extractPermitFromFilename,
-  extractPermitFromData,
-  MGS_MICHIGAN_WELL_JOB_ID,
   getConstraintPresentation,
 } from "@/lib/constraintUtils";
-import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
-import ConstraintList from "@/components/ui/ConstraintList";
 import FileDetailsDrawer from "@/components/file/FileDetailsDrawer";
 import FullscreenModal from "@/components/file/FullscreenModal";
 import styles from "./FileTable.module.css";
@@ -239,9 +230,6 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // AJAX loading state
   const [data, setData] = useState<JobFile[]>([]);
-  const [mgsCountyByPermit, setMgsCountyByPermit] = useState<
-    Map<string, string>
-  >(new Map());
 
   const [loading, setLoading] = useState(false);
   const [tableParams, setTableParams] = useState<TableParams>({
@@ -295,57 +283,7 @@ const FileTable: React.FC<FileTableProps> = ({
     }
   };
 
-  useEffect(() => {
-    if (jobId !== MGS_MICHIGAN_WELL_JOB_ID || data.length === 0) {
-      setMgsCountyByPermit(new Map());
-      return;
-    }
-
-    const permits = [
-      ...new Set(
-        data
-          .map((file) => {
-            if (file.processing_status !== "completed" || !file.result) {
-              return null;
-            }
-            return (
-              extractPermitFromData(file.result) ||
-              extractPermitFromFilename(file.filename)
-            );
-          })
-          .filter((p): p is string => Boolean(p)),
-      ),
-    ];
-
-    if (permits.length === 0) {
-      setMgsCountyByPermit(new Map());
-      return;
-    }
-
-    let cancelled = false;
-
-    apiClient
-      .getMgsCountiesByPermits(permits)
-      .then((response) => {
-        if (cancelled || response.status !== "success" || !response.data) {
-          return;
-        }
-        const counties = response.data.counties || {};
-        setMgsCountyByPermit(new Map(Object.entries(counties)));
-      })
-      .catch((error) => {
-        console.warn("Failed to load MGS county map:", error);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [jobId, data, refreshTrigger]);
-
-  const constraintOptions = useMemo(
-    () => ({ mgsCountyByPermit }),
-    [mgsCountyByPermit],
-  );
+  // Phase 3: mgsCountyByPermit fetch removed — flags now come from server
 
   // Handle table change
   const handleTableChange: TableProps<JobFile>["onChange"] = (
@@ -1401,13 +1339,10 @@ const FileTable: React.FC<FileTableProps> = ({
     {
       title: "Previews",
       key: "previews",
-      width: 100,
+      width: 120,
       render: (_: any, record: JobFile) => {
-        // Phase 1: use previews_count (skinny) or fall back to full array
-        const count =
-          (record as any).previews_count ?? record.previews?.length ?? 0;
-
-        if (count === 0) {
+        const previews = record.previews || [];
+        if (previews.length === 0) {
           return (
             <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
               None
@@ -1416,9 +1351,32 @@ const FileTable: React.FC<FileTableProps> = ({
         }
 
         return (
-          <Text style={{ whiteSpace: "nowrap", color: "#1890ff" }}>
-            {count} preview{count !== 1 ? "s" : ""}
-          </Text>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {previews.slice(0, 2).map((p) => (
+              <a
+                key={p.id}
+                href={`/previews/${p.slug || p.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: 12,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  maxWidth: 110,
+                  display: "block",
+                }}
+                title={p.name}
+              >
+                {p.name}
+              </a>
+            ))}
+            {previews.length > 2 && (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                +{previews.length - 2} more
+              </Text>
+            )}
+          </div>
         );
       },
     },
@@ -1566,145 +1524,117 @@ const FileTable: React.FC<FileTableProps> = ({
       key: "constraints",
       width: 120,
       sorter: (a: JobFile, b: JobFile) => {
-        const aConstraints = checkFileConstraints(a, constraintOptions);
-        const bConstraints = checkFileConstraints(b, constraintOptions);
-        const aFailedCount = aConstraints.filter((c) => !c.passed).length;
-        const bFailedCount = bConstraints.filter((c) => !c.passed).length;
-        return aFailedCount - bFailedCount;
+        const aFailed = (a.flags || []).filter((f) => !f.passed).length;
+        const bFailed = (b.flags || []).filter((f) => !f.passed).length;
+        return aFailed - bFailed;
       },
       render: (_: any, record: JobFile) => {
-        // Use checkFileConstraints to get all constraints including new ones.
-        // Phase 1: result is no longer in list payload; constraints require it.
-        // Phase 3 will replace this with server-computed flags.
-        if (
-          record.processing_status === "completed" &&
-          record.job_id === MGS_MICHIGAN_WELL_JOB_ID &&
-          record.result
-        ) {
-          const constraints = checkFileConstraints(record, constraintOptions);
-          const failedConstraints = constraints.filter((c) => !c.passed);
-          const countyFailed = failedConstraints.find(
-            (c) => c.emphasis === "county",
-          );
+        const flags = record.flags || [];
+        if (flags.length === 0) return null;
 
-          // Show checkmark if all constraints pass
-          if (failedConstraints.length === 0 && constraints.length > 0) {
-            return (
-              <Tooltip title="All constraints met">
-                <div
-                  className="flex items-center justify-center"
-                  style={{ whiteSpace: "nowrap" }}
-                >
-                  <CheckCircleOutlined
-                    style={{ color: "#52c41a", flexShrink: 0 }}
-                  />
-                </div>
-              </Tooltip>
-            );
-          }
+        const failedFlags = flags.filter((f) => !f.passed);
+        const countyFailed = failedFlags.find((f) => f.emphasis === "county");
 
-          // Show failed constraints
-          if (failedConstraints.length > 0) {
-            // Group constraints by severity for better display
-            const errorConstraints = failedConstraints.filter(
-              (c) => c.severity === "error",
-            );
-            const warningConstraints = failedConstraints.filter(
-              (c) => c.severity === "warning",
-            );
-
-            const primarySeverity = countyFailed
-              ? "critical"
-              : errorConstraints.length > 0
-                ? "error"
-                : "warning";
-
-            const countyPresentation = countyFailed
-              ? getConstraintPresentation(countyFailed)
-              : null;
-
-            return (
-              <Tooltip
-                title={
-                  <div>
-                    <div
-                      style={{
-                        fontWeight: "bold",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      Failed Constraints ({failedConstraints.length}):
-                    </div>
-                    {failedConstraints.map((check, index) => {
-                      const presentation = getConstraintPresentation(check);
-                      return (
-                        <div key={index} style={{ marginBottom: "4px" }}>
-                          <div
-                            style={{
-                              fontWeight: "bold",
-                              color:
-                                check.emphasis === "county"
-                                  ? presentation.color
-                                  : undefined,
-                            }}
-                          >
-                            {presentation.badgeLetter
-                              ? `[${presentation.badgeLetter}] `
-                              : ""}
-                            {check.name}
-                          </div>
-                          <div style={{ fontSize: "12px", color: "#ccc" }}>
-                            {check.message}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                }
+        // All flags pass
+        if (failedFlags.length === 0) {
+          return (
+            <Tooltip title="All constraints met">
+              <div
+                className="flex items-center justify-center"
+                style={{ whiteSpace: "nowrap" }}
               >
-                <div
-                  className="flex items-center gap-1"
-                  style={{ whiteSpace: "nowrap" }}
-                >
-                  {countyFailed && countyPresentation?.badgeLetter && (
-                    <span
-                      title={countyFailed.message}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 18,
-                        height: 18,
-                        borderRadius: 4,
-                        backgroundColor: countyPresentation.color,
-                        color: "#fff",
-                        fontSize: 11,
-                        fontWeight: 800,
-                        flexShrink: 0,
-                        boxShadow: "0 0 0 2px #ede9fe",
-                      }}
-                    >
-                      {countyPresentation.badgeLetter}
-                    </span>
-                  )}
-                  <Badge
-                    count={failedConstraints.length}
-                    style={{
-                      backgroundColor:
-                        getViolationSeverityColor(primarySeverity),
-                      minWidth: "14px",
-                      height: "14px",
-                      lineHeight: "14px",
-                      flexShrink: 0,
-                    }}
-                  />
-                </div>
-              </Tooltip>
-            );
-          }
+                <CheckCircleOutlined
+                  style={{ color: "#52c41a", flexShrink: 0 }}
+                />
+              </div>
+            </Tooltip>
+          );
         }
 
-        return null;
+        // Determine primary severity
+        const hasError = failedFlags.some((f) => f.severity === "error");
+        const primarySeverity = countyFailed
+          ? "critical"
+          : hasError
+            ? "error"
+            : "warning";
+
+        const countyPresentation = countyFailed
+          ? getConstraintPresentation(countyFailed)
+          : null;
+
+        return (
+          <Tooltip
+            title={
+              <div>
+                <div style={{ fontWeight: "bold", marginBottom: "8px" }}>
+                  Failed Constraints ({failedFlags.length}):
+                </div>
+                {failedFlags.map((flag, index) => {
+                  const presentation = getConstraintPresentation(flag);
+                  return (
+                    <div key={index} style={{ marginBottom: "4px" }}>
+                      <div
+                        style={{
+                          fontWeight: "bold",
+                          color:
+                            flag.emphasis === "county"
+                              ? presentation.color
+                              : undefined,
+                        }}
+                      >
+                        {presentation.badgeLetter
+                          ? `[${presentation.badgeLetter}] `
+                          : ""}
+                        {flag.name}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#ccc" }}>
+                        {flag.message}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            }
+          >
+            <div
+              className="flex items-center gap-1"
+              style={{ whiteSpace: "nowrap" }}
+            >
+              {countyFailed && countyPresentation?.badgeLetter && (
+                <span
+                  title={countyFailed.message}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 18,
+                    height: 18,
+                    borderRadius: 4,
+                    backgroundColor: countyPresentation.color,
+                    color: "#fff",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    flexShrink: 0,
+                    boxShadow: "0 0 0 2px #ede9fe",
+                  }}
+                >
+                  {countyPresentation.badgeLetter}
+                </span>
+              )}
+              <Badge
+                count={failedFlags.length}
+                style={{
+                  backgroundColor: getViolationSeverityColor(primarySeverity),
+                  minWidth: "14px",
+                  height: "14px",
+                  lineHeight: "14px",
+                  flexShrink: 0,
+                }}
+              />
+            </div>
+          </Tooltip>
+        );
       },
     },
     {
@@ -2534,7 +2464,6 @@ const FileTable: React.FC<FileTableProps> = ({
         file={selectedFileForDetails}
         open={fileDetailsDrawerVisible}
         onClose={handleCloseFileDetails}
-        constraintOptions={constraintOptions}
       />
     </div>
   );

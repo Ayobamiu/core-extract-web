@@ -4,46 +4,40 @@ import React from "react";
 import { Typography } from "antd";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import { JobFile } from "@/lib/api";
-import {
-  checkFileConstraints,
-  getConstraintPresentation,
-  CheckFileConstraintsOptions,
-} from "@/lib/constraintUtils";
+import { getConstraintPresentation } from "@/lib/constraintUtils";
 
 const { Text } = Typography;
 
 interface ConstraintListProps {
   file: JobFile | null;
   className?: string;
-  constraintOptions?: CheckFileConstraintsOptions;
 }
 
 /**
- * Reusable component that displays a full list of failed constraints
- * Shows constraint name, message, and details in an expandable list format
+ * Reusable component that displays a full list of failed constraints.
+ * Phase 3: reads flags directly from the file record (server-computed).
  */
 const ConstraintList: React.FC<ConstraintListProps> = ({
   file,
   className = "",
-  constraintOptions,
 }) => {
   if (!file) {
     return null;
   }
 
-  const constraints = checkFileConstraints(file, constraintOptions);
+  const flags = file.flags || [];
 
-  if (constraints.length === 0) {
+  if (flags.length === 0) {
     return null;
   }
 
-  const failedConstraints = constraints.filter((c) => !c.passed);
+  const failedFlags = flags.filter((f) => !f.passed);
 
-  if (failedConstraints.length === 0) {
+  if (failedFlags.length === 0) {
     return null;
   }
 
-  const sortedFailed = [...failedConstraints].sort((a, b) => {
+  const sortedFailed = [...failedFlags].sort((a, b) => {
     if (a.emphasis === "county" && b.emphasis !== "county") return -1;
     if (b.emphasis === "county" && a.emphasis !== "county") return 1;
     return 0;
@@ -52,12 +46,12 @@ const ConstraintList: React.FC<ConstraintListProps> = ({
   return (
     <div className={className}>
       <h3 className="text-lg font-semibold mb-3">
-        Failed Constraints ({failedConstraints.length})
+        Failed Constraints ({failedFlags.length})
       </h3>
       <div className="space-y-2">
-        {sortedFailed.map((check, index) => {
-          const presentation = getConstraintPresentation(check);
-          const isCounty = check.emphasis === "county";
+        {sortedFailed.map((flag, index) => {
+          const presentation = getConstraintPresentation(flag);
+          const isCounty = flag.emphasis === "county";
 
           return (
             <div
@@ -101,12 +95,12 @@ const ConstraintList: React.FC<ConstraintListProps> = ({
                   className="text-sm"
                   style={isCounty ? { color: presentation.color } : undefined}
                 >
-                  {check.name}
+                  {flag.name}
                 </Text>
-                <div className="text-xs text-gray-600 mt-1">{check.message}</div>
-                {check.details && (
+                <div className="text-xs text-gray-600 mt-1">{flag.message}</div>
+                {flag.details && (
                   <div className="text-xs text-gray-500 mt-1">
-                    {Object.entries(check.details).map(([key, value]) => (
+                    {Object.entries(flag.details).map(([key, value]) => (
                       <span key={key} className="mr-3">
                         {key}: {String(value) || "N/A"}
                       </span>
