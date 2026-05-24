@@ -94,6 +94,11 @@ function JobDetailPage() {
   const [showFilePreviewModal, setShowFilePreviewModal] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
   const [fileTableRefreshTrigger, setFileTableRefreshTrigger] = useState(0);
+  const [filePatch, setFilePatch] = useState<{
+    fileId: string;
+    patch: Record<string, any>;
+    version: string;
+  } | null>(null);
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -181,36 +186,29 @@ function JobDetailPage() {
   }, []);
 
   const handleFileStatusUpdate = useCallback(
-    async (data: any) => {
-      setRealtimeMessage(data.message);
+    (data: any) => {
+      // Phase 2: standardized event shape { jobId, fileId, patch, version }
+      if (data.patch && data.fileId && data.version) {
+        setFilePatch({ fileId: data.fileId, patch: data.patch, version: data.version });
+      } else {
+        // Fallback for any legacy events (e.g. from old workers still running)
+        setFileTableRefreshTrigger((prev) => prev + 1);
+      }
 
-      try {
-        const response = await apiClient.getJobDetails(jobId);
+      // Refresh summary counts (lightweight single-row query)
+      apiClient.getJobDetails(jobId).then((response) => {
         setFileSummary(response.summary);
-      } catch {}
-
-      setFileTableRefreshTrigger((prev) => prev + 1);
-
-      setTimeout(() => {
-        setRealtimeMessage(null);
-      }, 5000);
+      }).catch(() => {});
     },
     [jobId],
   );
 
   const handlePreviewUpdated = useCallback(
     (data: any) => {
-      setRealtimeMessage(data.message);
-
-      // Refresh job data to get updated preview information
-      refreshJobData();
-
-      // Clear message after 5 seconds
-      setTimeout(() => {
-        setRealtimeMessage(null);
-      }, 5000);
+      // Preview changes affect multiple rows — refetch the file list
+      setFileTableRefreshTrigger((prev) => prev + 1);
     },
-    [refreshJobData],
+    [],
   );
 
   // WebSocket connection
@@ -596,6 +594,7 @@ function JobDetailPage() {
                 }}
                 onDataUpdate={refreshJobData}
                 refreshTrigger={fileTableRefreshTrigger}
+                filePatch={filePatch}
                 fileSummary={fileSummary}
                 isConnected={isConnected}
                 isGoingLive={isGoingLive}
