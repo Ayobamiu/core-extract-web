@@ -893,7 +893,15 @@ function JobDetailPage() {
                 sectionResults={
                   selectedFileForResultsEdit.extraction_metadata?.section_results
                 }
-                onSuccess={(updatedResults) => {
+                onSuccess={(updatedResults, flags) => {
+                  // Apply flags patch immediately so constraints update
+                  if (flags) {
+                    setFilePatch({
+                      fileId: selectedFileForResultsEdit.id,
+                      patch: { has_result: true, flags },
+                      version: new Date().toISOString(),
+                    });
+                  }
                   handleEditResults(
                     selectedFileForResultsEdit.id,
                     updatedResults,
