@@ -1355,7 +1355,7 @@ const FileTable: React.FC<FileTableProps> = ({
             {previews.slice(0, 2).map((p) => (
               <a
                 key={p.id}
-                href={`/previews/${p.id}`}
+                href={`/preview/${p.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{
