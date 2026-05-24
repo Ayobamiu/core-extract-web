@@ -51,7 +51,6 @@ function JobDetailPage() {
   const isAdmin = canPerformAdminActions(user);
 
   const [job, setJob] = useState<JobDetails | null>(null);
-  console.log("job", job);
   const [fileSummary, setFileSummary] = useState<{
     total: number;
     extraction_pending: number;
@@ -183,43 +182,15 @@ function JobDetailPage() {
 
   const handleFileStatusUpdate = useCallback(
     async (data: any) => {
-      console.log("📄 File status update received:", data);
       setRealtimeMessage(data.message);
 
-      // Refresh summary when file status changes
       try {
         const response = await apiClient.getJobDetails(jobId);
         setFileSummary(response.summary);
-        console.log("✅ Summary refreshed");
-      } catch (err) {
-        console.error("Failed to refresh file summary:", err);
-      }
+      } catch {}
 
-      // Trigger FileTable refresh with retry logic to handle race conditions
-      // Try immediate refresh first, then retry if needed
-      const triggerRefresh = (attempt = 1, maxAttempts = 3) => {
-        const delay = attempt === 1 ? 50 : attempt === 2 ? 200 : 500; // Progressive delays
+      setFileTableRefreshTrigger((prev) => prev + 1);
 
-        setTimeout(() => {
-          console.log(
-            `🔄 Triggering FileTable refresh (attempt ${attempt}/${maxAttempts})...`,
-          );
-          setFileTableRefreshTrigger((prev) => {
-            const newValue = prev + 1;
-            console.log(`📊 Refresh trigger updated: ${prev} -> ${newValue}`);
-            return newValue;
-          });
-
-          // If not the last attempt, schedule a retry to catch late database updates
-          if (attempt < maxAttempts) {
-            triggerRefresh(attempt + 1, maxAttempts);
-          }
-        }, delay);
-      };
-
-      triggerRefresh();
-
-      // Clear message after 5 seconds
       setTimeout(() => {
         setRealtimeMessage(null);
       }, 5000);
@@ -229,7 +200,6 @@ function JobDetailPage() {
 
   const handlePreviewUpdated = useCallback(
     (data: any) => {
-      console.log("📊 Preview updated:", data);
       setRealtimeMessage(data.message);
 
       // Refresh job data to get updated preview information

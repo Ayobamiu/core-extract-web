@@ -1262,7 +1262,7 @@ class ApiClient {
         return this.request(`/previews/available-files?limit=${limit}`);
     }
 
-    async getAllFiles(limit: number = 50, offset: number = 0, status?: string, jobId?: string): Promise<ApiResponse<{
+    async getAllFiles(limit: number = 50, offset: number = 0, status?: string, jobId?: string, signal?: AbortSignal): Promise<ApiResponse<{
         files: JobFile[];
         total: number;
         stats: {
@@ -1289,7 +1289,7 @@ class ApiClient {
         if (status) params.append('status', status);
         if (jobId) params.append('jobId', jobId);
 
-        return this.request(`/files?${params.toString()}`);
+        return this.request(`/files?${params.toString()}`, { signal });
     }
 
     async getPreviewsForFile(fileId: string): Promise<ApiResponse<PreviewDataTable[]>> {
