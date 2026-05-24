@@ -174,12 +174,19 @@ export interface JobFile {
     // Phase 1: skinny list fields (replace heavy columns in list view)
     has_result?: boolean;
     extraction_method?: string;
-    flags?: any[];
-    previews_count?: number;
+    flags?: Array<{
+        name: string;
+        passed: boolean;
+        message: string;
+        severity: 'error' | 'warning' | 'info' | 'critical';
+        emphasis?: 'county' | 'default';
+        details?: any;
+    }>;
     previews?: Array<{
         id: string;
         name: string;
-        created_at: string;
+        slug?: string;
+        created_at?: string;
     }>;
     comments?: Array<{
         id: string;

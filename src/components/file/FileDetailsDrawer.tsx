@@ -21,7 +21,7 @@ import {
 import { JobFile } from "@/lib/api";
 import moment from "moment";
 import ConstraintList from "@/components/ui/ConstraintList";
-import type { CheckFileConstraintsOptions } from "@/lib/constraintUtils";
+import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import { Loader } from "lucide-react";
 
 const { Text } = Typography;
@@ -30,7 +30,6 @@ interface FileDetailsDrawerProps {
   file: JobFile | null;
   open: boolean;
   onClose: () => void;
-  constraintOptions?: CheckFileConstraintsOptions;
 }
 
 const computePageCount = (file?: JobFile | null): number | null => {
@@ -115,7 +114,6 @@ const FileDetailsDrawer: React.FC<FileDetailsDrawerProps> = ({
   file,
   open,
   onClose,
-  constraintOptions,
 }) => {
   const selectedFilePageCount = computePageCount(file);
 
@@ -825,8 +823,29 @@ const FileDetailsDrawer: React.FC<FileDetailsDrawerProps> = ({
             );
           })()}
 
+          {/* Previews */}
+          {file.previews && file.previews.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-lg font-semibold mb-2">Previews</h3>
+              <div className="space-y-1">
+                {file.previews.map((p) => (
+                  <a
+                    key={p.id}
+                    href={`/previews/${p.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-sm text-blue-600 hover:underline"
+                  >
+                    {p.name}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Constraints */}
-          <ConstraintList file={file} constraintOptions={constraintOptions} />
+          <ConstraintErrorIcon file={file} />
+          <ConstraintList file={file} />
         </div>
       )}
     </Drawer>
