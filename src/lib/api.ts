@@ -1262,7 +1262,7 @@ class ApiClient {
         return this.request(`/previews/available-files?limit=${limit}`);
     }
 
-    async getAllFiles(limit: number = 50, offset: number = 0, status?: string, jobId?: string): Promise<ApiResponse<{
+    async getAllFiles(limit: number = 50, offset: number = 0, status?: string, jobId?: string, signal?: AbortSignal): Promise<ApiResponse<{
         files: JobFile[];
         total: number;
         stats: {
@@ -1289,7 +1289,7 @@ class ApiClient {
         if (status) params.append('status', status);
         if (jobId) params.append('jobId', jobId);
 
-        return this.request(`/files?${params.toString()}`);
+        return this.request(`/files?${params.toString()}`, { signal });
     }
 
     async getPreviewsForFile(fileId: string): Promise<ApiResponse<PreviewDataTable[]>> {
@@ -1302,6 +1302,15 @@ class ApiClient {
 
     async getFileSchema(fileId: string): Promise<ApiResponse<{ schema: any; schemaName: string }>> {
         return this.request(`/previews/file/${fileId}/schema`);
+    }
+
+    async getMgsCountiesByPermits(
+        permitNumbers: string[]
+    ): Promise<ApiResponse<{ counties: Record<string, string> }>> {
+        return this.request('/mgs/counties-by-permit', {
+            method: 'POST',
+            body: JSON.stringify({ permitNumbers }),
+        });
     }
 
     async enrichFileWithMGSData(fileId: string): Promise<ApiResponse<{ fileId: string; mgsData: any; message: string }>> {

@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import type { GetProp, TableProps } from "antd";
 import {
   Table,
@@ -32,7 +31,6 @@ import {
   CopyOutlined,
   ArrowsAltOutlined,
   FullscreenOutlined,
-  ExportOutlined,
   InfoCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -53,11 +51,14 @@ import {
   getViolationSeverityIcon,
   checkFileConstraints,
   checkFormationContinuity,
+  extractPermitFromFilename,
+  extractPermitFromData,
+  MGS_MICHIGAN_WELL_JOB_ID,
+  getConstraintPresentation,
 } from "@/lib/constraintUtils";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import ConstraintList from "@/components/ui/ConstraintList";
 import FileDetailsDrawer from "@/components/file/FileDetailsDrawer";
-import FileResultsDrawer from "@/components/file/FileResultsDrawer";
 import FullscreenModal from "@/components/file/FullscreenModal";
 import styles from "./FileTable.module.css";
 import { Loader, MessageSquare } from "lucide-react";
@@ -90,12 +91,12 @@ type TablePaginationConfig = Exclude<
 interface FileTableProps {
   jobId: string;
   jobSchema: any;
-  onShowResults: (fileId: string) => void;
+  activeFileId?: string | null;
+  onActiveFileIdChange?: (fileId: string | null) => void;
   onAddToPreview: (fileId: string) => void;
   onEditResults: (file: JobFile) => void;
   onBulkAddToPreview: (fileIds: string[]) => void;
   onDataUpdate?: () => void;
-  showFileResults: Record<string, boolean>;
   refreshTrigger?: number;
   fileSummary?: {
     total: number;
@@ -136,12 +137,12 @@ const DEFAULT_PAGE_SIZE = 20;
 const FileTable: React.FC<FileTableProps> = ({
   jobId,
   jobSchema,
-  onShowResults,
+  activeFileId = null,
+  onActiveFileIdChange,
   onAddToPreview,
   onEditResults,
   onBulkAddToPreview,
   onDataUpdate,
-  showFileResults,
   refreshTrigger,
   fileSummary,
   isConnected = false,
@@ -156,11 +157,8 @@ const FileTable: React.FC<FileTableProps> = ({
   getJobStatusColor,
 }) => {
   const { user } = useAuth();
-  const router = useRouter();
   const isAdmin = canPerformAdminActions(user);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [drawerVisible, setDrawerVisible] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<JobFile | null>(null);
   const [retryModalVisible, setRetryModalVisible] = useState(false);
   const [retryFileId, setRetryFileId] = useState<string | null>(null);
   const [retryFile, setRetryFile] = useState<File | null>(null);
@@ -181,15 +179,13 @@ const FileTable: React.FC<FileTableProps> = ({
   const [showProcessingConfigInReprocess, setShowProcessingConfigInReprocess] =
     useState(false);
   const [reprocessingFileId, setReprocessingFileId] = useState<string | null>(
-    null
+    null,
   );
   const [singleFileReprocessMode, setSingleFileReprocessMode] = useState(false);
-  const [fullscreenModalVisible, setFullscreenModalVisible] = useState(false);
   const [fullscreenFileIndex, setFullscreenFileIndex] = useState<number>(0);
   const [fullscreenFileDetail, setFullscreenFileDetail] =
     useState<JobFile | null>(null);
-  const [fullscreenDetailLoading, setFullscreenDetailLoading] =
-    useState(false);
+  const [fullscreenDetailLoading, setFullscreenDetailLoading] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfUrlLoading, setPdfUrlLoading] = useState(false);
   const [verifyingFileId, setVerifyingFileId] = useState<string | null>(null);
@@ -198,17 +194,6 @@ const FileTable: React.FC<FileTableProps> = ({
   const [selectedFileForDetails, setSelectedFileForDetails] =
     useState<JobFile | null>(null);
   const selectedFilePageCount = computePageCount(selectedFileForDetails);
-
-  // Comments state for drawer
-  const [drawerComments, setDrawerComments] = useState<
-    Array<{
-      id: string;
-      userId: string;
-      userEmail: string;
-      text: string;
-      createdAt: string;
-    }>
-  >([]);
 
   // Comments state for fullscreen modal
   const [fullscreenComments, setFullscreenComments] = useState<
@@ -220,6 +205,8 @@ const FileTable: React.FC<FileTableProps> = ({
       createdAt: string;
     }>
   >([]);
+  const viewerLoadedFileIdRef = useRef<string | null>(null);
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   // Reprocess options state
   const [reprocessOptions, setReprocessOptions] = useState({
@@ -252,6 +239,9 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // AJAX loading state
   const [data, setData] = useState<JobFile[]>([]);
+  const [mgsCountyByPermit, setMgsCountyByPermit] = useState<
+    Map<string, string>
+  >(new Map());
 
   const [loading, setLoading] = useState(false);
   const [tableParams, setTableParams] = useState<TableParams>({
@@ -263,7 +253,12 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // AJAX fetch function
   const fetchData = async () => {
-    console.log("📥 FileTable fetchData called");
+    if (fetchAbortRef.current) {
+      fetchAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
+
     setLoading(true);
     try {
       const { pagination } = tableParams;
@@ -275,7 +270,8 @@ const FileTable: React.FC<FileTableProps> = ({
         pagination?.pageSize || DEFAULT_PAGE_SIZE,
         offset,
         undefined, // status filter
-        jobId // jobId filter
+        jobId, // jobId filter
+        controller.signal,
       );
 
       setData(response.files || []);
@@ -287,18 +283,75 @@ const FileTable: React.FC<FileTableProps> = ({
         },
       }));
     } catch (error: any) {
+      if (error.name === "AbortError" || controller.signal.aborted) {
+        return;
+      }
       console.error("Failed to fetch files:", error.message);
       setData([]);
     } finally {
-      setLoading(false);
+      if (fetchAbortRef.current === controller) {
+        setLoading(false);
+      }
     }
   };
+
+  useEffect(() => {
+    if (jobId !== MGS_MICHIGAN_WELL_JOB_ID || data.length === 0) {
+      setMgsCountyByPermit(new Map());
+      return;
+    }
+
+    const permits = [
+      ...new Set(
+        data
+          .map((file) => {
+            if (file.processing_status !== "completed" || !file.result) {
+              return null;
+            }
+            return (
+              extractPermitFromData(file.result) ||
+              extractPermitFromFilename(file.filename)
+            );
+          })
+          .filter((p): p is string => Boolean(p)),
+      ),
+    ];
+
+    if (permits.length === 0) {
+      setMgsCountyByPermit(new Map());
+      return;
+    }
+
+    let cancelled = false;
+
+    apiClient
+      .getMgsCountiesByPermits(permits)
+      .then((response) => {
+        if (cancelled || response.status !== "success" || !response.data) {
+          return;
+        }
+        const counties = response.data.counties || {};
+        setMgsCountyByPermit(new Map(Object.entries(counties)));
+      })
+      .catch((error) => {
+        console.warn("Failed to load MGS county map:", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, data, refreshTrigger]);
+
+  const constraintOptions = useMemo(
+    () => ({ mgsCountyByPermit }),
+    [mgsCountyByPermit],
+  );
 
   // Handle table change
   const handleTableChange: TableProps<JobFile>["onChange"] = (
     pagination,
     filters,
-    sorter
+    sorter,
   ) => {
     setTableParams({
       pagination,
@@ -306,57 +359,18 @@ const FileTable: React.FC<FileTableProps> = ({
       sortOrder: Array.isArray(sorter)
         ? undefined
         : sorter?.order === "ascend" || sorter?.order === "descend"
-        ? sorter.order
-        : undefined,
+          ? sorter.order
+          : undefined,
       sortField: Array.isArray(sorter)
         ? undefined
         : typeof sorter?.field === "string"
-        ? sorter.field
-        : undefined,
+          ? sorter.field
+          : undefined,
     });
 
     // Clear data when page size changes
     if (pagination.pageSize !== tableParams.pagination?.pageSize) {
       setData([]);
-    }
-  };
-
-  // Handle drawer functions
-  const handleOpenDrawer = async (record: JobFile) => {
-    setSelectedFile(record);
-    setDrawerVisible(true);
-    // Fetch comments for this file
-    try {
-      const commentsResponse = await apiClient.getFileComments(record.id);
-      if (commentsResponse.success && commentsResponse.data?.comments) {
-        setDrawerComments(commentsResponse.data.comments);
-      }
-    } catch (err) {
-      console.error("Failed to load comments:", err);
-      setDrawerComments([]);
-    }
-  };
-
-  const handleCloseDrawer = () => {
-    setDrawerVisible(false);
-    setSelectedFile(null);
-    setDrawerComments([]);
-  };
-
-  // Handle adding comment in drawer
-  const handleDrawerAddComment = async (text: string) => {
-    if (!selectedFile) return;
-
-    try {
-      const response = await apiClient.addFileComment(selectedFile.id, text);
-
-      if (response.success && response.data?.comment) {
-        setDrawerComments((prev) => [...prev, response.data!.comment]);
-      } else {
-        throw new Error(response.message || "Failed to add comment");
-      }
-    } catch (err: any) {
-      throw err; // Re-throw to let TabbedDataViewer handle the error message
     }
   };
 
@@ -371,69 +385,52 @@ const FileTable: React.FC<FileTableProps> = ({
     setSelectedFileForDetails(null);
   };
 
-  const fetchFullscreenFileDetail = async (fileId: string) => {
-    setFullscreenDetailLoading(true);
+  const parseFileResultResponse = (
+    response: Awaited<ReturnType<typeof apiClient.getFileResult>>,
+  ): JobFile | undefined => {
+    if (response.status !== "success") return undefined;
+    const fileData =
+      (response as { file?: JobFile }).file ||
+      (response.data as { file?: JobFile })?.file ||
+      (response.data as JobFile | undefined);
+    if (fileData && typeof fileData === "object" && "id" in fileData) {
+      return fileData;
+    }
+    return undefined;
+  };
+
+  /** Background enrich (routing sections, etc.). Skips table remap to avoid re-rendering the grid. */
+  const enrichFullscreenFileDetail = async (
+    fileId: string,
+    { showLoading = false }: { showLoading?: boolean } = {},
+  ) => {
+    if (showLoading) setFullscreenDetailLoading(true);
     try {
       const response = await apiClient.getFileResult(fileId);
-      if (response.status === "success") {
-        const fileData =
-          (response as { file?: JobFile }).file ||
-          (response.data as { file?: JobFile })?.file ||
-          (response.data as JobFile | undefined);
-        if (fileData && typeof fileData === "object" && "id" in fileData) {
-          setFullscreenFileDetail(fileData);
-          setData((prev) =>
-            prev.map((f) => (f.id === fileData.id ? { ...f, ...fileData } : f)),
-          );
-        }
+      const fileData = parseFileResultResponse(response);
+      if (fileData) {
+        setFullscreenFileDetail((prev) =>
+          prev?.id === fileId ? { ...prev, ...fileData } : fileData,
+        );
       }
     } catch (err) {
       console.error("Failed to load file details:", err);
     } finally {
-      setFullscreenDetailLoading(false);
+      if (showLoading) setFullscreenDetailLoading(false);
     }
   };
 
-  // Fullscreen modal handlers
-  const handleOpenFullscreen = async (record: JobFile) => {
-    const fileIndex = data.findIndex((f) => f.id === record.id);
-    if (fileIndex !== -1) {
-      setFullscreenFileIndex(fileIndex);
-      setFullscreenFileDetail(record);
-      setFullscreenModalVisible(true);
-      void fetchFullscreenFileDetail(record.id);
+  const tableRowCanShowViewer = (record: JobFile) =>
+    record.processing_status === "completed" && record.result != null;
 
-      // Fetch PDF URL
-      setPdfUrlLoading(true);
-      try {
-        const url = await getFilePdfUrl(record.id);
-        setPdfUrl(url);
-      } catch (error) {
-        console.error("Error fetching PDF URL:", error);
-        setPdfUrl(null);
-      } finally {
-        setPdfUrlLoading(false);
-      }
+  const fullscreenModalOpen = Boolean(activeFileId);
 
-      // Fetch comments for this file
-      try {
-        const commentsResponse = await apiClient.getFileComments(record.id);
-        if (commentsResponse.success && commentsResponse.data?.comments) {
-          setFullscreenComments(commentsResponse.data.comments);
-        }
-      } catch (err) {
-        console.error("Failed to load comments:", err);
-        setFullscreenComments([]);
-      }
-    }
+  const handleOpenFullscreen = (record: JobFile) => {
+    onActiveFileIdChange?.(record.id);
   };
 
   const handleCloseFullscreen = () => {
-    setFullscreenModalVisible(false);
-    setFullscreenFileIndex(0);
-    setFullscreenFileDetail(null);
-    setPdfUrl(null);
-    setFullscreenComments([]);
+    onActiveFileIdChange?.(null);
   };
 
   // Handle adding comment in fullscreen modal
@@ -443,7 +440,7 @@ const FileTable: React.FC<FileTableProps> = ({
     try {
       const response = await apiClient.addFileComment(
         currentFullscreenFile.id,
-        text
+        text,
       );
 
       if (response.success && response.data?.comment) {
@@ -456,57 +453,27 @@ const FileTable: React.FC<FileTableProps> = ({
     }
   };
 
-  const handlePreviousFile = async () => {
+  const handlePreviousFile = () => {
     if (fullscreenFileIndex > 0) {
-      const newIndex = fullscreenFileIndex - 1;
-      setFullscreenFileIndex(newIndex);
-
-      // Fetch PDF URL for the new file
-      const newFile = data[newIndex];
-      if (newFile) {
-        setFullscreenFileDetail(newFile);
-        void fetchFullscreenFileDetail(newFile.id);
-        setPdfUrlLoading(true);
-        try {
-          const url = await getFilePdfUrl(newFile.id);
-          setPdfUrl(url);
-        } catch (error) {
-          console.error("Error fetching PDF URL:", error);
-          setPdfUrl(null);
-        } finally {
-          setPdfUrlLoading(false);
-        }
-      }
+      onActiveFileIdChange?.(data[fullscreenFileIndex - 1].id);
     }
   };
 
-  const handleNextFile = async () => {
+  const handleNextFile = () => {
     if (fullscreenFileIndex < data.length - 1) {
-      const newIndex = fullscreenFileIndex + 1;
-      setFullscreenFileIndex(newIndex);
-
-      // Fetch PDF URL for the new file
-      const newFile = data[newIndex];
-      if (newFile) {
-        setFullscreenFileDetail(newFile);
-        void fetchFullscreenFileDetail(newFile.id);
-        setPdfUrlLoading(true);
-        try {
-          const url = await getFilePdfUrl(newFile.id);
-          setPdfUrl(url);
-        } catch (error) {
-          console.error("Error fetching PDF URL:", error);
-          setPdfUrl(null);
-        } finally {
-          setPdfUrlLoading(false);
-        }
-      }
+      onActiveFileIdChange?.(data[fullscreenFileIndex + 1].id);
     }
   };
 
-  // Get current file in fullscreen modal (enriched with routing / metadata when loaded)
-  const currentFullscreenFile =
-    fullscreenFileDetail ?? data[fullscreenFileIndex] ?? null;
+  const currentFullscreenFile = useMemo(() => {
+    if (!activeFileId) return null;
+    if (fullscreenFileDetail?.id === activeFileId) {
+      return fullscreenFileDetail;
+    }
+    const fromTable = data.find((f) => f.id === activeFileId);
+    if (fromTable) return fromTable;
+    return fullscreenFileDetail ?? data[fullscreenFileIndex] ?? null;
+  }, [activeFileId, fullscreenFileDetail, data, fullscreenFileIndex]);
 
   // Handle file verification
   const handleVerifyFile = async (fileId: string, adminVerified: boolean) => {
@@ -514,15 +481,12 @@ const FileTable: React.FC<FileTableProps> = ({
     try {
       await apiClient.verifyFile(fileId, adminVerified, undefined);
       message.success("File verification updated successfully");
-      // Refresh data
-      if (onDataUpdate) {
-        await onDataUpdate();
-      }
-      // Update local state
       setData((prevData) =>
         prevData.map((file) =>
-          file.id === fileId ? { ...file, admin_verified: adminVerified } : file
-        )
+          file.id === fileId
+            ? { ...file, admin_verified: adminVerified }
+            : file,
+        ),
       );
     } catch (error: any) {
       console.error("Error verifying file:", error);
@@ -542,7 +506,7 @@ const FileTable: React.FC<FileTableProps> = ({
       const response = await apiClient.bulkReviewAndVerifyFiles(
         [fileId],
         "reviewed",
-        true // adminVerified
+        true, // adminVerified
       );
 
       if (
@@ -553,12 +517,6 @@ const FileTable: React.FC<FileTableProps> = ({
         const updated = response.data.updated[0];
         message.success("File marked as reviewed and verified successfully");
 
-        // Refresh data
-        if (onDataUpdate) {
-          await onDataUpdate();
-        }
-
-        // Update local state
         setData((prevData) =>
           prevData.map((file) =>
             file.id === fileId
@@ -576,8 +534,8 @@ const FileTable: React.FC<FileTableProps> = ({
                   admin_verified: updated.admin_verified,
                   customer_verified: updated.customer_verified,
                 }
-              : file
-          )
+              : file,
+          ),
         );
       } else {
         throw new Error(response.message || "Failed to update file");
@@ -599,22 +557,17 @@ const FileTable: React.FC<FileTableProps> = ({
       | "reviewed"
       | "approved"
       | "rejected",
-    reviewNotes?: string
+    reviewNotes?: string,
   ) => {
     setReviewingFileId(fileId);
     try {
       const response = await apiClient.updateFileReviewStatus(
         fileId,
         reviewStatus,
-        reviewNotes
+        reviewNotes,
       );
       if (response.status === "success" && response.data) {
         message.success(`File marked as ${reviewStatus}`);
-        // Refresh data
-        if (onDataUpdate) {
-          await onDataUpdate();
-        }
-        // Update local state
         setData((prevData) =>
           prevData.map((file) =>
             file.id === fileId
@@ -631,8 +584,8 @@ const FileTable: React.FC<FileTableProps> = ({
                   reviewed_at: response.data!.reviewed_at,
                   review_notes: response.data!.review_notes,
                 }
-              : file
-          )
+              : file,
+          ),
         );
       } else {
         throw new Error(response.message || "Failed to update review status");
@@ -652,7 +605,7 @@ const FileTable: React.FC<FileTableProps> = ({
       | "in_review"
       | "reviewed"
       | "approved"
-      | "rejected" = "reviewed"
+      | "rejected" = "reviewed",
   ) => {
     if (selectedRowKeys.length === 0) {
       return;
@@ -665,7 +618,7 @@ const FileTable: React.FC<FileTableProps> = ({
       // Use bulk endpoint
       const response = await apiClient.bulkUpdateFileReviewStatus(
         fileIds,
-        reviewStatus
+        reviewStatus,
       );
 
       if (response.success && response.data) {
@@ -674,12 +627,12 @@ const FileTable: React.FC<FileTableProps> = ({
 
         if (updatedCount > 0) {
           message.success(
-            `${updatedCount} file(s) marked as ${reviewStatus} successfully`
+            `${updatedCount} file(s) marked as ${reviewStatus} successfully`,
           );
         }
         if (deniedCount > 0) {
           message.warning(
-            `${deniedCount} file(s) could not be updated (access denied or not found)`
+            `${deniedCount} file(s) could not be updated (access denied or not found)`,
           );
         }
 
@@ -688,7 +641,7 @@ const FileTable: React.FC<FileTableProps> = ({
           setData((prevData) =>
             prevData.map((file) => {
               const updated = response.data!.updated.find(
-                (u) => u.id === file.id
+                (u) => u.id === file.id,
               );
               if (updated) {
                 return {
@@ -706,22 +659,14 @@ const FileTable: React.FC<FileTableProps> = ({
                 };
               }
               return file;
-            })
+            }),
           );
         }
       } else {
         throw new Error(response.message || "Failed to update review status");
       }
 
-      // Clear selection and refresh data
       setSelectedRowKeys([]);
-
-      // Trigger refresh
-      if (onDataUpdate) {
-        await onDataUpdate();
-      } else {
-        await fetchData();
-      }
     } catch (error: any) {
       console.error("Error updating review status for files:", error);
       message.error(error.message || "Failed to update review status");
@@ -743,7 +688,7 @@ const FileTable: React.FC<FileTableProps> = ({
       const response = await apiClient.bulkReviewAndVerifyFiles(
         fileIds,
         "reviewed",
-        true // adminVerified
+        true, // adminVerified
       );
 
       if (response.success && response.data) {
@@ -752,13 +697,13 @@ const FileTable: React.FC<FileTableProps> = ({
 
         if (updatedCount > 0) {
           message.success(
-            `${updatedCount} file(s) marked as reviewed and verified successfully`
+            `${updatedCount} file(s) marked as reviewed and verified successfully`,
           );
         }
 
         if (deniedCount > 0) {
           message.warning(
-            `${deniedCount} file(s) could not be updated (access denied or not found)`
+            `${deniedCount} file(s) could not be updated (access denied or not found)`,
           );
         }
 
@@ -767,7 +712,7 @@ const FileTable: React.FC<FileTableProps> = ({
           setData((prevData) =>
             prevData.map((file) => {
               const updated = response.data!.updated.find(
-                (u) => u.id === file.id
+                (u) => u.id === file.id,
               );
               if (updated) {
                 return {
@@ -786,27 +731,18 @@ const FileTable: React.FC<FileTableProps> = ({
                 };
               }
               return file;
-            })
+            }),
           );
         }
 
-        // Clear selection and refresh data
         setSelectedRowKeys([]);
-
-        // Trigger refresh - both via callback and by refetching data
-        if (onDataUpdate) {
-          await onDataUpdate();
-        } else {
-          // Fallback: directly refetch data if onDataUpdate is not provided
-          await fetchData();
-        }
       } else {
         message.error(response.message || "Failed to update files");
       }
     } catch (error: any) {
       console.error("Error bulk reviewing and verifying files:", error);
       message.error(
-        error.message || "Failed to update files. Please try again."
+        error.message || "Failed to update files. Please try again.",
       );
     } finally {
       setBulkReviewAndVerifyLoading(false);
@@ -829,7 +765,7 @@ const FileTable: React.FC<FileTableProps> = ({
       const response = await apiClient.bulkVerifyFiles(
         fileIds,
         adminVerified,
-        undefined
+        undefined,
       );
 
       if (response.success && response.data) {
@@ -840,12 +776,12 @@ const FileTable: React.FC<FileTableProps> = ({
           message.success(
             `${updatedCount} file(s) ${
               adminVerified ? "verified" : "unverified"
-            } successfully`
+            } successfully`,
           );
         }
         if (deniedCount > 0) {
           message.warning(
-            `${deniedCount} file(s) could not be verified (access denied or not found)`
+            `${deniedCount} file(s) could not be verified (access denied or not found)`,
           );
         }
 
@@ -854,7 +790,7 @@ const FileTable: React.FC<FileTableProps> = ({
           setData((prevData) =>
             prevData.map((file) => {
               const updated = response.data!.updated.find(
-                (u) => u.id === file.id
+                (u) => u.id === file.id,
               );
               if (updated) {
                 return {
@@ -864,24 +800,15 @@ const FileTable: React.FC<FileTableProps> = ({
                 };
               }
               return file;
-            })
+            }),
           );
         }
       } else {
         throw new Error(response.message || "Failed to verify files");
       }
 
-      // Clear selection and refresh data
       setSelectedRowKeys([]);
       setBulkVerifyModalVisible(false);
-
-      // Trigger refresh - both via callback and by refetching data
-      if (onDataUpdate) {
-        await onDataUpdate();
-      } else {
-        // Fallback: directly refetch data if onDataUpdate is not provided
-        await fetchData();
-      }
     } catch (error: any) {
       console.error("Error verifying files:", error);
       message.error(error.message || "Failed to verify files");
@@ -902,7 +829,7 @@ const FileTable: React.FC<FileTableProps> = ({
             Authorization: `Bearer ${apiClient.getAccessToken()}`,
             Accept: "application/json",
           },
-        }
+        },
       );
 
       if (response.ok) {
@@ -923,7 +850,7 @@ const FileTable: React.FC<FileTableProps> = ({
   useEffect(() => {
     console.log(
       "🔄 FileTable useEffect triggered - refreshTrigger:",
-      refreshTrigger
+      refreshTrigger,
     );
     fetchData();
   }, [
@@ -936,65 +863,128 @@ const FileTable: React.FC<FileTableProps> = ({
     refreshTrigger,
   ]);
 
-  // Fetch PDF URL when file index changes in fullscreen modal
+  // Keep viewer file row in sync with table refreshes without reloading PDF
   useEffect(() => {
-    if (!fullscreenModalVisible || !currentFullscreenFile) return;
+    if (!activeFileId) return;
+    const indexInTable = data.findIndex((f) => f.id === activeFileId);
+    if (indexInTable < 0) return;
 
-    setPdfUrlLoading(true);
-    getFilePdfUrl(currentFullscreenFile.id)
-      .then((url) => {
-        setPdfUrl(url);
-      })
-      .catch((error) => {
-        console.error("Error fetching PDF URL:", error);
-        setPdfUrl(null);
-      })
-      .finally(() => {
-        setPdfUrlLoading(false);
-      });
+    setFullscreenFileIndex(indexInTable);
+    setFullscreenFileDetail((prev) => {
+      const row = data[indexInTable];
+      if (prev?.id === activeFileId) {
+        return { ...prev, ...row };
+      }
+      return row;
+    });
+  }, [activeFileId, data]);
 
-    // Fetch comments when file changes
-    apiClient
-      .getFileComments(currentFullscreenFile.id)
-      .then((commentsResponse) => {
-        if (commentsResponse.success && commentsResponse.data?.comments) {
-          setFullscreenComments(commentsResponse.data.comments);
+  // Load viewer assets only when the opened file id changes (not on table poll)
+  useEffect(() => {
+    if (!activeFileId) {
+      viewerLoadedFileIdRef.current = null;
+      setFullscreenFileIndex(0);
+      setFullscreenFileDetail(null);
+      setPdfUrl(null);
+      setFullscreenComments([]);
+      return;
+    }
+
+    if (viewerLoadedFileIdRef.current === activeFileId) {
+      return;
+    }
+    viewerLoadedFileIdRef.current = activeFileId;
+
+    let cancelled = false;
+
+    const openFile = async () => {
+      const indexInTable = data.findIndex((f) => f.id === activeFileId);
+      let record: JobFile | undefined =
+        indexInTable >= 0 ? data[indexInTable] : undefined;
+
+      if (!record) {
+        try {
+          const response = await apiClient.getFileResult(activeFileId);
+          record = parseFileResultResponse(response);
+        } catch (err) {
+          console.error("Failed to load file for viewer:", err);
         }
-      })
-      .catch((err) => {
-        console.error("Failed to load comments:", err);
-        setFullscreenComments([]);
+      }
+
+      if (cancelled || !record) return;
+
+      setFullscreenFileIndex(indexInTable >= 0 ? indexInTable : 0);
+      setFullscreenFileDetail(record);
+
+      const fromTable = indexInTable >= 0;
+      const showEnrichLoading = !fromTable || !tableRowCanShowViewer(record);
+
+      const pdfTask = (async () => {
+        setPdfUrlLoading(true);
+        try {
+          const url = await getFilePdfUrl(record.id);
+          if (!cancelled) setPdfUrl(url);
+        } catch (error) {
+          console.error("Error fetching PDF URL:", error);
+          if (!cancelled) setPdfUrl(null);
+        } finally {
+          if (!cancelled) setPdfUrlLoading(false);
+        }
+      })();
+
+      const commentsTask = (async () => {
+        try {
+          const commentsResponse = await apiClient.getFileComments(record.id);
+          if (
+            !cancelled &&
+            commentsResponse.success &&
+            commentsResponse.data?.comments
+          ) {
+            setFullscreenComments(commentsResponse.data.comments);
+          }
+        } catch (err) {
+          console.error("Failed to load comments:", err);
+          if (!cancelled) setFullscreenComments([]);
+        }
+      })();
+
+      const enrichTask = enrichFullscreenFileDetail(record.id, {
+        showLoading: showEnrichLoading,
       });
-  }, [fullscreenModalVisible, fullscreenFileIndex, currentFullscreenFile?.id]);
+
+      await Promise.all([pdfTask, commentsTask, enrichTask]);
+    };
+
+    void openFile();
+    return () => {
+      cancelled = true;
+      if (viewerLoadedFileIdRef.current === activeFileId) {
+        viewerLoadedFileIdRef.current = null;
+      }
+    };
+  }, [activeFileId]);
 
   // Keyboard navigation for fullscreen modal
   useEffect(() => {
-    if (!fullscreenModalVisible) return;
+    if (!fullscreenModalOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowLeft" && fullscreenFileIndex > 0) {
-        setFullscreenFileIndex((prev) => Math.max(0, prev - 1));
+        onActiveFileIdChange?.(data[fullscreenFileIndex - 1].id);
       } else if (
         e.key === "ArrowRight" &&
         fullscreenFileIndex < data.length - 1
       ) {
-        setFullscreenFileIndex((prev) => Math.min(data.length - 1, prev + 1));
+        onActiveFileIdChange?.(data[fullscreenFileIndex + 1].id);
       } else if (e.key === "Escape") {
-        setFullscreenModalVisible(false);
-        setFullscreenFileIndex(0);
+        onActiveFileIdChange?.(null);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [fullscreenModalVisible, fullscreenFileIndex, data.length]);
+  }, [fullscreenModalOpen, fullscreenFileIndex, data, onActiveFileIdChange]);
 
-  // Refresh data when onDataUpdate changes
-  useEffect(() => {
-    if (onDataUpdate) {
-      fetchData();
-    }
-  }, [onDataUpdate]);
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
       case "completed":
@@ -1077,7 +1067,7 @@ const FileTable: React.FC<FileTableProps> = ({
       setRetryLoading(true);
       const response = await apiClient.retryFileUpload(
         retryFileId,
-        retryFile || undefined
+        retryFile || undefined,
       );
 
       if (response.status === "success") {
@@ -1212,7 +1202,7 @@ const FileTable: React.FC<FileTableProps> = ({
       const response = await apiClient.reprocessFiles(
         fileIds,
         0,
-        processingConfig
+        processingConfig,
       );
 
       if (response.status === "success") {
@@ -1236,13 +1226,13 @@ const FileTable: React.FC<FileTableProps> = ({
               .map((f) => f.reason)
               .join(", ");
             message.warning(
-              `${response.data.skippedFiles.length} files were skipped: ${skippedReasons}`
+              `${response.data.skippedFiles.length} files were skipped: ${skippedReasons}`,
             );
           }
 
           if (response.data?.errors && response.data.errors.length > 0) {
             message.error(
-              `${response.data.errors.length} files failed to queue`
+              `${response.data.errors.length} files failed to queue`,
             );
           }
 
@@ -1286,20 +1276,7 @@ const FileTable: React.FC<FileTableProps> = ({
         >
           {record.processing_status === "completed" && record.result && (
             <>
-              <Tooltip title="Open in new tab">
-                <ExportOutlined
-                  style={{
-                    cursor: "pointer",
-                    color: "#1890ff",
-                    flexShrink: 0,
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(`/files/${id}`, "_blank");
-                  }}
-                />
-              </Tooltip>
-              <Tooltip title="Fullscreen view">
+              <Tooltip title="View results">
                 <FullscreenOutlined
                   style={{
                     cursor: "pointer",
@@ -1385,7 +1362,7 @@ const FileTable: React.FC<FileTableProps> = ({
               record.selected_pages.length > 0 && (
                 <Tooltip
                   title={`Selected pages: ${record.selected_pages.join(
-                    ", "
+                    ", ",
                   )} (${record.selected_pages.length} of ${
                     computePageCount(record) || "?"
                   } pages)`}
@@ -1443,7 +1420,10 @@ const FileTable: React.FC<FileTableProps> = ({
             style={{ overflow: "hidden", whiteSpace: "nowrap" }}
           >
             {visiblePreviews.map((preview, index) => (
-              <span key={preview.id} className="inline-flex items-center gap-0.5 shrink-0">
+              <span
+                key={preview.id}
+                className="inline-flex items-center gap-0.5 shrink-0"
+              >
                 <a
                   href={`/preview/${preview.id}`}
                   target="_blank"
@@ -1558,7 +1538,7 @@ const FileTable: React.FC<FileTableProps> = ({
             title={
               record.reviewed_at
                 ? `Reviewed at: ${moment(record.reviewed_at).format(
-                    "YYYY-MM-DD HH:mm"
+                    "YYYY-MM-DD HH:mm",
                   )}`
                 : statusLabels[status]
             }
@@ -1642,8 +1622,8 @@ const FileTable: React.FC<FileTableProps> = ({
       key: "constraints",
       width: 120,
       sorter: (a: JobFile, b: JobFile) => {
-        const aConstraints = checkFileConstraints(a);
-        const bConstraints = checkFileConstraints(b);
+        const aConstraints = checkFileConstraints(a, constraintOptions);
+        const bConstraints = checkFileConstraints(b, constraintOptions);
         const aFailedCount = aConstraints.filter((c) => !c.passed).length;
         const bFailedCount = bConstraints.filter((c) => !c.passed).length;
         return aFailedCount - bFailedCount;
@@ -1652,11 +1632,14 @@ const FileTable: React.FC<FileTableProps> = ({
         // Use checkFileConstraints to get all constraints including new ones
         if (
           record.processing_status === "completed" &&
-          record.job_id === "5667fe82-63e1-47fa-a640-b182b5c5d034" &&
+          record.job_id === MGS_MICHIGAN_WELL_JOB_ID &&
           record.result
         ) {
-          const constraints = checkFileConstraints(record);
+          const constraints = checkFileConstraints(record, constraintOptions);
           const failedConstraints = constraints.filter((c) => !c.passed);
+          const countyFailed = failedConstraints.find(
+            (c) => c.emphasis === "county",
+          );
 
           // Show checkmark if all constraints pass
           if (failedConstraints.length === 0 && constraints.length > 0) {
@@ -1678,15 +1661,21 @@ const FileTable: React.FC<FileTableProps> = ({
           if (failedConstraints.length > 0) {
             // Group constraints by severity for better display
             const errorConstraints = failedConstraints.filter(
-              (c) => c.severity === "error"
+              (c) => c.severity === "error",
             );
             const warningConstraints = failedConstraints.filter(
-              (c) => c.severity === "warning"
+              (c) => c.severity === "warning",
             );
 
-            // Determine the primary severity to display
-            const primarySeverity =
-              errorConstraints.length > 0 ? "error" : "warning";
+            const primarySeverity = countyFailed
+              ? "critical"
+              : errorConstraints.length > 0
+                ? "error"
+                : "warning";
+
+            const countyPresentation = countyFailed
+              ? getConstraintPresentation(countyFailed)
+              : null;
 
             return (
               <Tooltip
@@ -1700,24 +1689,58 @@ const FileTable: React.FC<FileTableProps> = ({
                     >
                       Failed Constraints ({failedConstraints.length}):
                     </div>
-                    {failedConstraints.map((check, index) => (
-                      <div key={index} style={{ marginBottom: "4px" }}>
-                        <div style={{ fontWeight: "bold" }}>{check.name}</div>
-                        <div style={{ fontSize: "12px", color: "#ccc" }}>
-                          {check.message}
+                    {failedConstraints.map((check, index) => {
+                      const presentation = getConstraintPresentation(check);
+                      return (
+                        <div key={index} style={{ marginBottom: "4px" }}>
+                          <div
+                            style={{
+                              fontWeight: "bold",
+                              color:
+                                check.emphasis === "county"
+                                  ? presentation.color
+                                  : undefined,
+                            }}
+                          >
+                            {presentation.badgeLetter
+                              ? `[${presentation.badgeLetter}] `
+                              : ""}
+                            {check.name}
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#ccc" }}>
+                            {check.message}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 }
               >
                 <div
-                  className="flex items-center space-x-0.5"
+                  className="flex items-center gap-1"
                   style={{ whiteSpace: "nowrap" }}
                 >
-                  {/* <span style={{ flexShrink: 0, fontSize: "10px" }}>
-                    {getViolationSeverityIcon(primarySeverity)}
-                  </span> */}
+                  {countyFailed && countyPresentation?.badgeLetter && (
+                    <span
+                      title={countyFailed.message}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 18,
+                        height: 18,
+                        borderRadius: 4,
+                        backgroundColor: countyPresentation.color,
+                        color: "#fff",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        flexShrink: 0,
+                        boxShadow: "0 0 0 2px #ede9fe",
+                      }}
+                    >
+                      {countyPresentation.badgeLetter}
+                    </span>
+                  )}
                   <Badge
                     count={failedConstraints.length}
                     style={{
@@ -1761,14 +1784,7 @@ const FileTable: React.FC<FileTableProps> = ({
           menuItems.push({
             key: "show",
             label: (
-              <a
-                onClick={() => {
-                  onShowResults(record.id);
-                  handleOpenDrawer(record);
-                }}
-              >
-                Show Results
-              </a>
+              <a onClick={() => handleOpenFullscreen(record)}>Show Results</a>
             ),
           });
 
@@ -1801,7 +1817,7 @@ const FileTable: React.FC<FileTableProps> = ({
                     if (!isUpdating) {
                       handleUpdateReviewStatus(
                         record.id,
-                        isReviewed ? "pending" : "reviewed"
+                        isReviewed ? "pending" : "reviewed",
                       );
                     }
                   }}
@@ -1813,8 +1829,8 @@ const FileTable: React.FC<FileTableProps> = ({
                   {isUpdating
                     ? "Updating..."
                     : isReviewed
-                    ? "Mark as Pending"
-                    : "Mark as Reviewed"}
+                      ? "Mark as Pending"
+                      : "Mark as Reviewed"}
                 </a>
               ),
             });
@@ -2514,45 +2530,20 @@ const FileTable: React.FC<FileTableProps> = ({
         </div>
       </Modal>
 
-      {/* File Results Drawer */}
-      <FileResultsDrawer
-        file={selectedFile}
-        open={drawerVisible}
-        onClose={handleCloseDrawer}
-        onOpenFileDetails={handleOpenFileDetails}
-        onUpdateReviewStatus={handleUpdateReviewStatus}
-        onVerifyFile={handleVerifyFile}
-        onReviewAndVerifyFile={handleReviewAndVerifyFile}
-        onReprocessFile={handleSingleFileReprocess}
-        onUpdateResults={async (fileId, updatedData) => {
-          await apiClient.updateFileResults(fileId, updatedData);
-          setSelectedFile((prev) =>
-            prev ? { ...prev, result: updatedData } : null
-          );
-        }}
-        onDataUpdate={onDataUpdate}
-        reviewingFileId={reviewingFileId}
-        verifyingFileId={verifyingFileId}
-        reprocessingFileId={reprocessingFileId}
-        isAdmin={isAdmin}
-        comments={drawerComments}
-        onAddComment={handleDrawerAddComment}
-        jobSchema={jobSchema}
-      />
-
       {/* Fullscreen Modal */}
       <FullscreenModal
         file={currentFullscreenFile}
-        open={fullscreenModalVisible}
+        open={fullscreenModalOpen}
         onClose={handleCloseFullscreen}
         onOpenFileDetails={handleOpenFileDetails}
-        onOpenFilePage={(fileId) => router.push(`/files/${fileId}`)}
         onPreviousFile={handlePreviousFile}
         onNextFile={handleNextFile}
         detailLoading={fullscreenDetailLoading}
         onSectionsUpdated={(fileId, sections) => {
           setFullscreenFileDetail((prev) =>
-            prev?.id === fileId ? { ...prev, detected_sections: sections } : prev,
+            prev?.id === fileId
+              ? { ...prev, detected_sections: sections }
+              : prev,
           );
           setData((prev) =>
             prev.map((f) =>
@@ -2568,8 +2559,8 @@ const FileTable: React.FC<FileTableProps> = ({
           await apiClient.updateFileResults(fileId, updatedData);
           setData((prevData) =>
             prevData.map((file) =>
-              file.id === fileId ? { ...file, result: updatedData } : file
-            )
+              file.id === fileId ? { ...file, result: updatedData } : file,
+            ),
           );
         }}
         onDataUpdate={onDataUpdate}
@@ -2591,6 +2582,7 @@ const FileTable: React.FC<FileTableProps> = ({
         file={selectedFileForDetails}
         open={fileDetailsDrawerVisible}
         onClose={handleCloseFileDetails}
+        constraintOptions={constraintOptions}
       />
     </div>
   );

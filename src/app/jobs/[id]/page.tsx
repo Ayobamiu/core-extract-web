@@ -1,7 +1,15 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+  Suspense,
+  startTransition,
+} from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Drawer, Dropdown, Modal, message } from "antd";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
@@ -33,16 +41,16 @@ import {
 } from "@heroicons/react/24/outline";
 import { Loader } from "lucide-react";
 
-export default function JobDetailPage() {
+function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
   const jobId = params.id as string;
   const isAdmin = canPerformAdminActions(user);
 
   const [job, setJob] = useState<JobDetails | null>(null);
-  console.log("job", job);
   const [fileSummary, setFileSummary] = useState<{
     total: number;
     extraction_pending: number;
@@ -60,9 +68,6 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSchemaDrawer, setShowSchemaDrawer] = useState(false);
-  const [showFileResults, setShowFileResults] = useState<
-    Record<string, boolean>
-  >({});
   const [realtimeMessage, setRealtimeMessage] = useState<string | null>(null);
   const [isAddingFiles, setIsAddingFiles] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -92,6 +97,38 @@ export default function JobDetailPage() {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fileFromUrl = searchParams.get("file");
+  const [viewerFileId, setViewerFileId] = useState<string | null>(fileFromUrl);
+
+  // Sync from URL on back/forward or initial load with ?file=
+  useEffect(() => {
+    setViewerFileId(fileFromUrl);
+  }, [fileFromUrl]);
+
+  const setActiveFileId = useCallback(
+    (fileId: string | null) => {
+      setViewerFileId(fileId);
+      startTransition(() => {
+        const params = new URLSearchParams(searchParams.toString());
+        if (fileId) {
+          params.set("file", fileId);
+        } else {
+          params.delete("file");
+        }
+        const qs = params.toString();
+        router.replace(`/jobs/${jobId}${qs ? `?${qs}` : ""}`, { scroll: false });
+      });
+    },
+    [jobId, router, searchParams],
+  );
+
+  const jobSchema = useMemo(() => {
+    if (!job?.schema_data) return undefined;
+    return typeof job.schema_data === "string"
+      ? JSON.parse(job.schema_data)
+      : job.schema_data;
+  }, [job?.schema_data]);
 
   // Use Job.name as the title
   useEffect(() => {
@@ -145,43 +182,15 @@ export default function JobDetailPage() {
 
   const handleFileStatusUpdate = useCallback(
     async (data: any) => {
-      console.log("📄 File status update received:", data);
       setRealtimeMessage(data.message);
 
-      // Refresh summary when file status changes
       try {
         const response = await apiClient.getJobDetails(jobId);
         setFileSummary(response.summary);
-        console.log("✅ Summary refreshed");
-      } catch (err) {
-        console.error("Failed to refresh file summary:", err);
-      }
+      } catch {}
 
-      // Trigger FileTable refresh with retry logic to handle race conditions
-      // Try immediate refresh first, then retry if needed
-      const triggerRefresh = (attempt = 1, maxAttempts = 3) => {
-        const delay = attempt === 1 ? 50 : attempt === 2 ? 200 : 500; // Progressive delays
+      setFileTableRefreshTrigger((prev) => prev + 1);
 
-        setTimeout(() => {
-          console.log(
-            `🔄 Triggering FileTable refresh (attempt ${attempt}/${maxAttempts})...`,
-          );
-          setFileTableRefreshTrigger((prev) => {
-            const newValue = prev + 1;
-            console.log(`📊 Refresh trigger updated: ${prev} -> ${newValue}`);
-            return newValue;
-          });
-
-          // If not the last attempt, schedule a retry to catch late database updates
-          if (attempt < maxAttempts) {
-            triggerRefresh(attempt + 1, maxAttempts);
-          }
-        }, delay);
-      };
-
-      triggerRefresh();
-
-      // Clear message after 5 seconds
       setTimeout(() => {
         setRealtimeMessage(null);
       }, 5000);
@@ -191,7 +200,6 @@ export default function JobDetailPage() {
 
   const handlePreviewUpdated = useCallback(
     (data: any) => {
-      console.log("📊 Preview updated:", data);
       setRealtimeMessage(data.message);
 
       // Refresh job data to get updated preview information
@@ -574,17 +582,9 @@ export default function JobDetailPage() {
               {/* Files Table */}
               <FileTable
                 jobId={job.id}
-                jobSchema={
-                  typeof job.schema_data === "string"
-                    ? JSON.parse(job.schema_data)
-                    : job.schema_data
-                }
-                onShowResults={(fileId) =>
-                  setShowFileResults((prev) => ({
-                    ...prev,
-                    [fileId]: !prev[fileId],
-                  }))
-                }
+                jobSchema={jobSchema}
+                activeFileId={viewerFileId}
+                onActiveFileIdChange={setActiveFileId}
                 onAddToPreview={(fileId) => handleAddToPreview(fileId)}
                 onEditResults={(file) => {
                   setSelectedFileForResultsEdit(file);
@@ -595,7 +595,6 @@ export default function JobDetailPage() {
                   setShowBulkPreviewDrawer(true);
                 }}
                 onDataUpdate={refreshJobData}
-                showFileResults={showFileResults}
                 refreshTrigger={fileTableRefreshTrigger}
                 fileSummary={fileSummary}
                 isConnected={isConnected}
@@ -960,5 +959,19 @@ export default function JobDetailPage() {
         )}
       </SidebarLayout>
     </ProtectedRoute>
+  );
+}
+
+export default function JobDetailPageWithSuspense() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <Loader className="w-8 h-8 animate-spin text-gray-400" />
+        </div>
+      }
+    >
+      <JobDetailPage />
+    </Suspense>
   );
 }

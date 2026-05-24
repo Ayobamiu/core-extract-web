@@ -7,12 +7,15 @@ import { JobFile } from "@/lib/api";
 import {
   checkFileConstraints,
   getViolationSeverityColor,
+  getConstraintPresentation,
+  CheckFileConstraintsOptions,
 } from "@/lib/constraintUtils";
 
 interface ConstraintErrorIconProps {
   file: JobFile | null;
   className?: string;
   defaultOpen?: boolean;
+  constraintOptions?: CheckFileConstraintsOptions;
 }
 
 /**
@@ -23,6 +26,7 @@ const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
   file,
   className = "",
   defaultOpen = false,
+  constraintOptions,
 }) => {
   if (
     !file ||
@@ -32,16 +36,26 @@ const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
     return null;
   }
 
-  const constraints = checkFileConstraints(file);
+  const constraints = checkFileConstraints(file, constraintOptions);
   const failedConstraints = constraints.filter((c) => !c.passed);
 
   if (failedConstraints.length === 0) {
     return null;
   }
 
+  const countyFailed = failedConstraints.find((c) => c.emphasis === "county");
+  const primarySeverity = countyFailed
+    ? "critical"
+    : failedConstraints.some((c) => c.severity === "error")
+      ? "error"
+      : "warning";
+  const countyPresentation = countyFailed
+    ? getConstraintPresentation(countyFailed)
+    : null;
+
   return (
     <Tooltip
-    open={defaultOpen}
+      open={defaultOpen}
       title={
         <div>
           <div
@@ -52,28 +66,63 @@ const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
           >
             Failed Constraints ({failedConstraints.length}):
           </div>
-          {failedConstraints.map((check, index) => (
-            <div key={index} style={{ marginBottom: "4px" }}>
-              <div style={{ fontWeight: "bold" }}>{check.name}</div>
-              <div style={{ fontSize: "12px", color: "#ccc" }}>
-                {check.message}
+          {failedConstraints.map((check, index) => {
+            const presentation = getConstraintPresentation(check);
+            return (
+              <div key={index} style={{ marginBottom: "4px" }}>
+                <div
+                  style={{
+                    fontWeight: "bold",
+                    color:
+                      check.emphasis === "county"
+                        ? presentation.color
+                        : undefined,
+                  }}
+                >
+                  {presentation.badgeLetter
+                    ? `[${presentation.badgeLetter}] `
+                    : ""}
+                  {check.name}
+                </div>
+                <div style={{ fontSize: "12px", color: "#ccc" }}>
+                  {check.message}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       }
     >
-      <div className={`flex items-center space-x-1 ${className}`}>
+      <div className={`flex items-center gap-1 ${className}`}>
+        {countyFailed && countyPresentation?.badgeLetter && (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 20,
+              height: 20,
+              borderRadius: 4,
+              backgroundColor: countyPresentation.color,
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 800,
+              boxShadow: "0 0 0 2px #ede9fe",
+            }}
+          >
+            {countyPresentation.badgeLetter}
+          </span>
+        )}
         <ExclamationCircleOutlined
           style={{
-            color: getViolationSeverityColor("error"),
+            color: getViolationSeverityColor(primarySeverity),
             fontSize: "16px",
           }}
         />
         <Badge
           count={failedConstraints.length}
           style={{
-            backgroundColor: getViolationSeverityColor("error"),
+            backgroundColor: getViolationSeverityColor(primarySeverity),
             minWidth: "18px",
             height: "18px",
             lineHeight: "18px",
@@ -86,4 +135,3 @@ const ConstraintErrorIcon: React.FC<ConstraintErrorIconProps> = ({
 };
 
 export default ConstraintErrorIcon;
-

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Modal } from "antd";
+import { Modal, Spin } from "antd";
 import { JobFile } from "@/lib/api";
 import FileViewerLayout from "./FileViewerLayout";
 
@@ -10,7 +10,6 @@ interface FullscreenModalProps {
   open: boolean;
   onClose: () => void;
   onOpenFileDetails: (file: JobFile) => void;
-  onOpenFilePage?: (fileId: string) => void;
   onPreviousFile: () => void;
   onNextFile: () => void;
   onUpdateReviewStatus: (
@@ -51,7 +50,6 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
   open,
   onClose,
   onOpenFileDetails,
-  onOpenFilePage,
   onPreviousFile,
   onNextFile,
   onUpdateReviewStatus,
@@ -118,6 +116,11 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
       closeIcon={null}
       maskClosable={false}
     >
+      {!file ? (
+        <div className="flex h-full items-center justify-center bg-gray-50">
+          <Spin size="large" />
+        </div>
+      ) : (
       <FileViewerLayout
         className="h-full"
         file={file}
@@ -138,7 +141,6 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
         onNext={onNextFile}
         onClose={onClose}
         onOpenFileDetails={onOpenFileDetails}
-        onOpenFilePage={onOpenFilePage}
         onUpdateReviewStatus={onUpdateReviewStatus}
         onVerifyFile={onVerifyFile}
         onReviewAndVerifyFile={onReviewAndVerifyFile}
@@ -148,6 +150,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
         reprocessingFileId={reprocessingFileId}
         isAdmin={isAdmin}
       />
+      )}
     </Modal>
   );
 };

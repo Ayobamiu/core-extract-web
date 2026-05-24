@@ -7,7 +7,6 @@ import {
   CheckCircleOutlined,
   FilePdfOutlined,
   LeftOutlined,
-  LinkOutlined,
   RightOutlined,
 } from "@ant-design/icons";
 import type { JobFile } from "@/lib/api";
@@ -26,7 +25,6 @@ export interface FileViewerHeaderProps {
   onNext?: () => void;
   onClose?: () => void;
   onOpenFileDetails?: (file: JobFile) => void;
-  onOpenFilePage?: (fileId: string) => void;
   onUpdateReviewStatus: (
     fileId: string,
     status: "reviewed" | "pending",
@@ -51,7 +49,6 @@ export default function FileViewerHeader({
   onNext,
   onClose,
   onOpenFileDetails,
-  onOpenFilePage,
   onUpdateReviewStatus,
   onVerifyFile,
   onReviewAndVerifyFile,
@@ -72,15 +69,6 @@ export default function FileViewerHeader({
       onClick: () => onReviewAndVerifyFile(file.id),
     });
   }
-  if (onOpenFilePage) {
-    moreMenuItems.push({
-      key: "open-page",
-      label: "Open in full page",
-      icon: <LinkOutlined />,
-      onClick: () => onOpenFilePage(file.id),
-    });
-  }
-
   const summary = buildFileProcessingSummary(file);
   const hasMetaChips =
     Boolean(summary.extractionMethod) ||

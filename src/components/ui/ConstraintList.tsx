@@ -6,7 +6,8 @@ import { ExclamationCircleOutlined } from "@ant-design/icons";
 import { JobFile } from "@/lib/api";
 import {
   checkFileConstraints,
-  getViolationSeverityColor,
+  getConstraintPresentation,
+  CheckFileConstraintsOptions,
 } from "@/lib/constraintUtils";
 
 const { Text } = Typography;
@@ -14,6 +15,7 @@ const { Text } = Typography;
 interface ConstraintListProps {
   file: JobFile | null;
   className?: string;
+  constraintOptions?: CheckFileConstraintsOptions;
 }
 
 /**
@@ -23,12 +25,13 @@ interface ConstraintListProps {
 const ConstraintList: React.FC<ConstraintListProps> = ({
   file,
   className = "",
+  constraintOptions,
 }) => {
   if (!file) {
     return null;
   }
 
-  const constraints = checkFileConstraints(file);
+  const constraints = checkFileConstraints(file, constraintOptions);
 
   if (constraints.length === 0) {
     return null;
@@ -40,46 +43,83 @@ const ConstraintList: React.FC<ConstraintListProps> = ({
     return null;
   }
 
+  const sortedFailed = [...failedConstraints].sort((a, b) => {
+    if (a.emphasis === "county" && b.emphasis !== "county") return -1;
+    if (b.emphasis === "county" && a.emphasis !== "county") return 1;
+    return 0;
+  });
+
   return (
     <div className={className}>
       <h3 className="text-lg font-semibold mb-3">
         Failed Constraints ({failedConstraints.length})
       </h3>
       <div className="space-y-2">
-        {failedConstraints.map((check, index) => (
-          <div
-            key={`failed-${index}`}
-            className="flex items-start space-x-2 p-2 bg-red-50 border border-red-200 rounded"
-          >
-            <ExclamationCircleOutlined
-              style={{
-                color: getViolationSeverityColor(check.severity),
-                marginTop: "2px",
-              }}
-            />
-            <div className="flex-1">
-              <Text strong className="text-sm">
-                {check.name}
-              </Text>
-              <div className="text-xs text-gray-600 mt-1">
-                {check.message}
-              </div>
-              {check.details && (
-                <div className="text-xs text-gray-500 mt-1">
-                  {Object.entries(check.details).map(([key, value]) => (
-                    <span key={key} className="mr-3">
-                      {key}: {String(value) || "N/A"}
-                    </span>
-                  ))}
-                </div>
+        {sortedFailed.map((check, index) => {
+          const presentation = getConstraintPresentation(check);
+          const isCounty = check.emphasis === "county";
+
+          return (
+            <div
+              key={`failed-${index}`}
+              className={`flex items-start space-x-2 p-2 rounded border ${
+                isCounty
+                  ? "bg-violet-50 border-violet-400 ring-2 ring-violet-200"
+                  : "bg-red-50 border-red-200"
+              }`}
+            >
+              {isCounty && presentation.badgeLetter ? (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 22,
+                    height: 22,
+                    borderRadius: 4,
+                    backgroundColor: presentation.color,
+                    color: "#fff",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    flexShrink: 0,
+                    marginTop: 2,
+                  }}
+                >
+                  {presentation.badgeLetter}
+                </span>
+              ) : (
+                <ExclamationCircleOutlined
+                  style={{
+                    color: presentation.color,
+                    marginTop: "2px",
+                  }}
+                />
               )}
+              <div className="flex-1">
+                <Text
+                  strong
+                  className="text-sm"
+                  style={isCounty ? { color: presentation.color } : undefined}
+                >
+                  {check.name}
+                </Text>
+                <div className="text-xs text-gray-600 mt-1">{check.message}</div>
+                {check.details && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    {Object.entries(check.details).map(([key, value]) => (
+                      <span key={key} className="mr-3">
+                        {key}: {String(value) || "N/A"}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 };
 
 export default ConstraintList;
-

@@ -1,5 +1,9 @@
 // Constraint utility functions for frontend
 import { JobFile } from '@/lib/api';
+import { MGS_LOWER_PENINSULA_COUNTIES } from '@/lib/mgsLowerPeninsulaCounties';
+
+/** MGSU well log batch job — Michigan lower-peninsula counties */
+export const MGS_MICHIGAN_WELL_JOB_ID = '5667fe82-63e1-47fa-a640-b182b5c5d034';
 
 /**
  * Extract permit number from filename
@@ -67,13 +71,120 @@ export function extractPermitFromData(result: any): string | null {
 /**
  * Check if permit numbers match between filename and extracted data
  */
+export function normalizeCountyName(name: string | null | undefined): string | null {
+    if (!name || typeof name !== 'string') return null;
+    return name
+        .trim()
+        .toLowerCase()
+        .replace(/\s+county$/i, '')
+        .replace(/\s+/g, ' ');
+}
+
+export function formatCountyDisplay(name: string | null | undefined): string {
+    if (!name) return '';
+    const trimmed = name.trim();
+    if (/^[A-Z\s]+$/.test(trimmed)) {
+        return trimmed
+            .toLowerCase()
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+    return trimmed;
+}
+
+const michiganLpCountyKeys = new Set(
+    MGS_LOWER_PENINSULA_COUNTIES.map((c) => normalizeCountyName(c)).filter(
+        Boolean
+    ) as string[]
+);
+
+export function isMichiganLowerPeninsulaCounty(name: string | null | undefined): boolean {
+    const key = normalizeCountyName(name);
+    return key ? michiganLpCountyKeys.has(key) : false;
+}
+
+export interface CheckFileConstraintsOptions {
+    mgsCountyByPermit?: ReadonlyMap<string, string>;
+}
+
+export function checkWrongCountyName(
+    file: JobFile,
+    mgsCountyByPermit?: ReadonlyMap<string, string>
+): {
+    hasViolation: boolean;
+    extractedCounty: string | null;
+    expectedCounty: string | null;
+    message: string;
+} {
+    const extractedCounty =
+        file.actual_result?.county ??
+        file.result?.county ??
+        null;
+
+    const permit =
+        extractPermitFromData(file.result) ||
+        extractPermitFromFilename(file.filename);
+
+    const metadataCounty =
+        typeof file.processing_metadata?.mgs_expected_county === 'string'
+            ? file.processing_metadata.mgs_expected_county
+            : null;
+
+    const expectedCounty =
+        metadataCounty ||
+        (permit && mgsCountyByPermit?.get(permit)) ||
+        (permit && mgsCountyByPermit?.get(permit.replace(/^0+/, '') || '0')) ||
+        null;
+
+    if (!extractedCounty) {
+        return {
+            hasViolation: true,
+            extractedCounty: null,
+            expectedCounty,
+            message: expectedCounty
+                ? `County missing in extraction; MGS inventory expects "${formatCountyDisplay(expectedCounty)}"`
+                : 'County missing in extracted data',
+        };
+    }
+
+    if (expectedCounty) {
+        const extractedKey = normalizeCountyName(extractedCounty);
+        const expectedKey = normalizeCountyName(expectedCounty);
+        if (extractedKey && expectedKey && extractedKey !== expectedKey) {
+            return {
+                hasViolation: true,
+                extractedCounty,
+                expectedCounty,
+                message: `Wrong county: document has "${formatCountyDisplay(extractedCounty)}" but MGS inventory expects "${formatCountyDisplay(expectedCounty)}"`,
+            };
+        }
+    }
+
+    if (!isMichiganLowerPeninsulaCounty(extractedCounty)) {
+        return {
+            hasViolation: true,
+            extractedCounty,
+            expectedCounty,
+            message: `"${formatCountyDisplay(extractedCounty)}" is not a Michigan lower-peninsula county in the MGS inventory`,
+        };
+    }
+
+    return {
+        hasViolation: false,
+        extractedCounty,
+        expectedCounty,
+        message: expectedCounty
+            ? `County matches MGS inventory (${formatCountyDisplay(expectedCounty)})`
+            : `County "${formatCountyDisplay(extractedCounty)}" is a valid Michigan lower-peninsula county`,
+    };
+}
+
 export function checkPermitNumberMatch(file: JobFile): {
     hasViolation: boolean;
     filenamePermit: string | null;
     dataPermit: string | null;
     message: string;
 } {
-    if (file.job_id !== '5667fe82-63e1-47fa-a640-b182b5c5d034') {
+    if (file.job_id !== MGS_MICHIGAN_WELL_JOB_ID) {
         return {
             hasViolation: false,
             filenamePermit: null,
@@ -119,7 +230,7 @@ export function checkPermitNumberMatch(file: JobFile): {
 export function getViolationSeverityColor(severity: string): string {
     switch (severity) {
         case 'critical':
-            return '#dc2626'; // red-600
+            return COUNTY_CONSTRAINT_COLOR;
         case 'error':
             return '#dc2626'; // red-600
         case 'warning':
@@ -156,8 +267,33 @@ export interface ConstraintCheck {
     name: string;
     passed: boolean;
     message: string;
-    severity: 'error' | 'warning' | 'info';
+    severity: 'error' | 'warning' | 'info' | 'critical';
+    /** Visual emphasis in tables and drawers */
+    emphasis?: 'county' | 'default';
     details?: any;
+}
+
+const COUNTY_CONSTRAINT_COLOR = '#7c3aed';
+
+export function getConstraintPresentation(check: ConstraintCheck): {
+    color: string;
+    icon: string;
+    badgeLetter?: string;
+    rowClassName?: string;
+} {
+    if (check.emphasis === 'county') {
+        return {
+            color: COUNTY_CONSTRAINT_COLOR,
+            icon: '🗺️',
+            badgeLetter: 'C',
+            rowClassName: 'bg-violet-50 border-violet-300',
+        };
+    }
+
+    return {
+        color: getViolationSeverityColor(check.severity),
+        icon: getViolationSeverityIcon(check.severity),
+    };
 }
 
 /**
@@ -230,16 +366,47 @@ export function checkFormationContinuity(formations: any[]): {
 /**
  * Check all constraints for a file (same logic as in FileTable Constraints column)
  */
-export function checkFileConstraints(file: JobFile): ConstraintCheck[] {
+export function checkFileConstraints(
+    file: JobFile,
+    options: CheckFileConstraintsOptions = {}
+): ConstraintCheck[] {
     const checks: ConstraintCheck[] = [];
 
     // Only check constraints for specific job and completed files
     if (
         file.processing_status !== 'completed' ||
-        file.job_id !== '5667fe82-63e1-47fa-a640-b182b5c5d034' ||
+        file.job_id !== MGS_MICHIGAN_WELL_JOB_ID ||
         !file.result
     ) {
         return checks;
+    }
+
+    // 0. County name vs MGS inventory (highlighted)
+    const countyCheck = checkWrongCountyName(file, options.mgsCountyByPermit);
+    if (countyCheck.hasViolation) {
+        checks.push({
+            name: 'Wrong County Name',
+            passed: false,
+            message: countyCheck.message,
+            severity: 'critical',
+            emphasis: 'county',
+            details: {
+                extractedCounty: countyCheck.extractedCounty,
+                expectedCounty: countyCheck.expectedCounty,
+            },
+        });
+    } else if (countyCheck.extractedCounty) {
+        checks.push({
+            name: 'Wrong County Name',
+            passed: true,
+            message: countyCheck.message,
+            severity: 'info',
+            emphasis: 'county',
+            details: {
+                extractedCounty: countyCheck.extractedCounty,
+                expectedCounty: countyCheck.expectedCounty,
+            },
+        });
     }
 
     // 1. Permit number mismatch check
