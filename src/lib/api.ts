@@ -1359,7 +1359,7 @@ class ApiClient {
         });
     }
 
-    async updateFileResults(fileId: string, results: any): Promise<ApiResponse<{ fileId: string; filename: string; results: any }>> {
+    async updateFileResults(fileId: string, results: any): Promise<ApiResponse<{ fileId: string; filename: string; results: any; flags?: any[] }>> {
         return this.request(`/files/${fileId}/results`, {
             method: 'PUT',
             body: JSON.stringify({ results }),

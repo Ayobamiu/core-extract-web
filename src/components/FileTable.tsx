@@ -89,6 +89,8 @@ interface FileTableProps {
   onBulkAddToPreview: (fileIds: string[]) => void;
   onDataUpdate?: () => void;
   refreshTrigger?: number;
+  /** Phase 2: server pushes row-level patches via socket */
+  filePatch?: { fileId: string; patch: Record<string, any>; version: string } | null;
   fileSummary?: {
     total: number;
     extraction_pending: number;
@@ -135,6 +137,7 @@ const FileTable: React.FC<FileTableProps> = ({
   onBulkAddToPreview,
   onDataUpdate,
   refreshTrigger,
+  filePatch,
   fileSummary,
   isConnected = false,
   isGoingLive = false,
@@ -801,6 +804,34 @@ const FileTable: React.FC<FileTableProps> = ({
     JSON.stringify(tableParams.filters),
     refreshTrigger,
   ]);
+
+  // Phase 2: Apply row-level patches from socket events without refetching
+  const patchVersions = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!filePatch) return;
+    const { fileId, patch, version } = filePatch;
+
+    // New file added — we don't have the full row shape, so refetch
+    if (patch._newFile) {
+      fetchData();
+      return;
+    }
+
+    // Out-of-order protection: skip if we already applied a newer version
+    const lastVersion = patchVersions.current.get(fileId);
+    if (lastVersion && lastVersion >= version) return;
+    patchVersions.current.set(fileId, version);
+
+    // Apply patch to matching row
+    setData((prev) => {
+      const idx = prev.findIndex((f) => f.id === fileId);
+      if (idx < 0) return prev; // file not on current page — ignore
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], ...patch };
+      return updated;
+    });
+  }, [filePatch]);
 
   // Keep viewer file row in sync with table refreshes without reloading PDF
   useEffect(() => {

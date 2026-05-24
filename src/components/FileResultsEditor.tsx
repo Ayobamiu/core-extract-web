@@ -17,7 +17,7 @@ interface FileResultsEditorProps {
   fileId: string;
   filename: string;
   initialResults: any;
-  onSuccess: (updatedResults: any) => void;
+  onSuccess: (updatedResults: any, flags?: any[]) => void;
   // Per-section extraction (v2 envelope) provenance. When present, the
   // editor shows a section summary banner so the user understands they're
   // editing a multi-section result, not a flat field bag.
@@ -120,8 +120,8 @@ export default function FileResultsEditor({
         setSuccess(true);
         setHasChanges(false);
 
-        // Call success callback with updated results
-        onSuccess(results);
+        // Call success callback with updated results and flags from server
+        onSuccess(results, response.data?.flags);
 
         // Close modal after a short delay
         setTimeout(() => {
