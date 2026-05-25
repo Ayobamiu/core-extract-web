@@ -31,6 +31,7 @@ import JobJobsRail from "@/components/jobs/JobJobsRail";
 import JobConfigEditor from "@/components/JobConfigEditor";
 import PageSelectionModal from "@/components/PageSelectionModal";
 import { useSocket } from "@/hooks/useSocket";
+import { usePatchCoalescer, PatchEvent } from "@/hooks/usePatchCoalescer";
 import {
   PlusIcon,
   DocumentIcon,
@@ -94,11 +95,8 @@ function JobDetailPage() {
   const [showFilePreviewModal, setShowFilePreviewModal] = useState(false);
   const [isGoingLive, setIsGoingLive] = useState(false);
   const [fileTableRefreshTrigger, setFileTableRefreshTrigger] = useState(0);
-  const [filePatch, setFilePatch] = useState<{
-    fileId: string;
-    patch: Record<string, any>;
-    version: string;
-  } | null>(null);
+  // Phase 8: coalesced patches — array of batched events flushed together
+  const [filePatchBatch, setFilePatchBatch] = useState<PatchEvent[] | null>(null);
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -185,22 +183,37 @@ function JobDetailPage() {
     }, 5000);
   }, []);
 
-  const handleFileStatusUpdate = useCallback(
-    (data: any) => {
-      // Phase 2: standardized event shape { jobId, fileId, patch, version }
-      if (data.patch && data.fileId && data.version) {
-        setFilePatch({ fileId: data.fileId, patch: data.patch, version: data.version });
-      } else {
-        // Fallback for any legacy events (e.g. from old workers still running)
+  // Phase 8: Event coalescing — batch rapid socket events into fewer UI updates
+  const { push: pushPatch } = usePatchCoalescer({
+    flushInterval: 200,
+    onFlush: (patches) => {
+      // Check if any patch is a _newFile event — if so, refetch
+      const hasNewFile = patches.some((p) => p.patch._newFile);
+      if (hasNewFile) {
         setFileTableRefreshTrigger((prev) => prev + 1);
+      } else {
+        setFilePatchBatch(patches);
       }
-
-      // Refresh summary counts (lightweight single-row query)
+    },
+    onSummaryRefresh: () => {
+      // Refresh summary counts (lightweight single-row query) — at most once per flush
       apiClient.getJobDetails(jobId).then((response) => {
         setFileSummary(response.summary);
       }).catch(() => {});
     },
-    [jobId],
+  });
+
+  const handleFileStatusUpdate = useCallback(
+    (data: any) => {
+      // Phase 2: standardized event shape { jobId, fileId, patch, version }
+      if (data.patch && data.fileId && data.version) {
+        pushPatch({ fileId: data.fileId, patch: data.patch, version: data.version });
+      } else {
+        // Fallback for any legacy events (e.g. from old workers still running)
+        setFileTableRefreshTrigger((prev) => prev + 1);
+      }
+    },
+    [pushPatch],
   );
 
   const handlePreviewUpdated = useCallback(
@@ -594,7 +607,7 @@ function JobDetailPage() {
                 }}
                 onDataUpdate={refreshJobData}
                 refreshTrigger={fileTableRefreshTrigger}
-                filePatch={filePatch}
+                filePatchBatch={filePatchBatch}
                 fileSummary={fileSummary}
                 isConnected={isConnected}
                 isGoingLive={isGoingLive}
@@ -896,11 +909,11 @@ function JobDetailPage() {
                 onSuccess={(updatedResults, flags) => {
                   // Apply flags patch immediately so constraints update
                   if (flags) {
-                    setFilePatch({
+                    setFilePatchBatch([{
                       fileId: selectedFileForResultsEdit.id,
                       patch: { has_result: true, flags },
                       version: new Date().toISOString(),
-                    });
+                    }]);
                   }
                   handleEditResults(
                     selectedFileForResultsEdit.id,

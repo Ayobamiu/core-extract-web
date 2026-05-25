@@ -89,12 +89,12 @@ interface FileTableProps {
   onBulkAddToPreview: (fileIds: string[]) => void;
   onDataUpdate?: () => void;
   refreshTrigger?: number;
-  /** Phase 2: server pushes row-level patches via socket */
-  filePatch?: {
+  /** Phase 8: coalesced batch of row-level patches from socket */
+  filePatchBatch?: Array<{
     fileId: string;
     patch: Record<string, any>;
     version: string;
-  } | null;
+  }> | null;
   fileSummary?: {
     total: number;
     extraction_pending: number;
@@ -141,7 +141,7 @@ const FileTable: React.FC<FileTableProps> = ({
   onBulkAddToPreview,
   onDataUpdate,
   refreshTrigger,
-  filePatch,
+  filePatchBatch,
   fileSummary,
   isConnected = false,
   isGoingLive = false,
@@ -867,33 +867,42 @@ const FileTable: React.FC<FileTableProps> = ({
     refreshTrigger,
   ]);
 
-  // Phase 2: Apply row-level patches from socket events without refetching
+  // Phase 8: Apply coalesced batch of patches in a single React update
   const patchVersions = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
-    if (!filePatch) return;
-    const { fileId, patch, version } = filePatch;
+    if (!filePatchBatch || filePatchBatch.length === 0) return;
 
-    // New file added — we don't have the full row shape, so refetch
-    if (patch._newFile) {
+    // Check if any patch is a _newFile event — if so, refetch
+    if (filePatchBatch.some((p) => p.patch._newFile)) {
       fetchData();
       return;
     }
 
-    // Out-of-order protection: skip if we already applied a newer version
-    const lastVersion = patchVersions.current.get(fileId);
-    if (lastVersion && lastVersion >= version) return;
-    patchVersions.current.set(fileId, version);
-
-    // Apply patch to matching row
+    // Apply all patches in one setData call (single re-render)
     setData((prev) => {
-      const idx = prev.findIndex((f) => f.id === fileId);
-      if (idx < 0) return prev; // file not on current page — ignore
-      const updated = [...prev];
-      updated[idx] = { ...updated[idx], ...patch };
-      return updated;
+      let updated = prev;
+      let changed = false;
+
+      for (const { fileId, patch, version } of filePatchBatch) {
+        // Out-of-order protection
+        const lastVersion = patchVersions.current.get(fileId);
+        if (lastVersion && lastVersion >= version) continue;
+        patchVersions.current.set(fileId, version);
+
+        const idx = updated.findIndex((f) => f.id === fileId);
+        if (idx < 0) continue; // file not on current page — ignore
+
+        if (!changed) {
+          updated = [...updated]; // copy only once
+          changed = true;
+        }
+        updated[idx] = { ...updated[idx], ...patch };
+      }
+
+      return changed ? updated : prev;
     });
-  }, [filePatch]);
+  }, [filePatchBatch]);
 
   // Keep viewer file row in sync with table refreshes without reloading PDF
   useEffect(() => {
