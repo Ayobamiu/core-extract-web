@@ -357,7 +357,14 @@ const FileTable: React.FC<FileTableProps> = ({
     const resetPage = filtersChanged || sortChanged;
 
     setTableParams({
-      pagination: resetPage ? { ...pagination, current: 1 } : pagination,
+      pagination: {
+        ...pagination,
+        pageSize:
+          pagination.pageSize ||
+          tableParams.pagination?.pageSize ||
+          DEFAULT_PAGE_SIZE,
+        ...(resetPage ? { current: 1 } : {}),
+      },
       filters,
       sortOrder: newSortOrder,
       sortField: newSortField,
@@ -2114,6 +2121,8 @@ const FileTable: React.FC<FileTableProps> = ({
       rowSelection={rowSelection}
       pagination={{
         ...tableParams.pagination,
+        showSizeChanger: true,
+        pageSizeOptions: ["10", "20", "50", "100"],
         showQuickJumper: true,
         showTotal: (total, range) =>
           `${range[0]}-${range[1]} of ${total} items`,
