@@ -52,7 +52,7 @@ import {
 import FileDetailsDrawer from "@/components/file/FileDetailsDrawer";
 import FullscreenModal from "@/components/file/FullscreenModal";
 import styles from "./FileTable.module.css";
-import { Loader, MessageSquare } from "lucide-react";
+import { Loader, MessageSquare, SearchIcon } from "lucide-react";
 import { SignalIcon } from "@heroicons/react/24/outline";
 import StatusIndicator from "@/components/ui/StatusIndicator";
 
@@ -90,7 +90,11 @@ interface FileTableProps {
   onDataUpdate?: () => void;
   refreshTrigger?: number;
   /** Phase 2: server pushes row-level patches via socket */
-  filePatch?: { fileId: string; patch: Record<string, any>; version: string } | null;
+  filePatch?: {
+    fileId: string;
+    patch: Record<string, any>;
+    version: string;
+  } | null;
   fileSummary?: {
     total: number;
     extraction_pending: number;
@@ -235,6 +239,24 @@ const FileTable: React.FC<FileTableProps> = ({
   const [data, setData] = useState<JobFile[]>([]);
 
   const [loading, setLoading] = useState(false);
+  // Phase 6: search text state (debounced before sending to server)
+  const [searchText, setSearchText] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchChange = (value: string) => {
+    setSearchText(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(value);
+      // Reset to page 1 on search
+      setTableParams((prev) => ({
+        ...prev,
+        pagination: { ...prev.pagination, current: 1 },
+      }));
+    }, 400);
+  };
+
   const [tableParams, setTableParams] = useState<TableParams>({
     pagination: {
       current: 1,
@@ -242,7 +264,7 @@ const FileTable: React.FC<FileTableProps> = ({
     },
   });
 
-  // AJAX fetch function
+  // AJAX fetch function — Phase 6: passes search, filter & sort to server
   const fetchData = async () => {
     if (fetchAbortRef.current) {
       fetchAbortRef.current.abort();
@@ -252,17 +274,36 @@ const FileTable: React.FC<FileTableProps> = ({
 
     setLoading(true);
     try {
-      const { pagination } = tableParams;
+      const { pagination, sortField, sortOrder, filters } = tableParams;
       const offset =
         ((pagination?.current || 1) - 1) *
         (pagination?.pageSize || DEFAULT_PAGE_SIZE);
 
+      // Build Phase 6 filter params from Ant Design table filters
+      const extractionStatusFilter = filters?.extraction_status?.[0] as
+        | string
+        | undefined;
+      const processingStatusFilter = filters?.processing_status?.[0] as
+        | string
+        | undefined;
+      const reviewStatusFilter = filters?.review_status?.[0] as
+        | string
+        | undefined;
+
       const response = await apiClient.getAllFiles(
         pagination?.pageSize || DEFAULT_PAGE_SIZE,
         offset,
-        undefined, // status filter
-        jobId, // jobId filter
+        undefined, // legacy status filter
+        jobId,
         controller.signal,
+        {
+          search: debouncedSearch || undefined,
+          extractionStatus: extractionStatusFilter,
+          processingStatus: processingStatusFilter,
+          reviewStatus: reviewStatusFilter,
+          sortField: sortField || undefined,
+          sortOrder: sortOrder || undefined,
+        },
       );
 
       setData(response.files || []);
@@ -288,25 +329,45 @@ const FileTable: React.FC<FileTableProps> = ({
 
   // Phase 3: mgsCountyByPermit fetch removed — flags now come from server
 
-  // Handle table change
+  // Handle table change — Phase 6: filters and sort are server-side
   const handleTableChange: TableProps<JobFile>["onChange"] = (
     pagination,
     filters,
     sorter,
   ) => {
+    const newSortField = Array.isArray(sorter)
+      ? undefined
+      : typeof sorter?.field === "string"
+        ? sorter.field
+        : typeof sorter?.columnKey === "string"
+          ? sorter.columnKey
+          : undefined;
+    const newSortOrder = Array.isArray(sorter)
+      ? undefined
+      : sorter?.order === "ascend" || sorter?.order === "descend"
+        ? sorter.order
+        : undefined;
+
+    // Reset to page 1 when filters or sort change
+    const filtersChanged =
+      JSON.stringify(filters) !== JSON.stringify(tableParams.filters);
+    const sortChanged =
+      newSortField !== tableParams.sortField ||
+      newSortOrder !== tableParams.sortOrder;
+    const resetPage = filtersChanged || sortChanged;
+
     setTableParams({
-      pagination,
+      pagination: {
+        ...pagination,
+        pageSize:
+          pagination.pageSize ||
+          tableParams.pagination?.pageSize ||
+          DEFAULT_PAGE_SIZE,
+        ...(resetPage ? { current: 1 } : {}),
+      },
       filters,
-      sortOrder: Array.isArray(sorter)
-        ? undefined
-        : sorter?.order === "ascend" || sorter?.order === "descend"
-          ? sorter.order
-          : undefined,
-      sortField: Array.isArray(sorter)
-        ? undefined
-        : typeof sorter?.field === "string"
-          ? sorter.field
-          : undefined,
+      sortOrder: newSortOrder,
+      sortField: newSortField,
     });
 
     // Clear data when page size changes
@@ -802,6 +863,7 @@ const FileTable: React.FC<FileTableProps> = ({
     tableParams?.sortOrder,
     tableParams?.sortField,
     JSON.stringify(tableParams.filters),
+    debouncedSearch,
     refreshTrigger,
   ]);
 
@@ -1246,22 +1308,22 @@ const FileTable: React.FC<FileTableProps> = ({
         >
           {record.processing_status === "completed" &&
             ((record as any).has_result ?? record.result) && (
-            <>
-              <Tooltip title="View results">
-                <FullscreenOutlined
-                  style={{
-                    cursor: "pointer",
-                    color: "#1890ff",
-                    flexShrink: 0,
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleOpenFullscreen(record);
-                  }}
-                />
-              </Tooltip>
-            </>
-          )}
+              <>
+                <Tooltip title="View results">
+                  <FullscreenOutlined
+                    style={{
+                      cursor: "pointer",
+                      color: "#1890ff",
+                      flexShrink: 0,
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenFullscreen(record);
+                    }}
+                  />
+                </Tooltip>
+              </>
+            )}
           <CopyOutlined
             style={{
               color: "#1890ff",
@@ -1314,6 +1376,9 @@ const FileTable: React.FC<FileTableProps> = ({
       dataIndex: "size",
       key: "size",
       width: 100,
+      sorter: true,
+      sortOrder:
+        tableParams.sortField === "size" ? tableParams.sortOrder : undefined,
       render: (size: number) => (
         <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
           {formatFileSize(size)}
@@ -1354,6 +1419,11 @@ const FileTable: React.FC<FileTableProps> = ({
       dataIndex: "created_at",
       key: "created_at",
       width: 150,
+      sorter: true,
+      sortOrder:
+        tableParams.sortField === "created_at"
+          ? tableParams.sortOrder
+          : undefined,
       render: (date: string) => (
         <Text
           type="secondary"
@@ -1445,7 +1515,16 @@ const FileTable: React.FC<FileTableProps> = ({
     {
       title: "Review Status",
       key: "review_status",
-      width: 130,
+      // width: 130,
+      filters: [
+        { text: "Pending", value: "pending" },
+        { text: "Approved", value: "approved" },
+        { text: "Rejected", value: "rejected" },
+        { text: "In Review", value: "in_review" },
+        { text: "Reviewed", value: "reviewed" },
+      ],
+      filterMultiple: false,
+      filteredValue: tableParams.filters?.review_status || null,
       render: (_: any, record: JobFile) => {
         const status = record.review_status || "pending";
         const statusColors: Record<string, string> = {
@@ -1522,8 +1601,21 @@ const FileTable: React.FC<FileTableProps> = ({
     },
     {
       title: "Status",
-      key: "status",
+      key: "processing_status",
       width: 100,
+      filters: [
+        { text: "Pending", value: "pending" },
+        { text: "Processing", value: "processing" },
+        { text: "Completed", value: "completed" },
+        { text: "Failed", value: "failed" },
+      ],
+      filterMultiple: false,
+      filteredValue: tableParams.filters?.processing_status || null,
+      sorter: true,
+      sortOrder:
+        tableParams.sortField === "processing_status"
+          ? tableParams.sortOrder
+          : undefined,
       render: (_: any, record: JobFile) => (
         <Tooltip
           title={
@@ -1933,6 +2025,16 @@ const FileTable: React.FC<FileTableProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Phase 6: Search input */}
+          <Input
+            placeholder="Search files..."
+            allowClear
+            size="small"
+            value={searchText}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            style={{ width: 200 }}
+            prefix={<SearchIcon className="w-4 h-4" />}
+          />
           {onGoLive && (
             <Button
               size="small"
@@ -2019,6 +2121,8 @@ const FileTable: React.FC<FileTableProps> = ({
       rowSelection={rowSelection}
       pagination={{
         ...tableParams.pagination,
+        showSizeChanger: true,
+        pageSizeOptions: ["10", "20", "50", "100"],
         showQuickJumper: true,
         showTotal: (total, range) =>
           `${range[0]}-${range[1]} of ${total} items`,
