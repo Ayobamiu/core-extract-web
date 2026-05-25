@@ -897,7 +897,9 @@ const FileTable: React.FC<FileTableProps> = ({
           updated = [...updated]; // copy only once
           changed = true;
         }
-        updated[idx] = { ...updated[idx], ...patch };
+        // Strip transient fields that shouldn't be stored on the row
+        const { _message, _newFile, ...rowPatch } = patch;
+        updated[idx] = { ...updated[idx], ...rowPatch };
       }
 
       return changed ? updated : prev;

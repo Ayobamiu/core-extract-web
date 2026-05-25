@@ -194,6 +194,13 @@ function JobDetailPage() {
       } else {
         setFilePatchBatch(patches);
       }
+
+      // Show the last live message from the batch (e.g. "Extracting file X...")
+      const lastMessage = [...patches].reverse().find((p) => p.patch._message);
+      if (lastMessage) {
+        setRealtimeMessage(lastMessage.patch._message);
+        setTimeout(() => setRealtimeMessage(null), 3000);
+      }
     },
     onSummaryRefresh: () => {
       // Refresh summary counts (lightweight single-row query) — at most once per flush
