@@ -1579,9 +1579,11 @@ const FileTable: React.FC<FileTableProps> = ({
           (record.extraction_metadata as any)?.extraction_method ||
           "unknown";
 
-        // Model is no longer in the list payload (Phase 1).
-        // Show "unknown" until the detail view is opened.
-        const model = (record.processing_metadata as any)?.model || "unknown";
+        // Model — prefer the skinny scalar, fall back to full metadata blob
+        const model =
+          (record as any).processing_model ||
+          (record.processing_metadata as any)?.model ||
+          "unknown";
 
         // If both are unknown, show dash
         if (extractionMethod === "unknown" && model === "unknown") {
