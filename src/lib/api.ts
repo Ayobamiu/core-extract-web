@@ -1276,9 +1276,26 @@ class ApiClient {
         return this.request(`/previews/available-files?limit=${limit}`);
     }
 
-    async getAllFiles(limit: number = 50, offset: number = 0, status?: string, jobId?: string, signal?: AbortSignal): Promise<ApiResponse<{
+    async getAllFiles(
+        limit: number = 50,
+        offset: number = 0,
+        status?: string,
+        jobId?: string,
+        signal?: AbortSignal,
+        /** Phase 6: server-side search, filter & sort */
+        filters?: {
+            search?: string;
+            extractionStatus?: string;
+            processingStatus?: string;
+            reviewStatus?: string;
+            hasResult?: boolean;
+            sortField?: string;
+            sortOrder?: 'ascend' | 'descend';
+        },
+    ): Promise<ApiResponse<{
         files: JobFile[];
         total: number;
+        filteredTotal?: number;
         stats: {
             total: number;
             completed: number;
@@ -1302,6 +1319,15 @@ class ApiClient {
 
         if (status) params.append('status', status);
         if (jobId) params.append('jobId', jobId);
+
+        // Phase 6 params
+        if (filters?.search) params.append('search', filters.search);
+        if (filters?.extractionStatus) params.append('extractionStatus', filters.extractionStatus);
+        if (filters?.processingStatus) params.append('processingStatus', filters.processingStatus);
+        if (filters?.reviewStatus) params.append('reviewStatus', filters.reviewStatus);
+        if (filters?.hasResult != null) params.append('hasResult', String(filters.hasResult));
+        if (filters?.sortField) params.append('sortField', filters.sortField);
+        if (filters?.sortOrder) params.append('sortOrder', filters.sortOrder);
 
         return this.request(`/files?${params.toString()}`, { signal });
     }
