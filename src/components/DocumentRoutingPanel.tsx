@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  App,
   Button,
   Empty,
   Collapse,
@@ -11,7 +12,6 @@ import {
   Space,
   Tag,
   Tooltip,
-  message,
 } from "antd";
 import {
   CheckCircleFilled,
@@ -244,6 +244,7 @@ export default function DocumentRoutingPanel({
   visualClassifierMeta,
   onSectionsUpdated,
 }: Props) {
+  const { message } = App.useApp();
   const sections = detectedSections?.sections ?? [];
   const pages = detectedSections?.pages ?? [];
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Modal, Checkbox, Button, Spin, message, Input } from "antd";
+import { App, Modal, Checkbox, Button, Spin, Input } from "antd";
 import PDFViewer from "./PDFViewer";
 
 interface PageSelectionModalProps {
@@ -19,6 +19,7 @@ const PageSelectionModal: React.FC<PageSelectionModalProps> = ({
   onClose,
   onConfirm,
 }) => {
+  const { message } = App.useApp();
   const [numPages, setNumPages] = useState<number | null>(null);
   const [selectedPages, setSelectedPages] =
     useState<number[]>(initialSelectedPages);

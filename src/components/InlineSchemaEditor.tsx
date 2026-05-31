@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { message } from "antd";
+import { App } from "antd";
 import { apiClient } from "@/lib/api";
 import { JsonViewer } from "@/components/json";
 
@@ -31,6 +31,7 @@ const InlineSchemaEditor: React.FC<InlineSchemaEditorProps> = ({
   currentSchema,
   onSuccess,
 }) => {
+  const { message } = App.useApp();
   const initial = useMemo(() => initialText(currentSchema), [currentSchema]);
   const [text, setText] = useState<string>(initial);
   const [saving, setSaving] = useState(false);

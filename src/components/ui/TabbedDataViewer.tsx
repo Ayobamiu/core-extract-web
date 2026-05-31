@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { jsonToCsv } from "@/lib/csvExport";
 import { MessageSquare } from "lucide-react";
-import { Button, Input, message, Typography } from "antd";
+import { App, Button, Input, Typography } from "antd";
 import { JsonViewer } from "@/components/json";
 import {
   isV2ResultEnvelope,
@@ -143,6 +143,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   resultEnvelope,
   sectionResults,
 }) => {
+  const { message } = App.useApp();
   const [activeTab, setActiveTab] = useState<TabType>("results");
   const [markdownView, setMarkdownView] = useState<MarkdownViewType>("full");
   const [editableJson, setEditableJson] = useState<string>("");

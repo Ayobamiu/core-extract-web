@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import type { GetProp, TableProps } from "antd";
 import {
+  App,
   Table,
   Tooltip,
   Badge,
@@ -10,7 +11,6 @@ import {
   Typography,
   Dropdown,
   Popover,
-  message,
   Modal,
   Upload,
   Button,
@@ -154,6 +154,7 @@ const FileTable: React.FC<FileTableProps> = ({
   jobStatus,
   getJobStatusColor,
 }) => {
+  const { message } = App.useApp();
   const { user } = useAuth();
   const isAdmin = canPerformAdminActions(user);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -1348,6 +1349,7 @@ const FileTable: React.FC<FileTableProps> = ({
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
+              maxWidth: 150,
             }}
           >
             {record.filename}

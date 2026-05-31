@@ -11,7 +11,7 @@ import React, {
 } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Drawer, Dropdown, Modal, message } from "antd";
+import { App, Drawer, Dropdown, Modal } from "antd";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import StatusIndicator from "@/components/ui/StatusIndicator";
@@ -43,6 +43,7 @@ import {
 import { Loader } from "lucide-react";
 
 function JobDetailPage() {
+  const { message } = App.useApp();
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
