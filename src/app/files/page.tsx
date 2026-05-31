@@ -403,7 +403,7 @@ export default function FilesPage() {
   if (error) {
     return (
       <ProtectedRoute>
-        <SidebarLayout>
+        <SidebarLayout pageTitle="Files">
           <Card>
             <Empty description={error} image={Empty.PRESENTED_IMAGE_SIMPLE}>
               <Button type="primary" onClick={fetchFiles}>

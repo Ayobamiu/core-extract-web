@@ -88,6 +88,17 @@ export default function SidebarLayout({
   const [isDesktop, setIsDesktop] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
+  const resolvedPageTitle =
+    pageTitle ||
+    mainNavigationItems.find((item) => item.href === pathname)?.name ||
+    (pathname === adminRegistryNavItem.href
+      ? adminRegistryNavItem.name
+      : undefined);
+
+  useEffect(() => {
+    document.title = resolvedPageTitle ?? "Core Extract";
+  }, [resolvedPageTitle]);
+
   useEffect(() => {
     const savedCollapseState = localStorage.getItem("sidebarCollapsed");
     if (savedCollapseState !== null) {
