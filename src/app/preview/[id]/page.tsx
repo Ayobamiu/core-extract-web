@@ -281,6 +281,10 @@ const PreviewPage: React.FC = () => {
   const [selectedWellData, setSelectedWellData] = useState<any>(null);
   const [selectedFilename, setSelectedFilename] = useState<string>("");
 
+  useEffect(() => {
+    document.title = previewData?.preview.name ?? "Preview";
+  }, [previewData?.preview.name]);
+
   // Extract columns from schema
   const columns: TableColumn[] = useMemo(() => {
     if (!previewData?.preview.schema?.properties) return [];

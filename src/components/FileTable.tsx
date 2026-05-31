@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import type { GetProp, TableProps } from "antd";
 import {
+  App,
   Table,
   Tooltip,
   Badge,
@@ -10,7 +11,6 @@ import {
   Typography,
   Dropdown,
   Popover,
-  message,
   Modal,
   Upload,
   Button,
@@ -154,6 +154,7 @@ const FileTable: React.FC<FileTableProps> = ({
   jobStatus,
   getJobStatusColor,
 }) => {
+  const { message } = App.useApp();
   const { user } = useAuth();
   const isAdmin = canPerformAdminActions(user);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -205,6 +206,18 @@ const FileTable: React.FC<FileTableProps> = ({
   >([]);
   const viewerLoadedFileIdRef = useRef<string | null>(null);
   const fetchAbortRef = useRef<AbortController | null>(null);
+  const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
+  const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current) {
+        clearTimeout(copyResetTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Reprocess options state
   const [reprocessOptions, setReprocessOptions] = useState({
@@ -1097,10 +1110,20 @@ const FileTable: React.FC<FileTableProps> = ({
     }),
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      // message.success("ID copied to clipboard");
-    });
+  const copyToClipboard = async (fileId: string) => {
+    try {
+      await navigator.clipboard.writeText(fileId);
+      setCopiedFileId(fileId);
+      if (copyResetTimeoutRef.current) {
+        clearTimeout(copyResetTimeoutRef.current);
+      }
+      copyResetTimeoutRef.current = setTimeout(() => {
+        setCopiedFileId((current) => (current === fileId ? null : current));
+        copyResetTimeoutRef.current = null;
+      }, 2000);
+    } catch {
+      message.error("Failed to copy file ID");
+    }
   };
 
   const handleRetryUpload = async () => {
@@ -1335,19 +1358,34 @@ const FileTable: React.FC<FileTableProps> = ({
                 </Tooltip>
               </>
             )}
-          <CopyOutlined
-            style={{
-              color: "#1890ff",
-              cursor: "pointer",
-              flexShrink: 0,
-            }}
-            onClick={() => copyToClipboard(id)}
-          />
+          <Tooltip title={copiedFileId === id ? "Copied!" : "Copy file ID"}>
+            {copiedFileId === id ? (
+              <CheckCircleOutlined
+                style={{
+                  color: "#52c41a",
+                  flexShrink: 0,
+                }}
+              />
+            ) : (
+              <CopyOutlined
+                style={{
+                  color: "#1890ff",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void copyToClipboard(id);
+                }}
+              />
+            )}
+          </Tooltip>
           <Text
             style={{
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
+              maxWidth: 150,
             }}
           >
             {record.filename}

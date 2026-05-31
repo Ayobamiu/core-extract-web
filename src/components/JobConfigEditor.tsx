@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Modal, Form, Input, Select, message, Divider, Switch, Tag } from "antd";
+import { App, Modal, Form, Input, Select, Divider, Switch, Tag } from "antd";
 import { apiClient, DocumentTypeInfo, ProcessingConfig } from "@/lib/api";
 import {
   PROCESSING_METHODS,
@@ -37,6 +37,7 @@ export default function JobConfigEditor({
   currentConfig,
   onUpdate,
 }: JobConfigEditorProps) {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [selectedProcessingMethod, setSelectedProcessingMethod] = useState<

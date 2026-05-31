@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Button, Segmented, Space, Tooltip, message } from "antd";
+import { App, Button, Segmented, Space, Tooltip } from "antd";
 import {
   CopyOutlined,
   DownloadOutlined,
@@ -61,6 +61,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   size = "small",
   extra,
 }) => {
+  const { message } = App.useApp();
   const includes = (item: ToolbarItem) => items.includes(item);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
