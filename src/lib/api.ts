@@ -295,6 +295,7 @@ export interface DetectedSectionSkippedPage {
 
 export interface DetectedSection {
     document_type_slug: string;
+    record_id?: string | null;
     page_range: [number, number];
     page_count: number;
     extraction_pages: number[];
@@ -346,6 +347,7 @@ export type SectionResultStatus =
 export interface SectionResult {
     section_index: number;
     slug: string;
+    record_id?: string | null;
     page_range: [number | null, number | null];
     extraction_pages: number[];
     status: SectionResultStatus;

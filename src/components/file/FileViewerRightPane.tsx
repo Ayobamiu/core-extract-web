@@ -133,6 +133,7 @@ export default function FileViewerRightPane({
                 fileId={file.id}
                 resultEnvelope={file.extraction_metadata?.result_envelope}
                 sectionResults={file.extraction_metadata?.section_results}
+                detectedSections={file.detected_sections}
                 className="h-full"
               />
             )}
