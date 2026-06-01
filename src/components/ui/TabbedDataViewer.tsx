@@ -6,8 +6,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { jsonToCsv } from "@/lib/csvExport";
-import { MessageSquare } from "lucide-react";
-import { App, Button, Input, Typography } from "antd";
+import { ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
+import { App, Button, Input, Select, Typography } from "antd";
 import { JsonViewer } from "@/components/json";
 import {
   isV2ResultEnvelope,
@@ -54,6 +54,9 @@ interface TabbedDataViewerProps {
   // selected section. Markdown/Compare/Comments stay file-level.
   resultEnvelope?: "v1" | "v2";
   sectionResults?: SectionResult[];
+  // Classifier sections — used as fallback for record_id and page_range when
+  // section_results is missing (older extractions, extraction-only runs, etc.)
+  detectedSections?: { sections?: Array<{ document_type_slug: string; record_id?: string | null; page_range?: [number, number]; extraction_pages?: number[] }> } | null;
 }
 
 // One discoverable "row" in the section picker. We derive these from the
@@ -61,6 +64,7 @@ interface TabbedDataViewerProps {
 // working even when section_results is missing (older results, etc.).
 interface SectionPickerEntry {
   slug: string;
+  recordId?: string | null;
   instanceIndex: number; // 0-based index within slug
   globalIndex: number; // unique selection key
   data: Record<string, unknown>;
@@ -72,7 +76,8 @@ interface SectionPickerEntry {
 
 function buildSectionPickerEntries(
   envelope: V2ResultEnvelope,
-  sectionResults?: SectionResult[]
+  sectionResults?: SectionResult[],
+  detectedSections?: { sections?: Array<{ document_type_slug: string; record_id?: string | null; page_range?: [number, number]; extraction_pages?: number[] }> } | null,
 ): SectionPickerEntry[] {
   // Walk the envelope first (it's the ground truth for what data exists),
   // then enrich each entry with the matching section_results row when we can.
@@ -89,20 +94,36 @@ function buildSectionPickerEntries(
     }
   }
 
+  // Fallback: use detected_sections for record_id and page_range when
+  // section_results is missing (older extractions, extraction-only runs).
+  // Group by slug in document order to match envelope ordering.
+  const detectedBySlug = new Map<string, Array<{ record_id?: string | null; page_range?: [number, number] }>>();
+  if (detectedSections?.sections) {
+    for (const ds of detectedSections.sections) {
+      if (!ds.document_type_slug || ds.document_type_slug === "none") continue;
+      const arr = detectedBySlug.get(ds.document_type_slug) ?? [];
+      arr.push({ record_id: ds.record_id, page_range: ds.page_range });
+      detectedBySlug.set(ds.document_type_slug, arr);
+    }
+  }
+
   let globalIndex = 0;
   for (const [slug, instances] of Object.entries(envelope)) {
     if (!Array.isArray(instances)) continue;
     const matching = sectionsBySlug.get(slug) ?? [];
+    const detectedMatching = detectedBySlug.get(slug) ?? [];
     instances.forEach((data, instanceIndex) => {
       const sr = matching[instanceIndex];
+      const ds = detectedMatching[instanceIndex];
       entries.push({
         slug,
+        recordId: sr?.record_id ?? ds?.record_id ?? null,
         instanceIndex,
         globalIndex: globalIndex++,
         data: data as Record<string, unknown>,
         fieldCount:
           data && typeof data === "object" ? Object.keys(data as object).length : 0,
-        pageRange: sr?.page_range,
+        pageRange: sr?.page_range ?? ds?.page_range,
         status: sr?.status,
       });
     });
@@ -118,9 +139,26 @@ function formatSectionLabel(entry: SectionPickerEntry): string {
         ? `p${range[0]}`
         : `p${range[0]}–${range[1]}`
       : null;
-  const parts = [entry.slug];
+  const parts: string[] = [];
+  if (entry.recordId) parts.push(entry.recordId);
+  parts.push(entry.slug);
   if (pageBit) parts.push(pageBit);
   parts.push(`${entry.fieldCount} field${entry.fieldCount === 1 ? "" : "s"}`);
+  return parts.join(" · ");
+}
+
+function formatSectionOptionLabel(entry: SectionPickerEntry): string {
+  const range = entry.pageRange;
+  const pageBit =
+    range && range[0] != null && range[1] != null
+      ? range[0] === range[1]
+        ? `p${range[0]}`
+        : `p${range[0]}–${range[1]}`
+      : null;
+  const parts: string[] = [];
+  if (entry.recordId) parts.push(entry.recordId);
+  if (pageBit) parts.push(pageBit);
+  parts.push(`${entry.fieldCount} fields`);
   return parts.join(" · ");
 }
 
@@ -142,6 +180,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   fileId,
   resultEnvelope,
   sectionResults,
+  detectedSections,
 }) => {
   const { message } = App.useApp();
   const [activeTab, setActiveTab] = useState<TabType>("results");
@@ -161,8 +200,8 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     [data, resultEnvelope, sectionResults]
   );
   const sectionEntries = useMemo<SectionPickerEntry[]>(
-    () => (isV2 ? buildSectionPickerEntries(data as V2ResultEnvelope, sectionResults) : []),
-    [isV2, data, sectionResults]
+    () => (isV2 ? buildSectionPickerEntries(data as V2ResultEnvelope, sectionResults, detectedSections) : []),
+    [isV2, data, sectionResults, detectedSections]
   );
   const selectedSection = sectionEntries[selectedSectionIdx] ?? sectionEntries[0];
 
@@ -355,33 +394,67 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           and only swaps the data fed to data-shaped tabs. Markdown / Compare
           / Comments stay file-level. */}
       {isV2 && sectionEntries.length > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 flex-shrink-0 overflow-x-auto">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-gray-50 flex-shrink-0">
           <span className="text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">
             Sections
           </span>
-          <div className="flex items-center gap-1.5 flex-nowrap">
-            {sectionEntries.map((entry) => {
-              const isActive = entry.globalIndex === selectedSectionIdx;
-              return (
-                <button
-                  key={`${entry.slug}-${entry.instanceIndex}`}
-                  onClick={() => setSelectedSectionIdx(entry.globalIndex)}
-                  className={`px-2.5 py-0.5 text-xs rounded border whitespace-nowrap transition-colors ${
-                    isActive
-                      ? "bg-gray-900 border-gray-900 text-white"
-                      : "bg-white border-gray-200 text-gray-600 hover:border-gray-400 hover:text-gray-900"
-                  }`}
-                  title={
-                    entry.pageRange && entry.pageRange[0] != null
-                      ? `Pages ${entry.pageRange[0]}–${entry.pageRange[1]} · ${entry.fieldCount} fields`
-                      : `${entry.fieldCount} fields`
-                  }
-                >
-                  {formatSectionLabel(entry)}
-                </button>
-              );
-            })}
-          </div>
+          <button
+            type="button"
+            disabled={selectedSectionIdx <= 0}
+            onClick={() => setSelectedSectionIdx(Math.max(0, selectedSectionIdx - 1))}
+            className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Previous section"
+          >
+            <ChevronLeft className="w-4 h-4 text-gray-600" />
+          </button>
+          <Select
+            showSearch
+            value={selectedSectionIdx}
+            onChange={(v: number) => setSelectedSectionIdx(v)}
+            optionFilterProp="label"
+            className="flex-1 min-w-0"
+            size="small"
+            popupMatchSelectWidth={false}
+          >
+            {(() => {
+              const slugs = new Set(sectionEntries.map((e) => e.slug));
+              if (slugs.size <= 1) {
+                return sectionEntries.map((entry) => (
+                  <Select.Option key={entry.globalIndex} value={entry.globalIndex} label={formatSectionOptionLabel(entry)}>
+                    {formatSectionOptionLabel(entry)}
+                  </Select.Option>
+                ));
+              }
+              // Multiple slugs — use OptGroups
+              const slugOrder: string[] = [];
+              for (const entry of sectionEntries) {
+                if (!slugOrder.includes(entry.slug)) slugOrder.push(entry.slug);
+              }
+              return slugOrder.map((slug) => (
+                <Select.OptGroup key={slug} label={slug}>
+                  {sectionEntries
+                    .filter((e) => e.slug === slug)
+                    .map((entry) => (
+                      <Select.Option key={entry.globalIndex} value={entry.globalIndex} label={`${entry.recordId ?? ''} ${formatSectionOptionLabel(entry)}`}>
+                        {formatSectionOptionLabel(entry)}
+                      </Select.Option>
+                    ))}
+                </Select.OptGroup>
+              ));
+            })()}
+          </Select>
+          <button
+            type="button"
+            disabled={selectedSectionIdx >= sectionEntries.length - 1}
+            onClick={() => setSelectedSectionIdx(Math.min(sectionEntries.length - 1, selectedSectionIdx + 1))}
+            className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Next section"
+          >
+            <ChevronRight className="w-4 h-4 text-gray-600" />
+          </button>
+          <span className="text-xs text-gray-400 whitespace-nowrap tabular-nums">
+            {selectedSectionIdx + 1} / {sectionEntries.length}
+          </span>
         </div>
       )}
 

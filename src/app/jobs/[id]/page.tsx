@@ -65,6 +65,7 @@ function JobDetailPage() {
     processing_failed: number;
     processing: number; // extraction_status = 'processing' OR processing_status = 'processing'
     pending: number; // extraction_status = 'pending' AND processing_status = 'pending'
+    total_records?: number;
   } | null>(null);
 
   const [loading, setLoading] = useState(true);

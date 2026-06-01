@@ -173,6 +173,7 @@ export interface JobFile {
     };
     // Phase 1: skinny list fields (replace heavy columns in list view)
     has_result?: boolean;
+    record_count?: number;
     extraction_method?: string;
     flags?: Array<{
         name: string;
@@ -295,6 +296,7 @@ export interface DetectedSectionSkippedPage {
 
 export interface DetectedSection {
     document_type_slug: string;
+    record_id?: string | null;
     page_range: [number, number];
     page_count: number;
     extraction_pages: number[];
@@ -346,6 +348,7 @@ export type SectionResultStatus =
 export interface SectionResult {
     section_index: number;
     slug: string;
+    record_id?: string | null;
     page_range: [number | null, number | null];
     extraction_pages: number[];
     status: SectionResultStatus;
@@ -712,6 +715,7 @@ class ApiClient {
             processing_failed: number;
             processing: number; // extraction_status = 'processing' OR processing_status = 'processing'
             pending: number; // extraction_status = 'pending' AND processing_status = 'pending'
+            total_records?: number;
         };
     }>> {
         return this.request(`/jobs/${jobId}/details`);
