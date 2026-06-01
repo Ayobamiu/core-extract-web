@@ -22,6 +22,7 @@ import {
   Upload,
   Library,
   Building2,
+  Activity,
 } from "lucide-react";
 import OrganizationSelector from "@/components/organization/OrganizationSelector";
 import CreateOrganizationModal from "@/components/organization/CreateOrganizationModal";
@@ -61,13 +62,21 @@ const mainNavigationItems = [
   },
 ];
 
-/** Shown in an “Admin” group for admin JWTs only. */
-const adminRegistryNavItem = {
-  name: "Schema registry",
-  href: "/registry",
-  icon: Library,
-  description: "Document types & schemas",
-};
+/** Shown in an "Admin" group for admin JWTs only. */
+const adminNavItems = [
+  {
+    name: "Schema registry",
+    href: "/registry",
+    icon: Library,
+    description: "Document types & schemas",
+  },
+  {
+    name: "Monitoring",
+    href: "/monitoring",
+    icon: Activity,
+    description: "Section health & guardrails",
+  },
+];
 
 export default function SidebarLayout({
   children,
@@ -91,9 +100,9 @@ export default function SidebarLayout({
   const resolvedPageTitle =
     pageTitle ||
     mainNavigationItems.find((item) => item.href === pathname)?.name ||
-    (pathname === adminRegistryNavItem.href
-      ? adminRegistryNavItem.name
-      : undefined);
+    adminNavItems.find((item) =>
+      item.href !== "/" ? pathname === item.href || pathname?.startsWith(item.href + "/") : pathname === item.href
+    )?.name;
 
   useEffect(() => {
     document.title = resolvedPageTitle ?? "Core Extract";
@@ -359,8 +368,7 @@ export default function SidebarLayout({
                     Admin
                   </p>
                 )}
-                {(() => {
-                  const item = adminRegistryNavItem;
+                {adminNavItems.map((item) => {
                   const isActive = navLinkIsActive(item.href);
                   const Icon = item.icon;
                   const collapsed = isDesktop && isCollapsed;
@@ -399,7 +407,7 @@ export default function SidebarLayout({
                       )}
                     </Link>
                   );
-                })()}
+                })}
               </div>
             )}
           </nav>
