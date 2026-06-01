@@ -1464,6 +1464,26 @@ const FileTable: React.FC<FileTableProps> = ({
       },
     },
     {
+      title: "Records",
+      key: "record_count",
+      width: 80,
+      render: (_: any, record: JobFile) => {
+        const count = (record as any).record_count;
+        if (count == null || count === 0) {
+          return (
+            <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
+              -
+            </Text>
+          );
+        }
+        return (
+          <Text type="secondary" style={{ whiteSpace: "nowrap" }}>
+            {count}
+          </Text>
+        );
+      },
+    },
+    {
       title: "Created",
       dataIndex: "created_at",
       key: "created_at",
