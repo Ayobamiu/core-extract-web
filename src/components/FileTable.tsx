@@ -107,6 +107,7 @@ interface FileTableProps {
     processing_failed: number;
     processing: number; // extraction_status = 'processing' OR processing_status = 'processing'
     pending: number; // extraction_status = 'pending' AND processing_status = 'pending'
+    total_records?: number;
   } | null;
   // Actions props
   isConnected?: boolean;
@@ -2094,6 +2095,19 @@ const FileTable: React.FC<FileTableProps> = ({
             </div>
             <div className="text-xs text-gray-500">Pending</div>
           </div>
+          {fileSummary?.total_records != null && fileSummary.total_records > 0 && (
+            <>
+              <div className="w-px h-4 bg-gray-200" />
+              <div className="text-center flex space-x-2 items-center">
+                <div className="text-sm font-semibold text-purple-600">
+                  {fileSummary.total_records}
+                </div>
+                <div className="text-xs text-gray-500">
+                  Records
+                </div>
+              </div>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {/* Phase 6: Search input */}

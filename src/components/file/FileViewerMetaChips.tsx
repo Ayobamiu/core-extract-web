@@ -31,6 +31,10 @@ export default function FileViewerMetaChips({ file }: FileViewerMetaChipsProps) 
     );
   }
   if (summary.routingStatus) chips.push(`routing: ${summary.routingStatus}`);
+  const recordCount = (file as any).record_count ?? file.detected_sections?.sections?.length;
+  if (recordCount != null && recordCount > 0) {
+    chips.push(`${recordCount} record${recordCount === 1 ? "" : "s"}`);
+  }
   if (file.review_status === "reviewed") chips.push("reviewed");
   if (file.admin_verified) chips.push("verified");
 
