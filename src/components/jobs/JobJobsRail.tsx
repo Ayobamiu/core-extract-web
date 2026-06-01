@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button, Drawer, Input, Spin } from "antd";
 import {
@@ -13,11 +13,35 @@ import {
   XCircle,
   Loader,
   Clock,
+  Pin,
 } from "lucide-react";
 import { apiClient, Job } from "@/lib/api";
 import { useOrganization } from "@/contexts/OrganizationContext";
 
 const RAIL_COLLAPSED_KEY = "jobDetailJobsRailCollapsed";
+const PINNED_JOBS_KEY_PREFIX = "jobRailPinnedJobIds";
+
+function pinnedJobsStorageKey(orgId: string) {
+  return `${PINNED_JOBS_KEY_PREFIX}:${orgId}`;
+}
+
+function readPinnedJobIds(orgId: string | undefined): string[] {
+  if (!orgId || typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(pinnedJobsStorageKey(orgId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePinnedJobIds(orgId: string, ids: string[]) {
+  localStorage.setItem(pinnedJobsStorageKey(orgId), JSON.stringify(ids));
+}
 
 interface JobJobsRailProps {
   currentJobId: string;
@@ -51,20 +75,52 @@ function statusIcon(status: string) {
   }
 }
 
+function sortWithPinnedFirst(jobs: Job[], pinnedIds: string[]): Job[] {
+  if (pinnedIds.length === 0) return jobs;
+
+  const byId = new Map(jobs.map((j) => [j.id, j]));
+  const pinnedSet = new Set(pinnedIds);
+  const pinned = pinnedIds
+    .map((id) => byId.get(id))
+    .filter((j): j is Job => j !== undefined);
+  const unpinned = jobs.filter((j) => !pinnedSet.has(j.id));
+  return [...pinned, ...unpinned];
+}
+
 export default function JobJobsRail({ currentJobId, jobName }: JobJobsRailProps) {
   const { currentOrganization } = useOrganization();
+  const orgId = currentOrganization?.id;
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const activeRef = useRef<HTMLAnchorElement | null>(null);
 
   useEffect(() => {
     const raw = localStorage.getItem(RAIL_COLLAPSED_KEY);
     if (raw === "true") setCollapsed(true);
   }, []);
+
+  useEffect(() => {
+    setPinnedIds(readPinnedJobIds(orgId));
+  }, [orgId]);
+
+  const togglePin = useCallback(
+    (jobId: string) => {
+      if (!orgId) return;
+      setPinnedIds((prev) => {
+        const next = prev.includes(jobId)
+          ? prev.filter((id) => id !== jobId)
+          : [...prev, jobId];
+        writePinnedJobIds(orgId, next);
+        return next;
+      });
+    },
+    [orgId],
+  );
 
   const toggleCollapsed = () => {
     setCollapsed((c) => {
@@ -111,13 +167,17 @@ export default function JobJobsRail({ currentJobId, jobName }: JobJobsRailProps)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return jobs;
-    return jobs.filter(
-      (j) =>
-        j.name.toLowerCase().includes(q) ||
-        j.id.toLowerCase().includes(q),
-    );
-  }, [jobs, search]);
+    const matched = !q
+      ? jobs
+      : jobs.filter(
+          (j) =>
+            j.name.toLowerCase().includes(q) ||
+            j.id.toLowerCase().includes(q),
+        );
+    return sortWithPinnedFirst(matched, pinnedIds);
+  }, [jobs, search, pinnedIds]);
+
+  const pinnedIdSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
 
   const listSection = (
     <div className="flex flex-col min-h-0 flex-1">
@@ -157,32 +217,72 @@ export default function JobJobsRail({ currentJobId, jobName }: JobJobsRailProps)
         ) : (
           <nav className="py-2" aria-label="Jobs in organization">
             <ul className="space-y-0.5 px-2">
-              {filtered.map((j) => {
+              {filtered.map((j, index) => {
                 const active = j.id === currentJobId;
+                const isPinned = pinnedIdSet.has(j.id);
+                const prev = filtered[index - 1];
+                const showPinnedDivider =
+                  index > 0 &&
+                  prev &&
+                  pinnedIdSet.has(prev.id) &&
+                  !isPinned &&
+                  pinnedIds.length > 0;
+
                 return (
-                  <li key={j.id}>
-                    <Link
-                      ref={active ? activeRef : undefined}
-                      href={`/jobs/${j.id}`}
-                      onClick={() => setMobileOpen(false)}
-                      className={`flex items-start gap-2 rounded-lg px-2 py-2 text-sm transition-colors ${
-                        active
-                          ? "bg-blue-50 text-blue-900 ring-1 ring-blue-100"
-                          : "text-gray-700 hover:bg-gray-50"
-                      }`}
-                    >
-                      {statusIcon(j.status)}
-                      <span className="min-w-0 flex-1">
-                        <span className="font-medium line-clamp-2 leading-snug">
-                          {j.name || "Untitled job"}
+                  <React.Fragment key={j.id}>
+                    {showPinnedDivider && (
+                      <li
+                        className="px-2 py-1.5"
+                        aria-hidden
+                      >
+                        <div className="border-t border-gray-100" />
+                      </li>
+                    )}
+                    <li className="group relative">
+                      <Link
+                        ref={active ? activeRef : undefined}
+                        href={`/jobs/${j.id}`}
+                        onClick={() => setMobileOpen(false)}
+                        className={`flex items-start gap-2 rounded-lg px-2 py-2 pr-8 text-sm transition-colors ${
+                          active
+                            ? "bg-blue-50 text-blue-900 ring-1 ring-blue-100"
+                            : "text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        {statusIcon(j.status)}
+                        <span className="min-w-0 flex-1">
+                          <span className="font-medium line-clamp-2 leading-snug">
+                            {j.name || "Untitled job"}
+                          </span>
+                          <span className="block text-[11px] text-gray-400 tabular-nums truncate">
+                            {j.file_count} file
+                            {String(j.file_count) === "1" ? "" : "s"}
+                          </span>
                         </span>
-                        <span className="block text-[11px] text-gray-400 tabular-nums truncate">
-                          {j.file_count} file
-                          {String(j.file_count) === "1" ? "" : "s"}
-                        </span>
-                      </span>
-                    </Link>
-                  </li>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          togglePin(j.id);
+                        }}
+                        className={`absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 transition-opacity ${
+                          isPinned
+                            ? "text-amber-600 opacity-100"
+                            : "text-gray-400 opacity-0 group-hover:opacity-100 hover:text-gray-600"
+                        }`}
+                        title={isPinned ? "Unpin job" : "Pin to top"}
+                        aria-label={isPinned ? "Unpin job" : "Pin job to top"}
+                        aria-pressed={isPinned}
+                      >
+                        <Pin
+                          className={`h-3.5 w-3.5 ${isPinned ? "fill-current" : ""}`}
+                          aria-hidden
+                        />
+                      </button>
+                    </li>
+                  </React.Fragment>
                 );
               })}
             </ul>
