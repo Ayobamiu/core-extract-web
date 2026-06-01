@@ -395,6 +395,37 @@ export interface QueueStatus {
     status: 'paused' | 'running';
 }
 
+// ── Section monitoring (large section guardrails) ──
+export interface MonitoringSection {
+    file_id: string;
+    filename: string;
+    job_id: string;
+    job_name: string;
+    page_count: number | null;
+    slug: string;
+    record_id: string | null;
+    page_range: [number | null, number | null];
+    extraction_pages: number[];
+    status: string;
+    error: string | null;
+    duration_ms: number | null;
+    estimated_input_tokens: number | null;
+    content_length: number | null;
+    large_section: boolean;
+    response_truncated: boolean;
+    section_page_count: number;
+    created_at: string;
+}
+
+export interface MonitoringSummary {
+    total_sections: number;
+    large_sections: number;
+    truncated: number;
+    failed: number;
+    avg_estimated_tokens: number;
+    max_estimated_tokens: number;
+}
+
 export interface PreviewDataTable {
     id: string;
     name: string;
@@ -1055,6 +1086,18 @@ class ApiClient {
     // System Statistics
     async getSystemStats(): Promise<ApiResponse> {
         return this.request('/system-stats');
+    }
+
+    // Section monitoring (large section guardrails)
+    async getMonitoringSections(opts?: { limit?: number; jobId?: string }): Promise<ApiResponse<{
+        sections: MonitoringSection[];
+        summary: MonitoringSummary;
+    }>> {
+        const params = new URLSearchParams();
+        if (opts?.limit) params.set('limit', String(opts.limit));
+        if (opts?.jobId) params.set('jobId', opts.jobId);
+        const qs = params.toString();
+        return this.request(`/monitoring/sections${qs ? `?${qs}` : ''}`);
     }
 
     // Test Connections
