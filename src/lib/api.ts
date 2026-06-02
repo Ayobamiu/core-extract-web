@@ -196,6 +196,7 @@ export interface JobFile {
         text: string;
         createdAt: string;
     }>;
+    section_verifications?: SectionVerification[];
 }
 
 export interface ProcessingConfig {
@@ -346,6 +347,7 @@ export type SectionResultStatus =
     | 'skipped_no_pages';
 
 export interface SectionResult {
+    section_result_id?: string;
     section_index: number;
     slug: string;
     record_id?: string | null;
@@ -355,6 +357,22 @@ export interface SectionResult {
     error?: string;
     duration_ms?: number;
     ai_metadata?: Record<string, unknown>;
+}
+
+// ── Section-level verification ──
+export type SectionVerificationStatus = 'pending' | 'approved' | 'rejected' | 'in_review';
+
+export interface SectionVerification {
+    id: string;
+    file_id: string;
+    section_result_id: string;
+    status: SectionVerificationStatus;
+    verified_by: string | null;
+    verified_by_email: string | null;
+    verified_at: string | null;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
 }
 
 /**
@@ -1443,6 +1461,36 @@ class ApiClient {
         return this.request(`/files/${fileId}/verify`, {
             method: 'PUT',
             body: JSON.stringify({ adminVerified, customerVerified }),
+        });
+    }
+
+    // ── Section-level verification ──
+
+    async getSectionVerifications(fileId: string): Promise<ApiResponse<SectionVerification[]>> {
+        return this.request(`/files/${fileId}/section-verifications`);
+    }
+
+    async updateSectionVerification(
+        fileId: string,
+        sectionResultId: string,
+        status: SectionVerificationStatus,
+        notes?: string,
+    ): Promise<ApiResponse<SectionVerification & { file_review_status: string }>> {
+        return this.request(`/files/${fileId}/section-verifications/${sectionResultId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ status, notes }),
+        });
+    }
+
+    async bulkUpdateSectionVerifications(
+        fileId: string,
+        sectionResultIds: string[],
+        status: SectionVerificationStatus,
+        notes?: string,
+    ): Promise<ApiResponse<SectionVerification[]>> {
+        return this.request(`/files/${fileId}/section-verifications-bulk`, {
+            method: 'PUT',
+            body: JSON.stringify({ sectionResultIds, status, notes }),
         });
     }
 
