@@ -12,6 +12,8 @@ import { JsonViewer } from "@/components/json";
 import {
   isV2ResultEnvelope,
   type SectionResult,
+  type SectionVerification,
+  type SectionVerificationStatus,
   type V2ResultEnvelope,
 } from "@/lib/api";
 
@@ -56,7 +58,25 @@ interface TabbedDataViewerProps {
   sectionResults?: SectionResult[];
   // Classifier sections — used as fallback for record_id and page_range when
   // section_results is missing (older extractions, extraction-only runs, etc.)
-  detectedSections?: { sections?: Array<{ document_type_slug: string; record_id?: string | null; page_range?: [number, number]; extraction_pages?: number[] }> } | null;
+  detectedSections?: {
+    sections?: Array<{
+      document_type_slug: string;
+      record_id?: string | null;
+      page_range?: [number, number];
+      extraction_pages?: number[];
+    }>;
+  } | null;
+  // Per-section verification
+  sectionVerifications?: SectionVerification[];
+  onSectionVerify?: (
+    sectionResultId: string,
+    status: SectionVerificationStatus,
+    notes?: string,
+  ) => Promise<void>;
+  onBulkSectionVerify?: (
+    sectionResultIds: string[],
+    status: SectionVerificationStatus,
+  ) => Promise<void>;
 }
 
 // One discoverable "row" in the section picker. We derive these from the
@@ -64,6 +84,7 @@ interface TabbedDataViewerProps {
 // working even when section_results is missing (older results, etc.).
 interface SectionPickerEntry {
   slug: string;
+  sectionResultId?: string;
   recordId?: string | null;
   instanceIndex: number; // 0-based index within slug
   globalIndex: number; // unique selection key
@@ -77,7 +98,14 @@ interface SectionPickerEntry {
 function buildSectionPickerEntries(
   envelope: V2ResultEnvelope,
   sectionResults?: SectionResult[],
-  detectedSections?: { sections?: Array<{ document_type_slug: string; record_id?: string | null; page_range?: [number, number]; extraction_pages?: number[] }> } | null,
+  detectedSections?: {
+    sections?: Array<{
+      document_type_slug: string;
+      record_id?: string | null;
+      page_range?: [number, number];
+      extraction_pages?: number[];
+    }>;
+  } | null,
 ): SectionPickerEntry[] {
   // Walk the envelope first (it's the ground truth for what data exists),
   // then enrich each entry with the matching section_results row when we can.
@@ -97,7 +125,10 @@ function buildSectionPickerEntries(
   // Fallback: use detected_sections for record_id and page_range when
   // section_results is missing (older extractions, extraction-only runs).
   // Group by slug in document order to match envelope ordering.
-  const detectedBySlug = new Map<string, Array<{ record_id?: string | null; page_range?: [number, number] }>>();
+  const detectedBySlug = new Map<
+    string,
+    Array<{ record_id?: string | null; page_range?: [number, number] }>
+  >();
   if (detectedSections?.sections) {
     for (const ds of detectedSections.sections) {
       if (!ds.document_type_slug || ds.document_type_slug === "none") continue;
@@ -115,14 +146,19 @@ function buildSectionPickerEntries(
     instances.forEach((data, instanceIndex) => {
       const sr = matching[instanceIndex];
       const ds = detectedMatching[instanceIndex];
+      const dataObj = data as Record<string, unknown>;
       entries.push({
         slug,
+        sectionResultId:
+          (dataObj?.section_result_id as string) ?? sr?.section_result_id,
         recordId: sr?.record_id ?? ds?.record_id ?? null,
         instanceIndex,
         globalIndex: globalIndex++,
-        data: data as Record<string, unknown>,
+        data: dataObj,
         fieldCount:
-          data && typeof data === "object" ? Object.keys(data as object).length : 0,
+          dataObj && typeof dataObj === "object"
+            ? Object.keys(dataObj).length
+            : 0,
         pageRange: sr?.page_range ?? ds?.page_range,
         status: sr?.status,
       });
@@ -162,6 +198,136 @@ function formatSectionOptionLabel(entry: SectionPickerEntry): string {
   return parts.join(" · ");
 }
 
+/* ── Verification status helpers ───────────────────────────────── */
+
+const VERIFY_STATUS_CONFIG: Record<
+  SectionVerificationStatus,
+  { label: string; icon: string; solidBg: string; solidText: string }
+> = {
+  pending: {
+    label: "Pending",
+    icon: "○",
+    solidBg: "bg-gray-100",
+    solidText: "text-gray-500",
+  },
+  in_review: {
+    label: "In Review",
+    icon: "◐",
+    solidBg: "bg-blue-100",
+    solidText: "text-blue-700",
+  },
+  approved: {
+    label: "Approved",
+    icon: "✓",
+    solidBg: "bg-green-100",
+    solidText: "text-green-700",
+  },
+  rejected: {
+    label: "Rejected",
+    icon: "✕",
+    solidBg: "bg-red-100",
+    solidText: "text-red-700",
+  },
+};
+
+function SectionVerifyControls({
+  verification,
+  loading,
+  onVerify,
+  onBulkApprove,
+  totalSections,
+  verificationMap,
+  sectionEntries,
+}: {
+  verification: SectionVerification | null;
+  loading: boolean;
+  onVerify: (status: SectionVerificationStatus) => void;
+  onBulkApprove?: () => void;
+  totalSections: number;
+  verificationMap: Map<string, SectionVerification>;
+  sectionEntries: SectionPickerEntry[];
+}) {
+  const currentStatus = verification?.status ?? "pending";
+  const cfg = VERIFY_STATUS_CONFIG[currentStatus];
+
+  // Count approved / total for progress
+  const approvedCount = sectionEntries.filter(
+    (e) =>
+      e.sectionResultId &&
+      verificationMap.get(e.sectionResultId)?.status === "approved",
+  ).length;
+  const allApproved = approvedCount === totalSections && totalSections > 0;
+
+  return (
+    <div className="flex items-center gap-2">
+      {/* ── Status badge (non-interactive, solid pill) ── */}
+      <span
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold select-none ${cfg.solidBg} ${cfg.solidText}`}
+      >
+        <span className="text-[9px] leading-none">{cfg.icon}</span>
+        {cfg.label}
+      </span>
+
+      {/* Progress: 3/28 approved */}
+      <span className="text-[10px] text-gray-400 tabular-nums whitespace-nowrap">
+        {approvedCount}/{totalSections} approved
+      </span>
+
+      {/* ── Actions (visually grouped, text-style links) ── */}
+      <span className="w-px h-4 bg-gray-200" />
+      <div className="flex items-center gap-0.5">
+        {currentStatus !== "approved" && (
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => onVerify("approved")}
+            className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+            title="Approve this section"
+          >
+            Approve
+          </button>
+        )}
+        {currentStatus !== "rejected" && (
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => onVerify("rejected")}
+            className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+            title="Reject this section"
+          >
+            Reject
+          </button>
+        )}
+        {currentStatus !== "pending" && (
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => onVerify("pending")}
+            className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+            title="Reset to pending"
+          >
+            Reset
+          </button>
+        )}
+        {onBulkApprove && !allApproved && totalSections > 1 && (
+          <>
+            <span className="w-px h-3.5 bg-gray-200 mx-0.5" />
+            <button
+              type="button"
+              disabled={loading}
+              onClick={onBulkApprove}
+              className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+              title={`Approve all ${totalSections} sections`}
+            >
+              Approve all
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type TabType = "results" | "markdown" | "compare" | "comments";
 type MarkdownViewType = "full" | "pages" | "chunks";
 
@@ -181,6 +347,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   resultEnvelope,
   sectionResults,
   detectedSections,
+  sectionVerifications,
+  onSectionVerify,
+  onBulkSectionVerify,
 }) => {
   const { message } = App.useApp();
   const [activeTab, setActiveTab] = useState<TabType>("results");
@@ -196,19 +365,85 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   // (a) the data shape matches and (b) there's at least one section to pick.
   // When v1 (or empty), we behave exactly as before.
   const isV2 = useMemo(
-    () => isV2ResultEnvelope(data, { result_envelope: resultEnvelope, section_results: sectionResults }),
-    [data, resultEnvelope, sectionResults]
+    () =>
+      isV2ResultEnvelope(data, {
+        result_envelope: resultEnvelope,
+        section_results: sectionResults,
+      }),
+    [data, resultEnvelope, sectionResults],
   );
   const sectionEntries = useMemo<SectionPickerEntry[]>(
-    () => (isV2 ? buildSectionPickerEntries(data as V2ResultEnvelope, sectionResults, detectedSections) : []),
-    [isV2, data, sectionResults, detectedSections]
+    () =>
+      isV2
+        ? buildSectionPickerEntries(
+            data as V2ResultEnvelope,
+            sectionResults,
+            detectedSections,
+          )
+        : [],
+    [isV2, data, sectionResults, detectedSections],
   );
-  const selectedSection = sectionEntries[selectedSectionIdx] ?? sectionEntries[0];
+  const selectedSection =
+    sectionEntries[selectedSectionIdx] ?? sectionEntries[0];
+
+  // Build a lookup map: section_result_id → verification row
+  const verificationMap = useMemo(() => {
+    const m = new Map<string, SectionVerification>();
+    if (sectionVerifications) {
+      for (const sv of sectionVerifications) {
+        m.set(sv.section_result_id, sv);
+      }
+    }
+    return m;
+  }, [sectionVerifications]);
+
+  const selectedVerification = selectedSection?.sectionResultId
+    ? (verificationMap.get(selectedSection.sectionResultId) ?? null)
+    : null;
+
+  const [verifyLoading, setVerifyLoading] = useState(false);
+
+  const handleVerify = useCallback(
+    async (status: SectionVerificationStatus) => {
+      if (!selectedSection?.sectionResultId || !onSectionVerify) return;
+      setVerifyLoading(true);
+      try {
+        await onSectionVerify(selectedSection.sectionResultId, status);
+        message.success(`Section marked as ${status}`);
+      } catch {
+        message.error("Failed to update verification");
+      } finally {
+        setVerifyLoading(false);
+      }
+    },
+    [selectedSection?.sectionResultId, onSectionVerify, message],
+  );
+
+  const handleBulkVerify = useCallback(
+    async (status: SectionVerificationStatus) => {
+      if (!onBulkSectionVerify) return;
+      const ids = sectionEntries
+        .map((e) => e.sectionResultId)
+        .filter((id): id is string => !!id);
+      if (ids.length === 0) return;
+      setVerifyLoading(true);
+      try {
+        await onBulkSectionVerify(ids, status);
+        message.success(`All ${ids.length} sections marked as ${status}`);
+      } catch {
+        message.error("Failed to bulk update");
+      } finally {
+        setVerifyLoading(false);
+      }
+    },
+    [sectionEntries, onBulkSectionVerify, message],
+  );
 
   // The data that the data-shaped tabs (Preview, JSON, CSV, Edit) operate on.
   // When v2 we scope to the selected section so the user sees one focused
   // result tree; when v1, we pass the original `data` through unchanged.
-  const sectionData: unknown = isV2 && selectedSection ? selectedSection.data : data;
+  const sectionData: unknown =
+    isV2 && selectedSection ? selectedSection.data : data;
 
   // Reset section selection when the underlying data shape changes (e.g.,
   // file switch). Otherwise an out-of-range index can persist briefly.
@@ -280,22 +515,12 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
         setJsonError(null);
       } catch (error) {
-        setJsonError(
-          error instanceof Error ? error.message : "Failed to save",
-        );
+        setJsonError(error instanceof Error ? error.message : "Failed to save");
       } finally {
         setIsSaving(false);
       }
     },
-    [
-      onUpdate,
-      jsonError,
-      isSaving,
-      editableJson,
-      isV2,
-      selectedSection,
-      data,
-    ],
+    [onUpdate, jsonError, isSaving, editableJson, isV2, selectedSection, data],
   );
 
   useEffect(() => {
@@ -360,9 +585,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const sectionSuffix = isV2 && selectedSection
-      ? `_${selectedSection.slug}_${selectedSection.instanceIndex + 1}`
-      : "";
+    const sectionSuffix =
+      isV2 && selectedSection
+        ? `_${selectedSection.slug}_${selectedSection.instanceIndex + 1}`
+        : "";
     a.download = `${filename.replace(/\.[^/.]+$/, "")}${sectionSuffix}_results.csv`;
     document.body.appendChild(a);
     a.click();
@@ -401,7 +627,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           <button
             type="button"
             disabled={selectedSectionIdx <= 0}
-            onClick={() => setSelectedSectionIdx(Math.max(0, selectedSectionIdx - 1))}
+            onClick={() =>
+              setSelectedSectionIdx(Math.max(0, selectedSectionIdx - 1))
+            }
             className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Previous section"
           >
@@ -420,7 +648,11 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               const slugs = new Set(sectionEntries.map((e) => e.slug));
               if (slugs.size <= 1) {
                 return sectionEntries.map((entry) => (
-                  <Select.Option key={entry.globalIndex} value={entry.globalIndex} label={formatSectionOptionLabel(entry)}>
+                  <Select.Option
+                    key={entry.globalIndex}
+                    value={entry.globalIndex}
+                    label={formatSectionOptionLabel(entry)}
+                  >
                     {formatSectionOptionLabel(entry)}
                   </Select.Option>
                 ));
@@ -435,7 +667,11 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   {sectionEntries
                     .filter((e) => e.slug === slug)
                     .map((entry) => (
-                      <Select.Option key={entry.globalIndex} value={entry.globalIndex} label={`${entry.recordId ?? ''} ${formatSectionOptionLabel(entry)}`}>
+                      <Select.Option
+                        key={entry.globalIndex}
+                        value={entry.globalIndex}
+                        label={`${entry.recordId ?? ""} ${formatSectionOptionLabel(entry)}`}
+                      >
                         {formatSectionOptionLabel(entry)}
                       </Select.Option>
                     ))}
@@ -446,7 +682,11 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           <button
             type="button"
             disabled={selectedSectionIdx >= sectionEntries.length - 1}
-            onClick={() => setSelectedSectionIdx(Math.min(sectionEntries.length - 1, selectedSectionIdx + 1))}
+            onClick={() =>
+              setSelectedSectionIdx(
+                Math.min(sectionEntries.length - 1, selectedSectionIdx + 1),
+              )
+            }
             className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Next section"
           >
@@ -455,6 +695,26 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           <span className="text-xs text-gray-400 whitespace-nowrap tabular-nums">
             {selectedSectionIdx + 1} / {sectionEntries.length}
           </span>
+
+          {/* Verification controls */}
+          {onSectionVerify && selectedSection?.sectionResultId && (
+            <>
+              <span className="w-px h-5 bg-gray-200 mx-1" />
+              <SectionVerifyControls
+                verification={selectedVerification}
+                loading={verifyLoading}
+                onVerify={handleVerify}
+                onBulkApprove={
+                  onBulkSectionVerify
+                    ? () => handleBulkVerify("approved")
+                    : undefined
+                }
+                totalSections={sectionEntries.length}
+                verificationMap={verificationMap}
+                sectionEntries={sectionEntries}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -544,7 +804,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                 text={editableJson}
                 onChange={({ text, isValid, error }) => {
                   setEditableJson(text);
-                  setJsonError(isValid ? null : error ?? "Invalid JSON");
+                  setJsonError(isValid ? null : (error ?? "Invalid JSON"));
                 }}
                 readOnly={!editable}
                 bordered={false}
@@ -1010,7 +1270,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                                     </ReactMarkdown>
                                   </div>
                                 );
-                              }
+                              },
                             )}
                           </div>
                         </div>

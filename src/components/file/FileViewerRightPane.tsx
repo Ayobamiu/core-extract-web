@@ -1,9 +1,14 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { Typography } from "antd";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
-import type { JobFile } from "@/lib/api";
+import {
+  apiClient,
+  type JobFile,
+  type SectionVerification,
+  type SectionVerificationStatus,
+} from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import DocumentRoutingPanel from "@/components/DocumentRoutingPanel";
@@ -75,6 +80,45 @@ export default function FileViewerRightPane({
   const routingBadge =
     hasRouting && sectionCount > 0 ? String(sectionCount) : undefined;
 
+  // Section verification state — seeded from file.section_verifications
+  // (attached by the backend), then kept in sync via optimistic updates.
+  const [sectionVerifications, setSectionVerifications] = useState<SectionVerification[]>(
+    file.section_verifications ?? []
+  );
+
+  // Re-sync when the file prop changes (user switches to a different file)
+  React.useEffect(() => {
+    setSectionVerifications(file.section_verifications ?? []);
+  }, [file.id, file.section_verifications]);
+
+  const handleSectionVerify = useCallback(
+    async (sectionResultId: string, status: SectionVerificationStatus, notes?: string) => {
+      const res = await apiClient.updateSectionVerification(file.id, sectionResultId, status, notes);
+      if (res.status === "success" && res.data) {
+        setSectionVerifications((prev) => {
+          const idx = prev.findIndex((v) => v.section_result_id === sectionResultId);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = res.data as SectionVerification;
+            return next;
+          }
+          return [...prev, res.data as SectionVerification];
+        });
+      }
+    },
+    [file.id]
+  );
+
+  const handleBulkSectionVerify = useCallback(
+    async (sectionResultIds: string[], status: SectionVerificationStatus) => {
+      const res = await apiClient.bulkUpdateSectionVerifications(file.id, sectionResultIds, status);
+      if (res.status === "success" && res.data) {
+        setSectionVerifications(res.data as SectionVerification[]);
+      }
+    },
+    [file.id]
+  );
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-white overflow-hidden">
       <div className="flex items-center justify-between px-3 border-b border-gray-200 bg-white flex-shrink-0">
@@ -134,6 +178,9 @@ export default function FileViewerRightPane({
                 resultEnvelope={file.extraction_metadata?.result_envelope}
                 sectionResults={file.extraction_metadata?.section_results}
                 detectedSections={file.detected_sections}
+                sectionVerifications={sectionVerifications}
+                onSectionVerify={handleSectionVerify}
+                onBulkSectionVerify={handleBulkSectionVerify}
                 className="h-full"
               />
             )}
