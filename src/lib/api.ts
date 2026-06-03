@@ -308,6 +308,9 @@ export interface DetectedSection {
     min_page_confidence: number;
     status: 'auto_approved' | 'pending_review' | 'approved' | string;
     threshold_used: number;
+    /** Stable link to the extraction record in the V2 envelope. Null when the
+     *  section needs (re-)extraction (set by split/merge/slug-change). */
+    section_result_id?: string | null;
 }
 
 export interface DetectedSections {
@@ -325,6 +328,7 @@ export interface DetectedSections {
     pages: DetectedPage[];
     sections: DetectedSection[];
     status: 'auto_approved' | 'pending_review' | 'skipped' | string;
+    edits?: Array<{ kind: string; ts: string; [k: string]: unknown }>;
 }
 
 // Per-section extraction (Phase 1, item #3 — v2 envelope).
@@ -966,6 +970,34 @@ class ApiClient {
             {
                 method: 'POST',
                 body: JSON.stringify({ atPage }),
+            },
+        );
+    }
+
+    async routingMergeSections(
+        fileId: string,
+        indexA: number,
+        indexB: number,
+        slug?: string,
+    ): Promise<ApiResponse<{ detected_sections: DetectedSections }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/merge`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ indexA, indexB, ...(slug ? { slug } : {}) }),
+            },
+        );
+    }
+
+    async reextractSections(
+        fileId: string,
+        sectionIndices: number[],
+    ): Promise<ApiResponse<{ sectionResults: unknown[]; detected_sections?: DetectedSections }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/reextract-sections`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ sectionIndices }),
             },
         );
     }

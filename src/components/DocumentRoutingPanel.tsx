@@ -52,7 +52,7 @@ interface Props {
   onSectionsUpdated?: (next: DetectedSections) => void;
 }
 
-type ActionKind = "change_slug" | "split";
+type ActionKind = "change_slug" | "split" | "merge";
 interface ActionState {
   kind: ActionKind;
   sectionIndex: number;
@@ -352,6 +352,68 @@ export default function DocumentRoutingPanel({
     }
   }, [activeAction, pickedSplitPage, fileId, onSectionsUpdated, closeAction]);
 
+  const handleMerge = useCallback(
+    async (sectionIndex: number) => {
+      setActionLoadingFor(sectionIndex);
+      try {
+        const res = await apiClient.routingMergeSections(
+          fileId,
+          sectionIndex,
+          sectionIndex + 1,
+        );
+        if (res.success && res.data?.detected_sections) {
+          message.success("Sections merged");
+          onSectionsUpdated?.(res.data.detected_sections);
+        } else {
+          message.error(res.message || "Merge failed");
+        }
+      } catch (err: unknown) {
+        message.error(err instanceof Error ? err.message : "Merge failed");
+      } finally {
+        setActionLoadingFor(null);
+      }
+    },
+    [fileId, onSectionsUpdated],
+  );
+
+  const [reextractLoading, setReextractLoading] = useState(false);
+
+  const handleReextract = useCallback(
+    async (sectionIndices: number[]) => {
+      setReextractLoading(true);
+      try {
+        const res = await apiClient.reextractSections(fileId, sectionIndices);
+        if (res.status === "success") {
+          message.success(
+            `Re-extracted ${sectionIndices.length} section${sectionIndices.length === 1 ? "" : "s"}`,
+          );
+          // The response includes updated detected_sections (with new section_result_ids
+          // and cleared edits). Push it to the parent so the UI refreshes.
+          if (res.data?.detected_sections) {
+            onSectionsUpdated?.(res.data.detected_sections);
+          }
+        } else {
+          message.error(res.message || "Re-extraction failed");
+        }
+      } catch (err: unknown) {
+        message.error(err instanceof Error ? err.message : "Re-extraction failed");
+      } finally {
+        setReextractLoading(false);
+      }
+    },
+    [fileId, onSectionsUpdated],
+  );
+
+  // Sections that need extraction: section_result_id is null (set by split/merge/slug-change).
+  // No edit-tracking needed — the null ID is the single source of truth.
+  const needsExtractionIndices = useMemo(() => {
+    return sections
+      .map((s, i) => (s.section_result_id == null ? i : -1))
+      .filter((i) => i >= 0);
+  }, [sections]);
+
+  const hasEdits = needsExtractionIndices.length > 0;
+
   // High-level summary numbers.
   const summary = useMemo(() => {
     const totalPages = pages.length;
@@ -478,6 +540,41 @@ export default function DocumentRoutingPanel({
         </div>
       )}
 
+      {/* Re-extract banner — shown when sections need extraction */}
+      {hasEdits && sections.length > 0 && (
+        <div className="mx-2 mb-2 p-2.5 rounded-md bg-amber-50 border border-amber-200 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-amber-800">
+              {needsExtractionIndices.length === sections.length
+                ? "All sections need extraction."
+                : `${needsExtractionIndices.length} section${needsExtractionIndices.length === 1 ? "" : "s"} need${needsExtractionIndices.length === 1 ? "s" : ""} extraction (${needsExtractionIndices.map((i) => {
+                    const s = sections[i];
+                    return s ? `p${s.page_range[0]}${s.page_range[1] !== s.page_range[0] ? `-${s.page_range[1]}` : ""}` : `#${i}`;
+                  }).join(", ")}).`}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="small"
+              type="primary"
+              loading={reextractLoading}
+              onClick={() => handleReextract(needsExtractionIndices)}
+            >
+              Re-extract ({needsExtractionIndices.length})
+            </Button>
+            {needsExtractionIndices.length < sections.length && (
+              <Button
+                size="small"
+                loading={reextractLoading}
+                onClick={() => handleReextract(sections.map((_, i) => i))}
+              >
+                Re-extract all
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Sections */}
       {sections.length === 0 ? (
         <div className="text-sm text-gray-500 italic px-2">
@@ -497,6 +594,7 @@ export default function DocumentRoutingPanel({
                 <SectionActions
                   section={section}
                   loading={actionLoadingFor === i}
+                  isLastSection={i === sections.length - 1}
                   onApprove={() => handleApprove(i)}
                   onChangeSlug={() => {
                     setPickedSlug(section.document_type_slug);
@@ -506,6 +604,7 @@ export default function DocumentRoutingPanel({
                     setPickedSplitPage(null);
                     setActiveAction({ kind: "split", sectionIndex: i });
                   }}
+                  onMerge={() => handleMerge(i)}
                 />
               ),
               children: (
@@ -650,18 +749,23 @@ export default function DocumentRoutingPanel({
 function SectionActions({
   section,
   loading,
+  isLastSection,
   onApprove,
   onChangeSlug,
   onSplit,
+  onMerge,
 }: {
   section: DetectedSection;
   loading: boolean;
+  isLastSection: boolean;
   onApprove: () => void;
   onChangeSlug: () => void;
   onSplit: () => void;
+  onMerge: () => void;
 }) {
   const [start, end] = section.page_range;
   const canSplit = end > start;
+  const canMerge = !isLastSection; // can merge with next section (unless this is the last one)
   const isPending = section.status === "pending_review";
 
   // stopPropagation so clicks don't toggle the Collapse panel.
@@ -695,6 +799,29 @@ function SectionActions({
         >
           Split
         </Button>
+      </Tooltip>
+      <Tooltip
+        title={
+          canMerge
+            ? "Merge this section with the next one"
+            : "No next section to merge with"
+        }
+      >
+        <Popconfirm
+          title="Merge with next section?"
+          description="The two sections will be combined into one. You can split them again later."
+          okText="Merge"
+          cancelText="Cancel"
+          onConfirm={onMerge}
+          disabled={!canMerge || loading}
+        >
+          <Button
+            size="small"
+            disabled={!canMerge || loading}
+          >
+            Merge
+          </Button>
+        </Popconfirm>
       </Tooltip>
     </Space>
   );
