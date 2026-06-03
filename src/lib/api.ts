@@ -989,6 +989,19 @@ class ApiClient {
         );
     }
 
+    async saveAndReextractSections(
+        fileId: string,
+        detectedSections: DetectedSections,
+    ): Promise<ApiResponse<{ detected_sections?: DetectedSections; sectionResults?: unknown[] }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/save-and-reextract`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ detected_sections: detectedSections }),
+            },
+        );
+    }
+
     async reextractSections(
         fileId: string,
         sectionIndices: number[],
