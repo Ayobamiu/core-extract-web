@@ -28,6 +28,13 @@ import {
   DetectedSections,
   DocumentTypeInfo,
 } from "@/lib/api";
+import {
+  splitSection,
+  mergeSections,
+  changeSectionSlug,
+  hasUnsavedChanges,
+  getSectionsNeedingExtraction,
+} from "@/lib/routingEdits";
 
 interface Props {
   fileId: string;
@@ -52,7 +59,7 @@ interface Props {
   onSectionsUpdated?: (next: DetectedSections) => void;
 }
 
-type ActionKind = "change_slug" | "split";
+type ActionKind = "change_slug" | "split" | "merge";
 interface ActionState {
   kind: ActionKind;
   sectionIndex: number;
@@ -245,16 +252,28 @@ export default function DocumentRoutingPanel({
   onSectionsUpdated,
 }: Props) {
   const { message } = App.useApp();
-  const sections = detectedSections?.sections ?? [];
-  const pages = detectedSections?.pages ?? [];
 
-  // Slugs for the change-slug picker. Loaded once; cheap. Empty array until
-  // the request completes — the picker shows a "loading" state.
+  // ── Local draft state ─────────────────────────────────────────────
+  // Split/merge/slug-change are performed client-side on a local copy.
+  // Nothing hits the server until the user clicks "Save & Re-extract".
+  // "Discard" resets to the server version.
+  const [draft, setDraft] = useState<DetectedSections | null>(null);
+
+  // Reset draft when the server state changes (file switch, post-save refresh)
+  useEffect(() => {
+    setDraft(null);
+  }, [detectedSections]);
+
+  // The "active" blob: draft if editing, otherwise server state
+  const activeSections = draft ?? detectedSections;
+  const sections = activeSections?.sections ?? [];
+  const pages = activeSections?.pages ?? [];
+  const isDirty = draft !== null;
+
+  // Slugs for the change-slug picker
   const [availableSlugs, setAvailableSlugs] = useState<DocumentTypeInfo[]>([]);
   const [slugsLoaded, setSlugsLoaded] = useState(false);
 
-  // Single in-flight action at a time. Index is into `sections`; kind drives
-  // which modal opens. `null` when no modal is open.
   const [activeAction, setActiveAction] = useState<ActionState | null>(null);
   const [actionLoadingFor, setActionLoadingFor] = useState<number | null>(null);
   const [pickedSlug, setPickedSlug] = useState<string | null>(null);
@@ -286,14 +305,18 @@ export default function DocumentRoutingPanel({
     setPickedSplitPage(null);
   }, []);
 
+  // ── Client-side edit handlers (no server calls) ───────────────────
+
   const handleApprove = useCallback(
     async (sectionIndex: number) => {
+      // Approve still goes to the server (it's a lightweight status flip,
+      // not a structural change that needs undo support).
       setActionLoadingFor(sectionIndex);
       try {
         const res = await apiClient.routingApproveSection(fileId, sectionIndex);
-        if (res.success && res.data?.detected_sections) {
+        if (res.success && res.detected_sections) {
           message.success("Section approved");
-          onSectionsUpdated?.(res.data.detected_sections);
+          onSectionsUpdated?.(res.detected_sections);
         } else {
           message.error(res.message || "Approve failed");
         }
@@ -306,51 +329,90 @@ export default function DocumentRoutingPanel({
     [fileId, onSectionsUpdated],
   );
 
-  const handleChangeSlug = useCallback(async () => {
+  const handleChangeSlug = useCallback(() => {
     if (!activeAction || activeAction.kind !== "change_slug" || !pickedSlug) return;
-    setActionLoadingFor(activeAction.sectionIndex);
+    if (!activeSections) return;
     try {
-      const res = await apiClient.routingChangeSectionSlug(
-        fileId,
-        activeAction.sectionIndex,
-        pickedSlug,
-      );
-      if (res.success && res.data?.detected_sections) {
-        message.success(`Section re-routed to ${pickedSlug}`);
-        onSectionsUpdated?.(res.data.detected_sections);
-        closeAction();
-      } else {
-        message.error(res.message || "Change failed");
-      }
+      const updated = changeSectionSlug(activeSections, activeAction.sectionIndex, pickedSlug);
+      setDraft(updated);
+      message.success(`Section re-routed to ${pickedSlug} (unsaved)`);
+      closeAction();
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : "Change failed");
-    } finally {
-      setActionLoadingFor(null);
     }
-  }, [activeAction, pickedSlug, fileId, onSectionsUpdated, closeAction]);
+  }, [activeAction, pickedSlug, activeSections, closeAction]);
 
-  const handleSplit = useCallback(async () => {
+  const handleSplit = useCallback(() => {
     if (!activeAction || activeAction.kind !== "split" || pickedSplitPage == null) return;
-    setActionLoadingFor(activeAction.sectionIndex);
+    if (!activeSections) return;
     try {
-      const res = await apiClient.routingSplitSection(
-        fileId,
-        activeAction.sectionIndex,
-        pickedSplitPage,
-      );
-      if (res.success && res.data?.detected_sections) {
-        message.success(`Section split at page ${pickedSplitPage}`);
-        onSectionsUpdated?.(res.data.detected_sections);
-        closeAction();
-      } else {
-        message.error(res.message || "Split failed");
-      }
+      const updated = splitSection(activeSections, activeAction.sectionIndex, pickedSplitPage);
+      setDraft(updated);
+      message.success(`Section split at page ${pickedSplitPage} (unsaved)`);
+      closeAction();
     } catch (err: unknown) {
       message.error(err instanceof Error ? err.message : "Split failed");
-    } finally {
-      setActionLoadingFor(null);
     }
-  }, [activeAction, pickedSplitPage, fileId, onSectionsUpdated, closeAction]);
+  }, [activeAction, pickedSplitPage, activeSections, closeAction]);
+
+  const handleMerge = useCallback(
+    (sectionIndex: number) => {
+      if (!activeSections) return;
+      try {
+        const updated = mergeSections(activeSections, sectionIndex);
+        setDraft(updated);
+        message.success("Sections merged (unsaved)");
+      } catch (err: unknown) {
+        message.error(err instanceof Error ? err.message : "Merge failed");
+      }
+    },
+    [activeSections],
+  );
+
+  const handleDiscard = useCallback(() => {
+    setDraft(null);
+    message.info("Changes discarded");
+  }, []);
+
+  // ── Save & Re-extract (the only server call for edits) ────────────
+
+  const [saveLoading, setSaveLoading] = useState(false);
+
+  const handleSaveAndReextract = useCallback(async () => {
+    if (!draft) return;
+    setSaveLoading(true);
+    try {
+      const res = await apiClient.saveAndReextractSections(fileId, draft);
+      if (res.status === "success") {
+        const count = getSectionsNeedingExtraction(draft).length;
+        message.success(
+          count > 0
+            ? `Saved and re-extracted ${count} section${count === 1 ? "" : "s"}`
+            : "Saved (no extraction needed)",
+        );
+        if (res.detected_sections) {
+          onSectionsUpdated?.(res.detected_sections);
+        }
+        setDraft(null);
+      } else {
+        message.error(res.message || "Save failed");
+      }
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaveLoading(false);
+    }
+  }, [draft, fileId, onSectionsUpdated]);
+
+  // Sections needing extraction (for the old re-extract banner on server state)
+  const needsExtractionIndices = useMemo(() => {
+    return getSectionsNeedingExtraction(detectedSections);
+  }, [detectedSections]);
+
+  // Draft sections needing extraction
+  const draftNeedsExtraction = useMemo(() => {
+    return draft ? getSectionsNeedingExtraction(draft) : [];
+  }, [draft]);
 
   // High-level summary numbers.
   const summary = useMemo(() => {
@@ -478,6 +540,73 @@ export default function DocumentRoutingPanel({
         </div>
       )}
 
+      {/* Draft banner — unsaved local edits */}
+      {isDirty && sections.length > 0 && (
+        <div className="mx-2 mb-2 p-2.5 rounded-md bg-blue-50 border border-blue-200 flex flex-col gap-2">
+          <span className="text-xs text-blue-800">
+            {draftNeedsExtraction.length > 0
+              ? `${draftNeedsExtraction.length} section${draftNeedsExtraction.length === 1 ? "" : "s"} changed (${draftNeedsExtraction.map((i) => {
+                  const s = sections[i];
+                  return s ? `p${s.page_range[0]}${s.page_range[1] !== s.page_range[0] ? `-${s.page_range[1]}` : ""}` : `#${i}`;
+                }).join(", ")}). Save to persist and re-extract.`
+              : "Sections modified. Save to persist changes."}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="small"
+              type="primary"
+              loading={saveLoading}
+              onClick={handleSaveAndReextract}
+            >
+              Save & Re-extract ({draftNeedsExtraction.length})
+            </Button>
+            <Button
+              size="small"
+              onClick={handleDiscard}
+              disabled={saveLoading}
+            >
+              Discard
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Server-side needs-extraction banner (for files that already have null IDs from prior edits) */}
+      {!isDirty && needsExtractionIndices.length > 0 && sections.length > 0 && (
+        <div className="mx-2 mb-2 p-2.5 rounded-md bg-amber-50 border border-amber-200 flex flex-col gap-2">
+          <span className="text-xs text-amber-800">
+            {needsExtractionIndices.length} section{needsExtractionIndices.length === 1 ? "" : "s"} need{needsExtractionIndices.length === 1 ? "s" : ""} extraction.
+          </span>
+          <Button
+            size="small"
+            type="primary"
+            loading={saveLoading}
+            onClick={() => {
+              // Save existing detected_sections (with null IDs) to trigger re-extract
+              if (detectedSections) {
+                setDraft(detectedSections);
+                // Immediately save — the user didn't make local edits, they just need re-extract
+                apiClient.saveAndReextractSections(fileId, detectedSections).then((res) => {
+                  if (res.status === "success" && res.detected_sections) {
+                    message.success(`Re-extracted ${needsExtractionIndices.length} section(s)`);
+                    onSectionsUpdated?.(res.detected_sections);
+                    setDraft(null);
+                  } else {
+                    message.error(res.message || "Re-extraction failed");
+                    setDraft(null);
+                  }
+                }).catch((err) => {
+                  message.error(err instanceof Error ? err.message : "Re-extraction failed");
+                  setDraft(null);
+                });
+              }
+            }}
+          >
+            Re-extract ({needsExtractionIndices.length})
+          </Button>
+        </div>
+      )}
+
       {/* Sections */}
       {sections.length === 0 ? (
         <div className="text-sm text-gray-500 italic px-2">
@@ -497,6 +626,7 @@ export default function DocumentRoutingPanel({
                 <SectionActions
                   section={section}
                   loading={actionLoadingFor === i}
+                  isLastSection={i === sections.length - 1}
                   onApprove={() => handleApprove(i)}
                   onChangeSlug={() => {
                     setPickedSlug(section.document_type_slug);
@@ -506,6 +636,7 @@ export default function DocumentRoutingPanel({
                     setPickedSplitPage(null);
                     setActiveAction({ kind: "split", sectionIndex: i });
                   }}
+                  onMerge={() => handleMerge(i)}
                 />
               ),
               children: (
@@ -650,18 +781,23 @@ export default function DocumentRoutingPanel({
 function SectionActions({
   section,
   loading,
+  isLastSection,
   onApprove,
   onChangeSlug,
   onSplit,
+  onMerge,
 }: {
   section: DetectedSection;
   loading: boolean;
+  isLastSection: boolean;
   onApprove: () => void;
   onChangeSlug: () => void;
   onSplit: () => void;
+  onMerge: () => void;
 }) {
   const [start, end] = section.page_range;
   const canSplit = end > start;
+  const canMerge = !isLastSection; // can merge with next section (unless this is the last one)
   const isPending = section.status === "pending_review";
 
   // stopPropagation so clicks don't toggle the Collapse panel.
@@ -696,12 +832,28 @@ function SectionActions({
           Split
         </Button>
       </Tooltip>
+      <Tooltip
+        title={
+          canMerge
+            ? "Merge this section with the next one"
+            : "No next section to merge with"
+        }
+      >
+        <Button
+          size="small"
+          onClick={onMerge}
+          disabled={!canMerge || loading}
+        >
+          Merge
+        </Button>
+      </Tooltip>
     </Space>
   );
 }
 
 function SectionHeader({ section }: { section: DetectedSection }) {
   const [start, end] = section.page_range;
+  const needsExtraction = section.section_result_id == null;
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <span className="font-mono text-sm font-medium">
@@ -710,6 +862,11 @@ function SectionHeader({ section }: { section: DetectedSection }) {
       <span className="text-sm text-gray-500">
         pages {start}–{end} ({section.page_count})
       </span>
+      {needsExtraction && (
+        <Tag color="warning" style={{ marginInlineEnd: 0 }}>
+          needs extraction
+        </Tag>
+      )}
       <Tag
         color={statusColor(section.status)}
         style={{ marginInlineEnd: 0 }}

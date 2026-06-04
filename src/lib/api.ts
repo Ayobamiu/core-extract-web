@@ -308,6 +308,9 @@ export interface DetectedSection {
     min_page_confidence: number;
     status: 'auto_approved' | 'pending_review' | 'approved' | string;
     threshold_used: number;
+    /** Stable link to the extraction record in the V2 envelope. Null when the
+     *  section needs (re-)extraction (set by split/merge/slug-change). */
+    section_result_id?: string | null;
 }
 
 export interface DetectedSections {
@@ -325,6 +328,7 @@ export interface DetectedSections {
     pages: DetectedPage[];
     sections: DetectedSection[];
     status: 'auto_approved' | 'pending_review' | 'skipped' | string;
+    edits?: Array<{ kind: string; ts: string; [k: string]: unknown }>;
 }
 
 // Per-section extraction (Phase 1, item #3 — v2 envelope).
@@ -970,6 +974,47 @@ class ApiClient {
         );
     }
 
+    async routingMergeSections(
+        fileId: string,
+        indexA: number,
+        indexB: number,
+        slug?: string,
+    ): Promise<ApiResponse<{ detected_sections: DetectedSections }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/merge`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ indexA, indexB, ...(slug ? { slug } : {}) }),
+            },
+        );
+    }
+
+    async saveAndReextractSections(
+        fileId: string,
+        detectedSections: DetectedSections,
+    ): Promise<ApiResponse<{ detected_sections?: DetectedSections; sectionResults?: unknown[] }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/save-and-reextract`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ detected_sections: detectedSections }),
+            },
+        );
+    }
+
+    async reextractSections(
+        fileId: string,
+        sectionIndices: number[],
+    ): Promise<ApiResponse<{ sectionResults: unknown[]; detected_sections?: DetectedSections }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/reextract-sections`,
+            {
+                method: 'POST',
+                body: JSON.stringify({ sectionIndices }),
+            },
+        );
+    }
+
     // Fetch a rasterised JPEG of a single PDF page and return a blob URL
     // ready to drop into <img src>. Caller is responsible for revoking the
     // URL when the consumer unmounts (URL.revokeObjectURL).
@@ -1448,6 +1493,21 @@ class ApiClient {
             method: 'PUT',
             body: JSON.stringify({ schema }),
         });
+    }
+
+    /** Patch a single record in a V2 envelope by section_result_id. */
+    async patchResultRecord(
+        fileId: string,
+        sectionResultId: string,
+        data: Record<string, unknown>,
+    ): Promise<ApiResponse<{ fileId: string; filename: string; sectionResultId: string }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/result/${encodeURIComponent(sectionResultId)}`,
+            {
+                method: 'PATCH',
+                body: JSON.stringify({ data }),
+            },
+        );
     }
 
     async updateFileResults(fileId: string, results: any): Promise<ApiResponse<{ fileId: string; filename: string; results: any; flags?: any[] }>> {
