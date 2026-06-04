@@ -331,6 +331,30 @@ export interface DetectedSections {
     edits?: Array<{ kind: string; ts: string; [k: string]: unknown }>;
 }
 
+// ── Section QA findings ──────────────────────────────────────────────
+
+export type QAIssueType = 'wrong_value' | 'missing_value' | 'extra_value' | 'missing_rows' | 'extra_rows' | 'wrong_count' | 'formatting';
+export type QASeverity = 'error' | 'warning' | 'info';
+export type QAFindingStatus = 'open' | 'accepted' | 'dismissed';
+export type QAOverallQuality = 'perfect' | 'good' | 'acceptable' | 'poor';
+
+export interface QAFinding {
+    id: string;
+    file_id: string;
+    section_result_id: string;
+    field_path: string;
+    issue_type: QAIssueType;
+    severity: QASeverity;
+    expected: string | null;
+    actual: string | null;
+    explanation: string;
+    status: QAFindingStatus;
+    overall_quality: QAOverallQuality | null;
+    qa_model: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
 // Per-section extraction (Phase 1, item #3 — v2 envelope).
 //
 // When the visual classifier is on AND it produces ≥1 section with extractable
@@ -1493,6 +1517,51 @@ class ApiClient {
             method: 'PUT',
             body: JSON.stringify({ schema }),
         });
+    }
+
+    // ── Section QA ─────────────────────────────────────────────────────
+
+    /** Run VLM QA on a single section. */
+    async runSectionQA(
+        fileId: string,
+        sectionResultId: string,
+    ): Promise<ApiResponse<{ sectionResultId: string; overall_quality: QAOverallQuality; summary: string; findings: QAFinding[] }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/${encodeURIComponent(sectionResultId)}/qa`,
+            { method: 'POST' },
+        );
+    }
+
+    /** Run VLM QA on all sections in a file. */
+    async runFileQA(
+        fileId: string,
+    ): Promise<ApiResponse<{ totalSections: number; totalFindings: number; results: unknown[] }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/qa`,
+            { method: 'POST' },
+        );
+    }
+
+    /** Get all QA findings for a file, grouped by section_result_id. */
+    async getQAFindings(
+        fileId: string,
+    ): Promise<ApiResponse<{ findings: Record<string, QAFinding[]> }>> {
+        return this.request(`/files/${encodeURIComponent(fileId)}/qa-findings`);
+    }
+
+    /** Update a finding's status (accepted or dismissed). */
+    async updateQAFindingStatus(
+        fileId: string,
+        findingId: string,
+        status: 'accepted' | 'dismissed',
+    ): Promise<ApiResponse<{ finding: QAFinding }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/qa-findings/${encodeURIComponent(findingId)}`,
+            {
+                method: 'PATCH',
+                body: JSON.stringify({ status }),
+            },
+        );
     }
 
     /** Patch a single record in a V2 envelope by section_result_id. */
