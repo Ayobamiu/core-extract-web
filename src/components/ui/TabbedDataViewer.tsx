@@ -10,6 +10,7 @@ import { ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
 import { App, Button, Input, Select, Typography } from "antd";
 import { JsonViewer } from "@/components/json";
 import {
+  apiClient,
   isV2ResultEnvelope,
   type SectionResult,
   type SectionVerification,
@@ -483,8 +484,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   };
 
   // Save changes. For v2 we splice the edited section back into the envelope
-  // and call onUpdate with the full envelope so the file's persisted result
-  // shape stays consistent (downstream consumers always see V2ResultEnvelope).
+  // Save the current section's edited JSON.
+  // V2 with section_result_id: use the PATCH endpoint (small payload, no size limit issues).
+  // V1 or V2 without section_result_id: fall back to the full-result PUT via onUpdate.
   const handleSave = useCallback(
     async (e?: React.MouseEvent) => {
       if (e) {
@@ -498,7 +500,24 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         setIsSaving(true);
         const parsedSectionData = JSON.parse(editableJson);
 
-        if (isV2 && selectedSection) {
+        if (isV2 && selectedSection?.sectionResultId && fileId) {
+          // V2 path: patch just this one record by section_result_id.
+          // Strip section_result_id from the edited data (the endpoint preserves it).
+          const { section_result_id: _strip, ...recordData } = parsedSectionData;
+          const res = await apiClient.patchResultRecord(
+            fileId,
+            selectedSection.sectionResultId,
+            recordData,
+          );
+          if (!res.success) {
+            throw new Error(res.message || "Failed to save");
+          }
+          // Don't call onUpdate here — the PATCH already saved to the server
+          // and emitted a WebSocket event (emitFileFullPatch) that will refresh
+          // the parent's file data. Calling onUpdate would trigger the old PUT
+          // endpoint with the full envelope, causing PayloadTooLargeError.
+        } else if (isV2 && selectedSection) {
+          // V2 but no section_result_id (legacy file) — full envelope PUT
           const envelope = data as V2ResultEnvelope;
           const slugInstances = Array.isArray(envelope[selectedSection.slug])
             ? [...envelope[selectedSection.slug]]
@@ -510,6 +529,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           };
           await onUpdate(nextEnvelope);
         } else {
+          // V1 — full result PUT
           await onUpdate(parsedSectionData);
         }
 
@@ -520,7 +540,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         setIsSaving(false);
       }
     },
-    [onUpdate, jsonError, isSaving, editableJson, isV2, selectedSection, data],
+    [onUpdate, jsonError, isSaving, editableJson, isV2, selectedSection, data, fileId],
   );
 
   useEffect(() => {

@@ -1495,6 +1495,21 @@ class ApiClient {
         });
     }
 
+    /** Patch a single record in a V2 envelope by section_result_id. */
+    async patchResultRecord(
+        fileId: string,
+        sectionResultId: string,
+        data: Record<string, unknown>,
+    ): Promise<ApiResponse<{ fileId: string; filename: string; sectionResultId: string }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/result/${encodeURIComponent(sectionResultId)}`,
+            {
+                method: 'PATCH',
+                body: JSON.stringify({ data }),
+            },
+        );
+    }
+
     async updateFileResults(fileId: string, results: any): Promise<ApiResponse<{ fileId: string; filename: string; results: any; flags?: any[] }>> {
         return this.request(`/files/${fileId}/results`, {
             method: 'PUT',
