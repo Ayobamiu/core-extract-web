@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { jsonToCsv } from "@/lib/csvExport";
 import { ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
-import { App, Button, Input, Select, Typography } from "antd";
+import { App, Button, Input, Popconfirm, Select, Typography } from "antd";
 import { JsonViewer } from "@/components/json";
 import {
   apiClient,
@@ -374,50 +374,91 @@ function SectionVerifyControls({
       <span className="w-px h-4 bg-gray-200" />
       <div className="flex items-center gap-0.5">
         {currentStatus !== "approved" && (
-          <button
-            type="button"
+          <Popconfirm
+            title="Approve this section?"
+            description="Mark this section as approved for review."
+            okText="Approve"
+            cancelText="Cancel"
             disabled={loading}
-            onClick={() => onVerify("approved")}
-            className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-            title="Approve this section"
+            onConfirm={() => onVerify("approved")}
           >
-            Approve
-          </button>
+            <span className="inline-flex">
+              <button
+                type="button"
+                disabled={loading}
+                className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                title="Approve this section"
+              >
+                Approve
+              </button>
+            </span>
+          </Popconfirm>
         )}
         {currentStatus !== "rejected" && (
-          <button
-            type="button"
+          <Popconfirm
+            title="Reject this section?"
+            description="Mark this section as rejected."
+            okText="Reject"
+            cancelText="Cancel"
+            okButtonProps={{ danger: true }}
             disabled={loading}
-            onClick={() => onVerify("rejected")}
-            className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-            title="Reject this section"
+            onConfirm={() => onVerify("rejected")}
           >
-            Reject
-          </button>
+            <span className="inline-flex">
+              <button
+                type="button"
+                disabled={loading}
+                className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                title="Reject this section"
+              >
+                Reject
+              </button>
+            </span>
+          </Popconfirm>
         )}
         {currentStatus !== "pending" && (
-          <button
-            type="button"
+          <Popconfirm
+            title="Reset verification?"
+            description="This section will return to pending status."
+            okText="Reset"
+            cancelText="Cancel"
             disabled={loading}
-            onClick={() => onVerify("pending")}
-            className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-            title="Reset to pending"
+            onConfirm={() => onVerify("pending")}
           >
-            Reset
-          </button>
+            <span className="inline-flex">
+              <button
+                type="button"
+                disabled={loading}
+                className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                title="Reset to pending"
+              >
+                Reset
+              </button>
+            </span>
+          </Popconfirm>
         )}
         {onBulkApprove && !allApproved && totalSections > 1 && (
           <>
             <span className="w-px h-3.5 bg-gray-200 mx-0.5" />
-            <button
-              type="button"
+            <Popconfirm
+              title={`Approve all ${totalSections} sections?`}
+              description="Every section in this file will be marked approved."
+              okText="Approve all"
+              cancelText="Cancel"
               disabled={loading}
-              onClick={onBulkApprove}
-              className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-              title={`Approve all ${totalSections} sections`}
+              onConfirm={onBulkApprove}
             >
-              Approve all
-            </button>
+              <span className="inline-flex">
+                <button
+                  type="button"
+                  disabled={loading}
+                  className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                  title={`Approve all ${totalSections} sections`}
+                >
+                  Approve all
+                </button>
+              </span>
+            </Popconfirm>
           </>
         )}
       </div>
@@ -897,11 +938,66 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           <span className="text-xs text-gray-400 whitespace-nowrap tabular-nums">
             {selectedSectionIdx + 1} / {sectionEntries.length}
           </span>
+        </div>
+      )}
 
-          {/* Verification controls */}
-          {onSectionVerify && selectedSection?.sectionResultId && (
+      {/* QA + verification — below section picker; section row is navigation only */}
+      {isV2 &&
+        selectedSection?.sectionResultId &&
+        (fileId || onSectionVerify) && (
+        <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 border-b border-gray-100 bg-gray-50 flex-shrink-0">
+          {fileId && (
             <>
-              <span className="w-px h-5 bg-gray-200 mx-1" />
+              <span className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">
+                QA
+              </span>
+              <div className="flex items-center gap-0.5">
+                <Popconfirm
+                  title="Run QA on this section?"
+                  description="Analyzes the current section's extracted data. This may take a moment."
+                  okText="Run QA"
+                  cancelText="Cancel"
+                  disabled={qaLoading !== "idle"}
+                  onConfirm={handleRunSectionQA}
+                >
+                  <span className="inline-flex">
+                    <button
+                      type="button"
+                      disabled={qaLoading !== "idle"}
+                      className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {qaLoading === "section"
+                        ? "Running…"
+                        : openFindingsCount > 0
+                          ? `Run QA · ${openFindingsCount} open`
+                          : "Run QA"}
+                    </button>
+                  </span>
+                </Popconfirm>
+                <Popconfirm
+                  title="Run QA on all sections?"
+                  description="Analyzes every section in this file. This may take longer."
+                  okText="Run all"
+                  cancelText="Cancel"
+                  disabled={qaLoading !== "idle"}
+                  onConfirm={handleRunAllQA}
+                >
+                  <span className="inline-flex">
+                    <button
+                      type="button"
+                      disabled={qaLoading !== "idle"}
+                      className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {qaLoading === "all" ? "Running…" : "Run all sections"}
+                    </button>
+                  </span>
+                </Popconfirm>
+              </div>
+            </>
+          )}
+          {onSectionVerify && (
+            <>
+              {fileId && <span className="w-px h-5 bg-gray-200" />}
               <SectionVerifyControls
                 verification={selectedVerification}
                 loading={verifyLoading}
@@ -917,30 +1013,6 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               />
             </>
           )}
-
-        </div>
-      )}
-
-      {/* QA action bar — separate row below section picker, only when section selected */}
-      {isV2 && fileId && selectedSection?.sectionResultId && (
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 bg-gray-50 flex-shrink-0">
-          <span className="text-xs text-gray-400 uppercase tracking-wide font-medium">QA</span>
-          <Button
-            size="small"
-            loading={qaLoading === 'section'}
-            disabled={qaLoading !== 'idle'}
-            onClick={handleRunSectionQA}
-          >
-            {openFindingsCount > 0 ? `Run QA · ${openFindingsCount} open` : 'Run QA'}
-          </Button>
-          <Button
-            size="small"
-            loading={qaLoading === 'all'}
-            disabled={qaLoading !== 'idle'}
-            onClick={handleRunAllQA}
-          >
-            Run all sections
-          </Button>
         </div>
       )}
 

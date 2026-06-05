@@ -1833,9 +1833,9 @@ const FileTable: React.FC<FileTableProps> = ({
       },
     },
     {
-      title: "Actions",
+      title: "",
       key: "actions",
-      width: 60,
+      width: 20,
       fixed: "right" as const,
       render: (_: any, record: JobFile) => {
         const menuItems = [];
@@ -2095,19 +2095,18 @@ const FileTable: React.FC<FileTableProps> = ({
             </div>
             <div className="text-xs text-gray-500">Pending</div>
           </div>
-          {fileSummary?.total_records != null && fileSummary.total_records > 0 && (
-            <>
-              <div className="w-px h-4 bg-gray-200" />
-              <div className="text-center flex space-x-2 items-center">
-                <div className="text-sm font-semibold text-purple-600">
-                  {fileSummary.total_records}
+          {fileSummary?.total_records != null &&
+            fileSummary.total_records > 0 && (
+              <>
+                <div className="w-px h-4 bg-gray-200" />
+                <div className="text-center flex space-x-2 items-center">
+                  <div className="text-sm font-semibold text-purple-600">
+                    {fileSummary.total_records}
+                  </div>
+                  <div className="text-xs text-gray-500">Records</div>
                 </div>
-                <div className="text-xs text-gray-500">
-                  Records
-                </div>
-              </div>
-            </>
-          )}
+              </>
+            )}
         </div>
         <div className="flex items-center gap-2">
           {/* Phase 6: Search input */}

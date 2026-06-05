@@ -14,13 +14,17 @@ interface OrganizationSelectorProps {
   onCreateOrganization?: () => void;
   /** Icon-only control for narrow / collapsed sidebars — same org list + create (admins). */
   compact?: boolean;
+  /** Matches dark app sidebar (Supabase-style). */
+  tone?: "light" | "dark";
 }
 
 export default function OrganizationSelector({
   className = "",
   onCreateOrganization,
   compact = false,
+  tone = "light",
 }: OrganizationSelectorProps) {
+  const isDark = tone === "dark";
   const {
     currentOrganization,
     organizations,
@@ -243,14 +247,22 @@ export default function OrganizationSelector({
           ref={triggerRef}
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="relative w-10 h-10 flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 hover:border-gray-300 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          className={`relative w-8 h-8 flex items-center justify-center rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 ${
+            isDark
+              ? "border border-zinc-700/80 bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 hover:border-zinc-600"
+              : "border border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 hover:border-gray-300 focus-visible:ring-blue-500 focus-visible:ring-offset-white"
+          }`}
           title={currentOrganization?.name || "Organization"}
           aria-label={`Organization: ${currentOrganization?.name || "Select"}. ${isOpen ? "Close menu" : "Open menu"}`}
           aria-expanded={isOpen}
           aria-haspopup="listbox"
         >
-          <Building2 className="h-5 w-5" aria-hidden />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-green-500 ring-2 ring-white" />
+          <Building2 className="h-4 w-4" aria-hidden />
+          <span
+            className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ${
+              isDark ? "ring-zinc-900" : "ring-white"
+            }`}
+          />
         </button>
         {compactMenu}
       </div>
@@ -260,37 +272,71 @@ export default function OrganizationSelector({
   return (
     <div ref={rootRef} className={className}>
       <div className="relative">
-        <Button
-          variant="secondary"
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full justify-between"
-          aria-expanded={isOpen}
-          aria-haspopup="listbox"
-          aria-label="Select organization"
-        >
-          <div className="flex items-center space-x-2 min-w-0">
-            <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
-            <span className="truncate">
-              {currentOrganization?.name || "Select Organization"}
-            </span>
-          </div>
-          <svg
-            className={`w-4 h-4 transition-transform flex-shrink-0 ${
-              isOpen ? "rotate-180" : ""
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden
+        {isDark ? (
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            className="w-full flex items-center justify-between gap-2 rounded-md border border-zinc-700/80 bg-zinc-800/60 px-2 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
+            aria-expanded={isOpen}
+            aria-haspopup="listbox"
+            aria-label="Select organization"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
-        </Button>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full flex-shrink-0" />
+              <span className="truncate font-medium">
+                {currentOrganization?.name || "Organization"}
+              </span>
+            </div>
+            <svg
+              className={`w-3.5 h-3.5 text-zinc-500 flex-shrink-0 transition-transform ${
+                isOpen ? "rotate-180" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </button>
+        ) : (
+          <Button
+            variant="secondary"
+            onClick={() => setIsOpen(!isOpen)}
+            className="w-full justify-between"
+            aria-expanded={isOpen}
+            aria-haspopup="listbox"
+            aria-label="Select organization"
+          >
+            <div className="flex items-center space-x-2 min-w-0">
+              <div className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
+              <span className="truncate">
+                {currentOrganization?.name || "Select Organization"}
+              </span>
+            </div>
+            <svg
+              className={`w-4 h-4 transition-transform flex-shrink-0 ${
+                isOpen ? "rotate-180" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </Button>
+        )}
 
         {isOpen && (
           <div
