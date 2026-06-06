@@ -328,7 +328,7 @@ export default function JobJobsRail({ currentJobId, jobName }: JobJobsRailProps)
 
       {/* Desktop: sticky rail */}
       <aside
-        className={`hidden lg:flex flex-shrink-0 flex-col border-r border-gray-200 bg-white sticky top-0 self-start max-h-[calc(100vh-4rem)] transition-[width] duration-200 ease-out ${
+        className={`hidden lg:flex flex-shrink-0 flex-col border-r border-gray-200 bg-white sticky top-0 self-start max-h-[calc(100vh-2.75rem)] transition-[width] duration-200 ease-out ${
           collapsed ? "w-12" : "w-[17rem]"
         }`}
         aria-label="Jobs sidebar"

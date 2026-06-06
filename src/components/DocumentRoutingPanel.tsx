@@ -611,8 +611,8 @@ export default function DocumentRoutingPanel({
       {sections.length === 0 ? (
         <div className="text-sm text-gray-500 italic px-2">
           No sections detected. Every page was classified as &quot;none&quot;
-          (boilerplate / empty / unrelated) — extraction will run on the full
-          document instead.
+          (boilerplate / empty / unrelated) — nothing was extracted. The file
+          has no extractable content.
         </div>
       ) : (
         <Collapse

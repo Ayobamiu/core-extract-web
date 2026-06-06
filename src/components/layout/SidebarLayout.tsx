@@ -16,13 +16,14 @@ import {
   Menu,
   X,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Settings,
   Upload,
   Library,
   Building2,
   Activity,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Layers,
 } from "lucide-react";
 import OrganizationSelector from "@/components/organization/OrganizationSelector";
 import CreateOrganizationModal from "@/components/organization/CreateOrganizationModal";
@@ -35,7 +36,14 @@ interface SidebarLayoutProps {
   headerContent?: React.ReactNode;
 }
 
-const mainNavigationItems = [
+type NavItem = {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  description: string;
+};
+
+const mainNavigationItems: NavItem[] = [
   {
     name: "Dashboard",
     href: "/",
@@ -62,8 +70,7 @@ const mainNavigationItems = [
   },
 ];
 
-/** Shown in an "Admin" group for admin JWTs only. */
-const adminNavItems = [
+const adminNavItems: NavItem[] = [
   {
     name: "Schema registry",
     href: "/registry",
@@ -101,7 +108,9 @@ export default function SidebarLayout({
     pageTitle ||
     mainNavigationItems.find((item) => item.href === pathname)?.name ||
     adminNavItems.find((item) =>
-      item.href !== "/" ? pathname === item.href || pathname?.startsWith(item.href + "/") : pathname === item.href
+      item.href !== "/"
+        ? pathname === item.href || pathname?.startsWith(item.href + "/")
+        : pathname === item.href,
     )?.name;
 
   useEffect(() => {
@@ -187,10 +196,11 @@ export default function SidebarLayout({
       ? pathname === href || pathname?.startsWith(href + "/")
       : pathname === href;
 
-  const renderNavLink = (item: (typeof mainNavigationItems)[0]) => {
+  const sidebarCollapsed = isDesktop && isCollapsed;
+
+  const renderNavLink = (item: NavItem) => {
     const isActive = navLinkIsActive(item.href);
     const Icon = item.icon;
-    const collapsed = isDesktop && isCollapsed;
 
     return (
       <Link
@@ -198,32 +208,27 @@ export default function SidebarLayout({
         href={item.href}
         onClick={closeSidebar}
         aria-current={isActive ? "page" : undefined}
-        title={collapsed ? item.name : undefined}
-        className={`group flex items-center text-sm font-medium rounded-lg transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
-          collapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"
+        title={sidebarCollapsed ? item.name : item.description}
+        className={`group flex items-center rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950 ${
+          sidebarCollapsed
+            ? "justify-center p-2"
+            : "gap-2 px-2 py-1.5 text-[13px]"
         } ${
           isActive
-            ? "bg-blue-50 text-blue-800 border border-blue-200 shadow-sm"
-            : "text-gray-700 hover:bg-gray-50 hover:text-gray-900 border border-transparent"
+            ? "bg-zinc-800 text-zinc-100"
+            : "text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200"
         }`}
       >
         <Icon
-          className={`h-5 w-5 transition-colors flex-shrink-0 ${
-            collapsed ? "" : "mr-3"
-          } ${
+          className={`h-4 w-4 flex-shrink-0 ${
             isActive
-              ? "text-blue-600"
-              : "text-gray-400 group-hover:text-gray-600"
+              ? "text-emerald-400"
+              : "text-zinc-500 group-hover:text-zinc-300"
           }`}
           aria-hidden
         />
-        {(!isDesktop || !isCollapsed) && (
-          <div className="flex-1 min-w-0">
-            <div className="font-medium">{item.name}</div>
-            <div className="text-xs text-gray-500 line-clamp-2">
-              {item.description}
-            </div>
-          </div>
+        {!sidebarCollapsed && (
+          <span className="truncate font-medium">{item.name}</span>
         )}
       </Link>
     );
@@ -253,183 +258,148 @@ export default function SidebarLayout({
         initial={false}
         animate={{
           x: isDesktop ? 0 : isSidebarOpen ? 0 : "-100%",
-          width:
-            isDesktop && isCollapsed ? "4rem" : isDesktop ? "18rem" : "18rem",
         }}
         transition={{ type: "spring", damping: 28, stiffness: 260 }}
-        className={`fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 shadow-sm lg:relative lg:translate-x-0 lg:block lg:h-screen lg:shadow-none sidebar-desktop ${
-          isDesktop && isCollapsed ? "w-16" : "w-72"
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 flex-shrink-0 border-r border-zinc-800 bg-zinc-950 lg:relative lg:translate-x-0 lg:block lg:h-screen sidebar-desktop transition-[width] duration-200 ease-out ${
+          sidebarCollapsed ? "w-12" : "w-[13.5rem]"
+        } ${!isDesktop ? "w-[13.5rem]" : ""}`}
       >
         <div className="flex h-full flex-col overflow-hidden">
+          {/* Brand + collapse */}
           <div
-            className={`flex h-16 items-center justify-between border-b border-gray-200 flex-shrink-0 gap-2 ${
-              isDesktop && isCollapsed ? "px-2" : "pl-4 pr-3"
+            className={`flex h-11 shrink-0 items-center overflow-hidden border-b border-zinc-800/80 ${
+              sidebarCollapsed ? "justify-center px-1.5" : "px-2 gap-1"
             }`}
           >
-            <Link
-              href="/"
-              onClick={closeSidebar}
-              className={`flex items-center min-w-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
-                isDesktop && isCollapsed ? "justify-center p-1.5" : "space-x-3 py-1"
-              }`}
-              aria-label="Core Extract — Home"
-            >
-              <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
-                <span className="text-white font-bold text-sm">CE</span>
-              </div>
-              {(!isDesktop || !isCollapsed) && (
-                <div className="min-w-0">
-                  <span className="text-lg font-bold text-gray-900 truncate block">
-                    Core Extract
-                  </span>
-                  <div className="text-xs text-gray-500 truncate">
-                    Document AI Platform
-                  </div>
-                </div>
-              )}
-            </Link>
-            <div className="flex items-center flex-shrink-0 gap-0.5">
-              {isDesktop && (
-                <button
-                  type="button"
-                  onClick={toggleCollapse}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-800"
-                  title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                  aria-expanded={!isCollapsed}
-                  aria-controls="app-sidebar"
-                  aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                >
-                  {isCollapsed ? (
-                    <ChevronRight className="h-5 w-5" />
-                  ) : (
-                    <ChevronLeft className="h-5 w-5" />
-                  )}
-                </button>
-              )}
-              <button
-                type="button"
+            {sidebarCollapsed ? (
+              <Link
+                href="/"
                 onClick={closeSidebar}
-                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-500"
-                aria-label="Close menu"
+                className="flex items-center justify-center p-2 rounded-md hover:bg-zinc-800/70 transition-colors"
+                aria-label="Core Extract — Home"
               >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-
-          <div
-            className={`border-b border-gray-200 flex-shrink-0 ${
-              isDesktop && isCollapsed ? "px-2 py-3 flex justify-center" : "px-4 py-3"
-            }`}
-          >
-            {isDesktop && isCollapsed ? (
-              <OrganizationSelector
-                compact
-                onCreateOrganization={
-                  isAdmin ? () => setIsCreateOrgModalOpen(true) : undefined
-                }
-              />
+                <div className="w-6 h-6 rounded-md bg-emerald-600 flex items-center justify-center flex-shrink-0">
+                  <Layers className="h-3.5 w-3.5 text-white" aria-hidden />
+                </div>
+              </Link>
             ) : (
               <>
-                <div className="mb-2">
-                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Organization
-                  </label>
-                </div>
-                <OrganizationSelector
-                  onCreateOrganization={
-                    isAdmin ? () => setIsCreateOrgModalOpen(true) : undefined
-                  }
-                />
+                <Link
+                  href="/"
+                  onClick={closeSidebar}
+                  className="flex items-center gap-2 min-w-0 flex-1 rounded-md px-1 py-1 hover:bg-zinc-800/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
+                  aria-label="Core Extract — Home"
+                >
+                  <div className="w-6 h-6 rounded-md bg-emerald-600 flex items-center justify-center flex-shrink-0">
+                    <Layers className="h-3.5 w-3.5 text-white" aria-hidden />
+                  </div>
+                  <span className="text-xs font-semibold text-zinc-100 truncate">
+                    Core Extract
+                  </span>
+                </Link>
+                {isDesktop ? (
+                  <button
+                    type="button"
+                    onClick={toggleCollapse}
+                    className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors flex-shrink-0"
+                    title="Collapse sidebar"
+                    aria-expanded
+                    aria-controls="app-sidebar"
+                    aria-label="Collapse sidebar"
+                  >
+                    <PanelLeftClose className="h-4 w-4" aria-hidden />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={closeSidebar}
+                    className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 lg:hidden"
+                    aria-label="Close menu"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </>
             )}
           </div>
 
+          {/* Organization */}
+          <div
+            className={`border-b border-zinc-800/80 flex-shrink-0 ${
+              sidebarCollapsed
+                ? "px-1.5 py-1.5 flex justify-center"
+                : "px-2 py-2"
+            }`}
+          >
+            <OrganizationSelector
+              compact={sidebarCollapsed}
+              tone="dark"
+              className={sidebarCollapsed ? "w-full flex justify-center" : ""}
+              onCreateOrganization={
+                isAdmin ? () => setIsCreateOrgModalOpen(true) : undefined
+              }
+            />
+          </div>
+
           <nav
-            className={`flex-1 py-4 space-y-4 overflow-y-auto overflow-x-hidden [scrollbar-width:thin] [scrollbar-color:rgb(203_213_225)_transparent] ${
-              isDesktop && isCollapsed ? "px-2" : "px-3"
+            className={`flex-1 py-2 space-y-3 overflow-y-auto overflow-x-hidden [scrollbar-width:thin] [scrollbar-color:rgb(63_63_70)_transparent] ${
+              sidebarCollapsed ? "px-1.5" : "px-2"
             }`}
             aria-label="Main navigation"
           >
-            <div className="space-y-1">
-              {(!isDesktop || !isCollapsed) && (
-                <p className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                  Navigate
+            <div className="space-y-0.5">
+              {!sidebarCollapsed && (
+                <p className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                  Project
                 </p>
               )}
               {mainNavigationItems.map(renderNavLink)}
             </div>
 
             {isAdmin && (
-              <div className="space-y-1 pt-2 border-t border-gray-100">
-                {(!isDesktop || !isCollapsed) && (
-                  <p className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+              <div className="space-y-0.5 pt-2 border-t border-zinc-800/80">
+                {!sidebarCollapsed && (
+                  <p className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
                     Admin
                   </p>
                 )}
-                {adminNavItems.map((item) => {
-                  const isActive = navLinkIsActive(item.href);
-                  const Icon = item.icon;
-                  const collapsed = isDesktop && isCollapsed;
-                  return (
-                    <Link
-                      key={item.name}
-                      href={item.href}
-                      onClick={closeSidebar}
-                      aria-current={isActive ? "page" : undefined}
-                      title={collapsed ? item.name : undefined}
-                      className={`group flex items-center text-sm font-medium rounded-lg transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white ${
-                        collapsed ? "justify-center px-2 py-3" : "px-3 py-2.5"
-                      } ${
-                        isActive
-                          ? "bg-violet-50 text-violet-900 border border-violet-200 shadow-sm"
-                          : "text-gray-700 hover:bg-gray-50 hover:text-gray-900 border border-transparent"
-                      }`}
-                    >
-                      <Icon
-                        className={`h-5 w-5 flex-shrink-0 ${
-                          collapsed ? "" : "mr-3"
-                        } ${
-                          isActive
-                            ? "text-violet-600"
-                            : "text-gray-400 group-hover:text-gray-600"
-                        }`}
-                        aria-hidden
-                      />
-                      {(!isDesktop || !isCollapsed) && (
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium">{item.name}</div>
-                          <div className="text-xs text-gray-500 line-clamp-2">
-                            {item.description}
-                          </div>
-                        </div>
-                      )}
-                    </Link>
-                  );
-                })}
+                {adminNavItems.map(renderNavLink)}
               </div>
             )}
           </nav>
 
+          {/* Account */}
           <div
             ref={userMenuRef}
-            className={`border-t border-gray-200 flex-shrink-0 relative ${
-              isDesktop && isCollapsed ? "p-2" : "p-3"
+            className={`border-t border-zinc-800/80 flex-shrink-0 relative ${
+              sidebarCollapsed ? "p-1.5" : "p-2"
             }`}
           >
-            {isDesktop && isCollapsed ? (
-              <div className="flex flex-col items-center">
+            {sidebarCollapsed ? (
+              <div className="flex flex-col items-center gap-1">
+                {isDesktop && (
+                  <button
+                    type="button"
+                    onClick={toggleCollapse}
+                    className="flex items-center justify-center p-2 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                    title="Expand sidebar"
+                    aria-expanded={false}
+                    aria-controls="app-sidebar"
+                    aria-label="Expand sidebar"
+                  >
+                    <PanelLeftOpen className="h-4 w-4" aria-hidden />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center hover:opacity-90 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  className="flex items-center justify-center p-2 rounded-md hover:bg-zinc-800/70 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
                   title={user?.name || "Account menu"}
                   aria-haspopup="menu"
                   aria-expanded={isUserMenuOpen}
                   aria-label="Account menu"
                 >
-                  <span className="text-white font-medium text-sm">
+                  <span className="w-6 h-6 bg-zinc-800 border border-zinc-700 rounded-md flex items-center justify-center text-zinc-200 font-medium text-xs">
                     {user?.name?.charAt(0).toUpperCase()}
                   </span>
                 </button>
@@ -479,28 +449,28 @@ export default function SidebarLayout({
                 <button
                   type="button"
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex w-full items-center justify-between rounded-lg p-2 hover:bg-gray-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  className="flex w-full items-center justify-between rounded-md px-1.5 py-1.5 hover:bg-zinc-800/70 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
                   aria-haspopup="menu"
                   aria-expanded={isUserMenuOpen}
                   aria-label="Account menu"
                 >
-                  <div className="flex items-center space-x-3 min-w-0">
-                    <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-white font-medium text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 bg-zinc-800 border border-zinc-700 rounded-md flex items-center justify-center flex-shrink-0">
+                      <span className="text-zinc-200 font-medium text-xs">
                         {user?.name?.charAt(0).toUpperCase()}
                       </span>
                     </div>
                     <div className="text-left min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">
+                      <div className="text-xs font-medium text-zinc-100 truncate">
                         {user?.name}
                       </div>
-                      <div className="text-xs text-gray-500 truncate max-w-[12rem]">
+                      <div className="text-[10px] text-zinc-500 truncate max-w-[9rem]">
                         {user?.email}
                       </div>
                     </div>
                   </div>
                   <ChevronDown
-                    className={`h-4 w-4 text-gray-400 flex-shrink-0 transition-transform ${
+                    className={`h-3.5 w-3.5 text-zinc-500 flex-shrink-0 transition-transform ${
                       isUserMenuOpen ? "rotate-180" : ""
                     }`}
                     aria-hidden
@@ -513,7 +483,7 @@ export default function SidebarLayout({
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 8 }}
-                      className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-[55]"
+                      className="absolute bottom-full left-2 right-2 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-[55]"
                       role="menu"
                     >
                       <Link
@@ -554,16 +524,16 @@ export default function SidebarLayout({
       </motion.aside>
 
       <div className="flex-1 flex flex-col min-h-screen min-w-0 main-content">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 bg-white/95 backdrop-blur-sm border-b border-gray-200 px-4 sm:px-6 supports-[backdrop-filter]:bg-white/85">
+        <header className="sticky top-0 z-30 flex h-11 items-center justify-between gap-2 bg-white/95 backdrop-blur-sm border-b border-gray-200 px-3 sm:px-4 supports-[backdrop-filter]:bg-white/85">
           <button
             type="button"
             onClick={toggleSidebar}
-            className="lg:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="lg:hidden p-1.5 rounded-md hover:bg-gray-100 text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50"
             aria-label="Open navigation menu"
             aria-expanded={isSidebarOpen}
             aria-controls="app-sidebar"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-4 w-4" />
           </button>
 
           <div className="flex items-center min-w-0 flex-1">
@@ -571,14 +541,14 @@ export default function SidebarLayout({
               headerContent
             ) : (
               <div className="min-w-0 hidden sm:block">
-                <h1 className="text-lg font-semibold text-gray-900 truncate">
+                <h1 className="text-sm font-semibold text-gray-900 truncate leading-tight">
                   {pageTitle ||
                     mainNavigationItems.find((item) => item.href === pathname)
                       ?.name ||
                     "Dashboard"}
                 </h1>
                 {pageDescription && (
-                  <p className="text-sm text-gray-500 line-clamp-1">
+                  <p className="text-xs text-gray-500 line-clamp-1">
                     {pageDescription}
                   </p>
                 )}
@@ -586,18 +556,18 @@ export default function SidebarLayout({
             )}
           </div>
 
-          <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             {headerActions ||
               (currentOrganization && (
                 <div
-                  className="hidden sm:flex items-center gap-2 max-w-[14rem] xl:max-w-xs rounded-full border border-gray-200 bg-gray-50/80 px-3 py-1.5"
+                  className="hidden sm:flex items-center gap-1.5 max-w-[12rem] xl:max-w-[16rem] rounded-md border border-gray-200 bg-gray-50/90 px-2 py-1"
                   title={currentOrganization.name}
                 >
                   <Building2
-                    className="h-4 w-4 text-gray-500 flex-shrink-0"
+                    className="h-3.5 w-3.5 text-gray-500 flex-shrink-0"
                     aria-hidden
                   />
-                  <span className="text-sm text-gray-700 truncate">
+                  <span className="text-xs text-gray-700 truncate">
                     {currentOrganization.name}
                   </span>
                 </div>
@@ -605,7 +575,7 @@ export default function SidebarLayout({
           </div>
         </header>
 
-        <main className="flex-1 p-6 overflow-y-auto">{children}</main>
+        <main className="flex-1 p-4 sm:p-5 overflow-y-auto">{children}</main>
       </div>
 
       <CreateOrganizationModal
