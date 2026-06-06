@@ -4,6 +4,7 @@ import React from "react";
 import { Descriptions, Tag, Typography } from "antd";
 import type { JobFile } from "@/lib/api";
 import { buildFileProcessingSummary } from "@/lib/fileProcessingMeta";
+import ProcessingTimeline from "./ProcessingTimeline";
 
 const { Text } = Typography;
 
@@ -24,6 +25,15 @@ export default function FileProcessingPanel({ file }: FileProcessingPanelProps) 
 
   return (
     <div className="p-4 space-y-4 overflow-auto h-full">
+      <div>
+        <Text className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+          Live progress
+        </Text>
+        <div className="mt-2">
+          <ProcessingTimeline fileId={file.id} jobId={file.job_id ?? undefined} />
+        </div>
+      </div>
+
       <div>
         <Text className="text-xs font-medium text-gray-500 uppercase tracking-wide">
           Pipeline

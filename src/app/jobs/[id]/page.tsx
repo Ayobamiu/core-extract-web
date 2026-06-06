@@ -20,7 +20,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { canPerformAdminActions } from "@/utils/roleUtils";
-import { apiClient, JobDetails, JobFile } from "@/lib/api";
+import { apiClient, JobDetails, JobFile, type ProcessingEvent } from "@/lib/api";
 import PreviewSelector from "@/components/preview/PreviewSelector";
 import PreviewDrawer from "@/components/preview/PreviewDrawer";
 import InlineSchemaEditor from "@/components/InlineSchemaEditor";
@@ -233,11 +233,22 @@ function JobDetailPage() {
     [],
   );
 
+  // Latest processing-timeline event per file — drives the inline row chips.
+  const [processingEvents, setProcessingEvents] = useState<
+    Record<string, ProcessingEvent>
+  >({});
+  const handleFileProcessingEvent = useCallback((data: ProcessingEvent) => {
+    const fid = (data as any).fileId ?? (data as any).file_id;
+    if (!fid) return;
+    setProcessingEvents((prev) => ({ ...prev, [fid]: data }));
+  }, []);
+
   // WebSocket connection
   const { isConnected } = useSocket(jobId, {
     onJobStatusUpdate: handleJobStatusUpdate,
     onFileStatusUpdate: handleFileStatusUpdate,
     onPreviewUpdated: handlePreviewUpdated,
+    onFileProcessingEvent: handleFileProcessingEvent,
   });
 
   useEffect(() => {
@@ -618,6 +629,7 @@ function JobDetailPage() {
                 refreshTrigger={fileTableRefreshTrigger}
                 filePatchBatch={filePatchBatch}
                 fileSummary={fileSummary}
+                processingEvents={processingEvents}
                 isConnected={isConnected}
                 isGoingLive={isGoingLive}
                 isRefreshing={isRefreshing}

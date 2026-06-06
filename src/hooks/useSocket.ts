@@ -5,6 +5,7 @@ interface SocketEventHandlers {
     onJobStatusUpdate?: (data: any) => void;
     onFileStatusUpdate?: (data: any) => void;
     onPreviewUpdated?: (data: any) => void;
+    onFileProcessingEvent?: (data: any) => void;
 }
 
 export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
@@ -56,15 +57,21 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
             handlersRef.current?.onPreviewUpdated?.(data);
         };
 
+        const handleFileProcessingEvent = (data: any) => {
+            handlersRef.current?.onFileProcessingEvent?.(data);
+        };
+
         // Remove old listeners first to avoid duplicates
         newSocket.off('job-status-update');
         newSocket.off('file-status-update');
         newSocket.off('preview-updated');
+        newSocket.off('file-processing-event');
 
         // Register event handlers
         newSocket.on('job-status-update', handleJobStatusUpdate);
         newSocket.on('file-status-update', handleFileStatusUpdate);
         newSocket.on('preview-updated', handlePreviewUpdated);
+        newSocket.on('file-processing-event', handleFileProcessingEvent);
         
         console.log('📡 Registered all Socket.IO event handlers');
 
@@ -79,6 +86,7 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
             newSocket.off('job-status-update');
             newSocket.off('file-status-update');
             newSocket.off('preview-updated');
+            newSocket.off('file-processing-event');
             newSocket.disconnect();
         };
     }, [jobId]);
