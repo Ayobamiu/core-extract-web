@@ -2700,6 +2700,7 @@ const FileTable: React.FC<FileTableProps> = ({
         file={selectedFileForDetails}
         open={fileDetailsDrawerVisible}
         onClose={handleCloseFileDetails}
+        zIndex={fullscreenModalOpen ? 1100 : undefined}
       />
     </div>
   );
