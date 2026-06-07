@@ -355,6 +355,32 @@ export interface QAFinding {
     updated_at: string;
 }
 
+// ── Processing timeline (curated, frontend-facing progress events) ──
+export type ProcessingPhase =
+    | 'queued' | 'classifying' | 'extracting' | 'ai_extraction'
+    | 'post_processing' | 'done' | 'failed' | 'skipped';
+export type ProcessingEventStatus = 'active' | 'done' | 'failed' | 'info';
+export type ProcessingEventLevel = 'info' | 'warning' | 'error';
+
+export interface ProcessingEvent {
+    id?: string;
+    seq?: number;
+    file_id?: string;
+    fileId?: string; // socket payload uses camelCase
+    job_id?: string | null;
+    jobId?: string | null;
+    phase: ProcessingPhase;
+    step?: string | null;
+    status: ProcessingEventStatus;
+    progress_current?: number | null;
+    progress_total?: number | null;
+    progress?: { current: number; total: number }; // socket payload shape
+    message?: string | null;
+    level?: ProcessingEventLevel;
+    data?: Record<string, unknown> | null;
+    created_at?: string;
+}
+
 // Per-section extraction (Phase 1, item #3 — v2 envelope).
 //
 // When the visual classifier is on AND it produces ≥1 section with extractable
@@ -1547,6 +1573,13 @@ class ApiClient {
         fileId: string,
     ): Promise<ApiResponse<{ findings: Record<string, QAFinding[]> }>> {
         return this.request(`/files/${encodeURIComponent(fileId)}/qa-findings`);
+    }
+
+    /** Get the curated processing timeline for a file (for hydration). */
+    async getProcessingEvents(
+        fileId: string,
+    ): Promise<ApiResponse<{ events: ProcessingEvent[] }>> {
+        return this.request(`/files/${encodeURIComponent(fileId)}/processing-events`);
     }
 
     /** Update a finding's status (accepted or dismissed). */

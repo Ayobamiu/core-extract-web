@@ -74,7 +74,11 @@ export default function FileViewerRightPane({
   onUpdate,
   onSectionsUpdated,
 }: FileViewerRightPaneProps) {
-  const [activeTab, setActiveTab] = useState<RightPaneTab>("results");
+  // Land on the Processing tab when there's no result yet (file opened mid-run),
+  // so the live timeline is what the user sees first; otherwise show Results.
+  const [activeTab, setActiveTab] = useState<RightPaneTab>(() =>
+    file.processing_status === "completed" && file.result ? "results" : "processing",
+  );
   const hasRouting = Boolean(file.detected_sections);
   const sectionCount = file.detected_sections?.sections?.length ?? 0;
   const routingBadge =

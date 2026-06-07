@@ -38,8 +38,9 @@ import {
   FileTextOutlined,
   EllipsisOutlined,
 } from "@ant-design/icons";
-import { JobFile, ProcessingConfig } from "@/lib/api";
+import { JobFile, ProcessingConfig, type ProcessingEvent } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
+import ProcessingStatusChip from "@/components/file/ProcessingStatusChip";
 import { apiClient } from "@/lib/api";
 import { DEFAULT_MODELS, PROCESSING_METHODS } from "@/lib/processingConfig";
 import { useAuth } from "@/contexts/AuthContext";
@@ -95,6 +96,8 @@ interface FileTableProps {
     patch: Record<string, any>;
     version: string;
   }> | null;
+  /** Latest processing-timeline event per file id (drives inline row chips) */
+  processingEvents?: Record<string, ProcessingEvent>;
   fileSummary?: {
     total: number;
     extraction_pending: number;
@@ -144,6 +147,7 @@ const FileTable: React.FC<FileTableProps> = ({
   refreshTrigger,
   filePatchBatch,
   fileSummary,
+  processingEvents,
   isConnected = false,
   isGoingLive = false,
   isRefreshing = false,
@@ -1341,24 +1345,31 @@ const FileTable: React.FC<FileTableProps> = ({
           className="flex items-center space-x-1"
           style={{ whiteSpace: "nowrap", overflow: "hidden" }}
         >
-          {record.processing_status === "completed" &&
-            ((record as any).has_result ?? record.result) && (
-              <>
-                <Tooltip title="View results">
-                  <FullscreenOutlined
-                    style={{
-                      cursor: "pointer",
-                      color: "#1890ff",
-                      flexShrink: 0,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenFullscreen(record);
-                    }}
-                  />
-                </Tooltip>
-              </>
-            )}
+          {(() => {
+            const hasResult = (record as any).has_result ?? record.result;
+            const canViewResults =
+              record.processing_status === "completed" && hasResult;
+            // Also openable while processing (or completed-empty / failed) so the
+            // live timeline is reachable before any result exists.
+            const canViewProgress =
+              !canViewResults &&
+              (record.processing_status === "processing" ||
+                record.extraction_status === "processing" ||
+                record.processing_status === "completed" ||
+                record.processing_status === "failed");
+            if (!canViewResults && !canViewProgress) return null;
+            return (
+              <Tooltip title={canViewResults ? "View results" : "View progress"}>
+                <FullscreenOutlined
+                  style={{ cursor: "pointer", color: "#1890ff", flexShrink: 0 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenFullscreen(record);
+                  }}
+                />
+              </Tooltip>
+            );
+          })()}
           <Tooltip title={copiedFileId === id ? "Copied!" : "Copy file ID"}>
             {copiedFileId === id ? (
               <CheckCircleOutlined
@@ -1674,7 +1685,7 @@ const FileTable: React.FC<FileTableProps> = ({
     {
       title: "Status",
       key: "processing_status",
-      width: 100,
+      width: 150,
       filters: [
         { text: "Pending", value: "pending" },
         { text: "Processing", value: "processing" },
@@ -1703,14 +1714,20 @@ const FileTable: React.FC<FileTableProps> = ({
             </div>
           }
         >
-          <div
-            className="flex items-center space-x-0.5"
-            style={{ whiteSpace: "nowrap" }}
+          {/* Live, granular status — driven by processing-timeline events,
+              falling back to coarse row status. Click opens the full timeline. */}
+          <span
+            className="cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenFullscreen(record);
+            }}
           >
-            {getUploadStatusIcon(record.upload_status)}
-            {getStatusIcon(record.extraction_status)}
-            {getStatusIcon(record.processing_status)}
-          </div>
+            <ProcessingStatusChip
+              file={record}
+              event={processingEvents?.[record.id]}
+            />
+          </span>
         </Tooltip>
       ),
     },
