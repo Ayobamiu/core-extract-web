@@ -1051,11 +1051,14 @@ class ApiClient {
         fileId: string,
         detectedSections: DetectedSections,
     ): Promise<ApiResponse<{ detected_sections?: DetectedSections; sectionResults?: unknown[] }>> {
+        // Send only the edited `sections` array — the server preserves all other
+        // classifier metadata (pages, page_summaries, …). This keeps the body
+        // small (avoids PayloadTooLargeError on large files).
         return this.request(
             `/files/${encodeURIComponent(fileId)}/sections/save-and-reextract`,
             {
                 method: 'POST',
-                body: JSON.stringify({ detected_sections: detectedSections }),
+                body: JSON.stringify({ sections: detectedSections.sections }),
             },
         );
     }
