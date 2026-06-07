@@ -880,6 +880,14 @@ class ApiClient {
         return this.request(`/document-types${qs ? `?${qs}` : ''}`);
     }
 
+    /** Active JSON schema for a document type (read-only) — powers field
+     *  descriptions in the result viewer. */
+    async getDocumentTypeSchema(
+        slug: string,
+    ): Promise<ApiResponse<{ slug: string; version: number; json_schema: Record<string, unknown> }>> {
+        return this.request(`/document-types/${encodeURIComponent(slug)}/schema`);
+    }
+
     // ── Schema registry admin (admin JWT only) ───────────────────────────
     async registryGetDocumentTypeDetail(
         slug: string

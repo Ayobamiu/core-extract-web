@@ -26,6 +26,8 @@ const READONLY_TOOLBAR: ToolbarItem[] = ["mode", "search", "copy", "download"];
 export interface JsonViewerProps extends JsonViewerCommonProps {
   /** Internal: when true, toolbar gets save/cancel by default. */
   withSaveCancel?: boolean;
+  /** dot.path -> field description; shows a hover tooltip on keys (tree mode). */
+  descriptions?: Record<string, string>;
 }
 
 function deriveMode(opts: {
@@ -97,6 +99,7 @@ const JsonViewer: React.FC<JsonViewerProps> = (props) => {
     className,
     bodyClassName,
     withSaveCancel,
+    descriptions,
   } = props;
 
   const editor = useJsonEditor({
@@ -326,6 +329,7 @@ const JsonViewer: React.FC<JsonViewerProps> = (props) => {
                     value={editor.value}
                     theme={themeMode}
                     emptyText={emptyText}
+                    descriptions={descriptions}
                   />
                 )}
               </>

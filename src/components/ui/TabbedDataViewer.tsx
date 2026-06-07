@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { jsonToCsv } from "@/lib/csvExport";
+import { buildFieldDescriptionMap } from "@/lib/schemaDescriptions";
 import { ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
 import { App, Button, Input, Popconfirm, Select, Typography } from "antd";
 import { JsonViewer } from "@/components/json";
@@ -540,6 +541,31 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     : null;
 
   const [verifyLoading, setVerifyLoading] = useState(false);
+
+  // ── Field descriptions (hover hints in the JSON tree) ──────────────
+  // Fetch the active schema for the selected section's slug, flatten it to a
+  // path→description map, cache per slug. Falls back gracefully when there's no
+  // slug (v1) or the schema can't be loaded.
+  const schemaDescCacheRef = React.useRef<Record<string, Record<string, string>>>({});
+  const [fieldDescriptions, setFieldDescriptions] = useState<Record<string, string>>({});
+  const descSlug = selectedSection?.slug ?? null;
+  useEffect(() => {
+    if (!descSlug) { setFieldDescriptions({}); return; }
+    const cached = schemaDescCacheRef.current[descSlug];
+    if (cached) { setFieldDescriptions(cached); return; }
+    let cancelled = false;
+    apiClient.getDocumentTypeSchema(descSlug).then((res) => {
+      if (cancelled) return;
+      if (res.status === "success" && res.json_schema) {
+        const map = buildFieldDescriptionMap(res.json_schema);
+        schemaDescCacheRef.current[descSlug] = map;
+        setFieldDescriptions(map);
+      } else {
+        setFieldDescriptions({});
+      }
+    }).catch(() => { if (!cancelled) setFieldDescriptions({}); });
+    return () => { cancelled = true; };
+  }, [descSlug]);
 
   const handleVerify = useCallback(
     async (status: SectionVerificationStatus) => {
@@ -1100,6 +1126,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
             <div className="flex-1 min-h-0 flex flex-col">
               <JsonViewer
                 text={editableJson}
+                descriptions={fieldDescriptions}
                 onChange={({ text, isValid, error }) => {
                   setEditableJson(text);
                   setJsonError(isValid ? null : (error ?? "Invalid JSON"));
