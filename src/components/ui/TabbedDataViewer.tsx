@@ -24,6 +24,7 @@ import {
   type SectionVerificationStatus,
   type V2ResultEnvelope,
 } from "@/lib/api";
+import type { ViewerResultTab } from "@/lib/jobViewUrlState";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -85,6 +86,10 @@ interface TabbedDataViewerProps {
     sectionResultIds: string[],
     status: SectionVerificationStatus,
   ) => Promise<void>;
+  selectedSectionResultId?: string | null;
+  onSelectedSectionResultIdChange?: (sectionResultId: string | null) => void;
+  activeResultTab?: ViewerResultTab | null;
+  onActiveResultTabChange?: (tab: ViewerResultTab) => void;
 }
 
 // One discoverable "row" in the section picker. We derive these from the
@@ -511,16 +516,20 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   sectionVerifications,
   onSectionVerify,
   onBulkSectionVerify,
+  selectedSectionResultId = null,
+  onSelectedSectionResultIdChange,
+  activeResultTab = null,
+  onActiveResultTabChange,
 }) => {
   const { message } = App.useApp();
-  const [activeTab, setActiveTab] = useState<TabType>("results");
+  const [fallbackTab, setFallbackTab] = useState<TabType>("results");
   const [markdownView, setMarkdownView] = useState<MarkdownViewType>("full");
   const [editableJson, setEditableJson] = useState<string>("");
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [addingComment, setAddingComment] = useState(false);
-  const [selectedSectionIdx, setSelectedSectionIdx] = useState<number>(0);
+  const [fallbackSectionIdx, setFallbackSectionIdx] = useState<number>(0);
 
   // Per-section (v2 envelope) detection. The picker only renders when both
   // (a) the data shape matches and (b) there's at least one section to pick.
@@ -544,6 +553,75 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         : [],
     [isV2, data, sectionResults, detectedSections],
   );
+
+  const sectionIdxFromUrl = useMemo(() => {
+    if (!selectedSectionResultId) return null;
+    const idx = sectionEntries.findIndex(
+      (entry) => entry.sectionResultId === selectedSectionResultId,
+    );
+    return idx >= 0 ? idx : null;
+  }, [selectedSectionResultId, sectionEntries]);
+
+  const selectedSectionIdx = sectionIdxFromUrl ?? fallbackSectionIdx;
+
+  const activeTab = useMemo(() => {
+    const wanted = activeResultTab ?? fallbackTab;
+    if (wanted === "markdown" && !markdown) return "results" as TabType;
+    if (wanted === "compare" && !actual_result) return "results" as TabType;
+    if (
+      wanted === "comments" &&
+      !(comments.length > 0 || onAddComment)
+    ) {
+      return "results" as TabType;
+    }
+    return wanted as TabType;
+  }, [
+    activeResultTab,
+    fallbackTab,
+    markdown,
+    actual_result,
+    comments.length,
+    onAddComment,
+  ]);
+
+  const selectSectionIdx = useCallback(
+    (idx: number) => {
+      setFallbackSectionIdx(idx);
+      const id = sectionEntries[idx]?.sectionResultId ?? null;
+      onSelectedSectionResultIdChange?.(id);
+    },
+    [sectionEntries, onSelectedSectionResultIdChange],
+  );
+
+  const setResultTab = useCallback(
+    (tab: TabType) => {
+      setFallbackTab(tab);
+      onActiveResultTabChange?.(tab);
+    },
+    [onActiveResultTabChange],
+  );
+
+  useEffect(() => {
+    if (!selectedSectionResultId || sectionEntries.length === 0) return;
+    if (sectionIdxFromUrl === null) {
+      const firstId = sectionEntries[0]?.sectionResultId ?? null;
+      onSelectedSectionResultIdChange?.(firstId);
+    }
+  }, [
+    fileId,
+    sectionEntries,
+    selectedSectionResultId,
+    sectionIdxFromUrl,
+    onSelectedSectionResultIdChange,
+  ]);
+
+  useEffect(() => {
+    if (!activeResultTab) return;
+    if (activeTab !== activeResultTab) {
+      onActiveResultTabChange?.(activeTab);
+    }
+  }, [fileId, activeResultTab, activeTab, onActiveResultTabChange]);
+
   const selectedSection =
     sectionEntries[selectedSectionIdx] ?? sectionEntries[0];
 
@@ -741,11 +819,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const sectionData: unknown =
     isV2 && selectedSection ? selectedSection.data : data;
 
-  // Reset section selection when the underlying data shape changes (e.g.,
-  // file switch). Otherwise an out-of-range index can persist briefly.
+  // Keep fallback index in range when sections change
   React.useEffect(() => {
     if (selectedSectionIdx > sectionEntries.length - 1) {
-      setSelectedSectionIdx(0);
+      setFallbackSectionIdx(0);
     }
   }, [sectionEntries.length, selectedSectionIdx]);
 
@@ -943,7 +1020,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
             type="button"
             disabled={selectedSectionIdx <= 0}
             onClick={() =>
-              setSelectedSectionIdx(Math.max(0, selectedSectionIdx - 1))
+              selectSectionIdx(Math.max(0, selectedSectionIdx - 1))
             }
             className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Previous section"
@@ -953,7 +1030,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           <Select
             showSearch
             value={selectedSectionIdx}
-            onChange={(v: number) => setSelectedSectionIdx(v)}
+            onChange={(v: number) => selectSectionIdx(v)}
             optionFilterProp="label"
             className="flex-1 min-w-0"
             size="small"
@@ -998,7 +1075,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
             type="button"
             disabled={selectedSectionIdx >= sectionEntries.length - 1}
             onClick={() =>
-              setSelectedSectionIdx(
+              selectSectionIdx(
                 Math.min(sectionEntries.length - 1, selectedSectionIdx + 1),
               )
             }
@@ -1092,7 +1169,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       <div className="flex items-center justify-between border-b border-gray-200 flex-shrink-0">
         <div className="flex space-x-1">
           <button
-            onClick={() => setActiveTab("results")}
+            onClick={() => setResultTab("results")}
             className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
               activeTab === "results"
                 ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
@@ -1103,7 +1180,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           </button>
           {markdown && (
             <button
-              onClick={() => setActiveTab("markdown")}
+              onClick={() => setResultTab("markdown")}
               className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
                 activeTab === "markdown"
                   ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
@@ -1115,7 +1192,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           )}
           {actual_result && (
             <button
-              onClick={() => setActiveTab("compare")}
+              onClick={() => setResultTab("compare")}
               className={`px-4 py-2 text-sm font-medium transition-colors duration-200 ${
                 activeTab === "compare"
                   ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
@@ -1127,7 +1204,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           )}
           {(comments.length > 0 || onAddComment) && (
             <button
-              onClick={() => setActiveTab("comments")}
+              onClick={() => setResultTab("comments")}
               className={`px-4 py-2 text-sm font-medium transition-colors duration-200 flex items-center space-x-1 ${
                 activeTab === "comments"
                   ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"

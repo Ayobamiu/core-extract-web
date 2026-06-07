@@ -38,6 +38,8 @@ export interface FileViewerHeaderProps {
   isAdmin: boolean;
   /** Show Review & Verify as a primary toolbar button (file page). */
   showReviewAndVerifyInBar?: boolean;
+  onReload?: () => void;
+  reloadLoading?: boolean;
 }
 
 export default function FileViewerHeader({
@@ -58,6 +60,8 @@ export default function FileViewerHeader({
   reprocessingFileId,
   isAdmin,
   showReviewAndVerifyInBar = false,
+  onReload,
+  reloadLoading = false,
 }: FileViewerHeaderProps) {
   const moreMenuItems: MenuProps["items"] = [];
   if (isAdmin && !showReviewAndVerifyInBar) {
@@ -134,6 +138,8 @@ export default function FileViewerHeader({
           onReviewAndVerifyFile={onReviewAndVerifyFile}
           onReprocessFile={onReprocessFile}
           onOpenFileDetails={onOpenFileDetails}
+          onReload={onReload}
+          reloadLoading={reloadLoading}
           onClose={onClose}
           moreMenuItems={moreMenuItems}
           showReviewAndVerifyInBar={showReviewAndVerifyInBar}

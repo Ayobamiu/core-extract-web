@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Typography } from "antd";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import type { JobFile } from "@/lib/api";
+import type { ViewerPane, ViewerResultTab } from "@/lib/jobViewUrlState";
 import FileViewerHeader, {
   type FileViewerHeaderProps,
 } from "./FileViewerHeader";
@@ -31,6 +32,12 @@ export type FileViewerLayoutProps = {
   onSectionsUpdated?: (sections: JobFile["detected_sections"]) => void;
   detailLoading?: boolean;
   splitContainerClassName?: string;
+  viewerPane?: ViewerPane | null;
+  onViewerPaneChange?: (pane: ViewerPane) => void;
+  viewerSectionId?: string | null;
+  onViewerSectionChange?: (sectionResultId: string | null) => void;
+  viewerResultTab?: ViewerResultTab | null;
+  onViewerResultTabChange?: (tab: ViewerResultTab) => void;
 } & Omit<FileViewerHeaderProps, "file">;
 
 export default function FileViewerLayout({
@@ -46,6 +53,12 @@ export default function FileViewerLayout({
   onSectionsUpdated,
   detailLoading = false,
   splitContainerClassName = "file-viewer-split",
+  viewerPane = null,
+  onViewerPaneChange,
+  viewerSectionId = null,
+  onViewerSectionChange,
+  viewerResultTab = null,
+  onViewerResultTabChange,
   ...headerProps
 }: FileViewerLayoutProps) {
   const [splitPosition, setSplitPosition] = useState(50);
@@ -193,6 +206,12 @@ export default function FileViewerLayout({
             onAddComment={onAddComment}
             onUpdate={onUpdate}
             onSectionsUpdated={onSectionsUpdated}
+            viewerPane={viewerPane}
+            onViewerPaneChange={onViewerPaneChange}
+            viewerSectionId={viewerSectionId}
+            onViewerSectionChange={onViewerSectionChange}
+            viewerResultTab={viewerResultTab}
+            onViewerResultTabChange={onViewerResultTabChange}
           />
         </div>
       </div>

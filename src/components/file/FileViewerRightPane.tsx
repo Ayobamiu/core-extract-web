@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Typography } from "antd";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import {
@@ -9,14 +9,13 @@ import {
   type SectionVerification,
   type SectionVerificationStatus,
 } from "@/lib/api";
+import type { ViewerPane, ViewerResultTab } from "@/lib/jobViewUrlState";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import ConstraintErrorIcon from "@/components/ui/ConstraintErrorIcon";
 import DocumentRoutingPanel from "@/components/DocumentRoutingPanel";
 import FileProcessingPanel from "./FileProcessingPanel";
 
 const { Text } = Typography;
-
-type RightPaneTab = "results" | "routing" | "processing";
 
 interface FileViewerRightPaneProps {
   file: JobFile;
@@ -32,6 +31,12 @@ interface FileViewerRightPaneProps {
   onAddComment: (text: string) => Promise<void>;
   onUpdate: (updatedData: unknown) => Promise<void>;
   onSectionsUpdated?: (next: JobFile["detected_sections"]) => void;
+  viewerPane?: ViewerPane | null;
+  onViewerPaneChange?: (pane: ViewerPane) => void;
+  viewerSectionId?: string | null;
+  onViewerSectionChange?: (sectionResultId: string | null) => void;
+  viewerResultTab?: ViewerResultTab | null;
+  onViewerResultTabChange?: (tab: ViewerResultTab) => void;
 }
 
 function PaneTab({
@@ -65,6 +70,19 @@ function PaneTab({
   );
 }
 
+function defaultPaneForFile(file: JobFile): ViewerPane {
+  return file.processing_status === "completed" && file.result
+    ? "results"
+    : "processing";
+}
+
+function normalizePane(file: JobFile, pane: ViewerPane, hasRouting: boolean): ViewerPane {
+  if (pane === "routing" && !hasRouting) {
+    return defaultPaneForFile(file);
+  }
+  return pane;
+}
+
 export default function FileViewerRightPane({
   file,
   jobSchema,
@@ -73,25 +91,48 @@ export default function FileViewerRightPane({
   onAddComment,
   onUpdate,
   onSectionsUpdated,
+  viewerPane = null,
+  onViewerPaneChange,
+  viewerSectionId = null,
+  onViewerSectionChange,
+  viewerResultTab = null,
+  onViewerResultTabChange,
 }: FileViewerRightPaneProps) {
-  // Land on the Processing tab when there's no result yet (file opened mid-run),
-  // so the live timeline is what the user sees first; otherwise show Results.
-  const [activeTab, setActiveTab] = useState<RightPaneTab>(() =>
-    file.processing_status === "completed" && file.result ? "results" : "processing",
-  );
   const hasRouting = Boolean(file.detected_sections);
   const sectionCount = file.detected_sections?.sections?.length ?? 0;
   const routingBadge =
     hasRouting && sectionCount > 0 ? String(sectionCount) : undefined;
 
-  // Section verification state — seeded from file.section_verifications
-  // (attached by the backend), then kept in sync via optimistic updates.
-  const [sectionVerifications, setSectionVerifications] = useState<SectionVerification[]>(
-    file.section_verifications ?? []
+  const activeTab = useMemo(
+    () =>
+      normalizePane(
+        file,
+        viewerPane ?? defaultPaneForFile(file),
+        hasRouting,
+      ),
+    [file, viewerPane, hasRouting],
   );
 
-  // Re-sync when the file prop changes (user switches to a different file)
-  React.useEffect(() => {
+  useEffect(() => {
+    if (!onViewerPaneChange || viewerPane == null) return;
+    const normalized = normalizePane(file, viewerPane, hasRouting);
+    if (normalized !== viewerPane) {
+      onViewerPaneChange(normalized);
+    }
+  }, [file.id, viewerPane, hasRouting, file, onViewerPaneChange]);
+
+  const handlePaneChange = useCallback(
+    (pane: ViewerPane) => {
+      onViewerPaneChange?.(pane);
+    },
+    [onViewerPaneChange],
+  );
+
+  const [sectionVerifications, setSectionVerifications] = useState<SectionVerification[]>(
+    file.section_verifications ?? [],
+  );
+
+  useEffect(() => {
     setSectionVerifications(file.section_verifications ?? []);
   }, [file.id, file.section_verifications]);
 
@@ -110,7 +151,7 @@ export default function FileViewerRightPane({
         });
       }
     },
-    [file.id]
+    [file.id],
   );
 
   const handleBulkSectionVerify = useCallback(
@@ -120,7 +161,7 @@ export default function FileViewerRightPane({
         setSectionVerifications(res.data as SectionVerification[]);
       }
     },
-    [file.id]
+    [file.id],
   );
 
   return (
@@ -129,14 +170,14 @@ export default function FileViewerRightPane({
         <nav className="flex items-center gap-0" aria-label="File viewer panels">
           <PaneTab
             active={activeTab === "results"}
-            onClick={() => setActiveTab("results")}
+            onClick={() => handlePaneChange("results")}
           >
             Results
           </PaneTab>
           {hasRouting && (
             <PaneTab
               active={activeTab === "routing"}
-              onClick={() => setActiveTab("routing")}
+              onClick={() => handlePaneChange("routing")}
               badge={routingBadge}
             >
               Routing
@@ -144,7 +185,7 @@ export default function FileViewerRightPane({
           )}
           <PaneTab
             active={activeTab === "processing"}
-            onClick={() => setActiveTab("processing")}
+            onClick={() => handlePaneChange("processing")}
           >
             Processing
           </PaneTab>
@@ -185,6 +226,10 @@ export default function FileViewerRightPane({
                 sectionVerifications={sectionVerifications}
                 onSectionVerify={handleSectionVerify}
                 onBulkSectionVerify={handleBulkSectionVerify}
+                selectedSectionResultId={viewerSectionId}
+                onSelectedSectionResultIdChange={onViewerSectionChange}
+                activeResultTab={viewerResultTab}
+                onActiveResultTabChange={onViewerResultTabChange}
                 className="h-full"
               />
             )}

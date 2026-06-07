@@ -7,9 +7,9 @@ import React, {
   useRef,
   useMemo,
   Suspense,
-  startTransition,
 } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useJobViewUrlState } from "@/hooks/useJobViewUrlState";
 import { motion } from "framer-motion";
 import { App, Drawer, Dropdown, Modal } from "antd";
 import Card, { CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
@@ -46,10 +46,10 @@ function JobDetailPage() {
   const { message } = App.useApp();
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const jobId = params.id as string;
+  const viewUrl = useJobViewUrlState(jobId);
   const { user } = useAuth();
   const { currentOrganization } = useOrganization();
-  const jobId = params.id as string;
   const isAdmin = canPerformAdminActions(user);
 
   const [job, setJob] = useState<JobDetails | null>(null);
@@ -102,31 +102,6 @@ function JobDetailPage() {
   const [showConfigEditor, setShowConfigEditor] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const fileFromUrl = searchParams.get("file");
-  const [viewerFileId, setViewerFileId] = useState<string | null>(fileFromUrl);
-
-  // Sync from URL on back/forward or initial load with ?file=
-  useEffect(() => {
-    setViewerFileId(fileFromUrl);
-  }, [fileFromUrl]);
-
-  const setActiveFileId = useCallback(
-    (fileId: string | null) => {
-      setViewerFileId(fileId);
-      startTransition(() => {
-        const params = new URLSearchParams(searchParams.toString());
-        if (fileId) {
-          params.set("file", fileId);
-        } else {
-          params.delete("file");
-        }
-        const qs = params.toString();
-        router.replace(`/jobs/${jobId}${qs ? `?${qs}` : ""}`, { scroll: false });
-      });
-    },
-    [jobId, router, searchParams],
-  );
 
   const jobSchema = useMemo(() => {
     if (!job?.schema_data) return undefined;
@@ -614,8 +589,17 @@ function JobDetailPage() {
               <FileTable
                 jobId={job.id}
                 jobSchema={jobSchema}
-                activeFileId={viewerFileId}
-                onActiveFileIdChange={setActiveFileId}
+                activeFileId={viewUrl.file}
+                onActiveFileIdChange={viewUrl.setFile}
+                urlPage={viewUrl.page}
+                urlPageSize={viewUrl.size}
+                onUrlPaginationChange={viewUrl.setPagination}
+                viewerPane={viewUrl.pane}
+                onViewerPaneChange={viewUrl.setPane}
+                viewerSectionId={viewUrl.section}
+                onViewerSectionChange={viewUrl.setSection}
+                viewerResultTab={viewUrl.view}
+                onViewerResultTabChange={viewUrl.setView}
                 onAddToPreview={(fileId) => handleAddToPreview(fileId)}
                 onEditResults={(file) => {
                   setSelectedFileForResultsEdit(file);
