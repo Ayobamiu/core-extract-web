@@ -30,6 +30,8 @@ interface FileDetailsDrawerProps {
   file: JobFile | null;
   open: boolean;
   onClose: () => void;
+  /** Raise above stacked modals (e.g. fullscreen result viewer). */
+  zIndex?: number;
 }
 
 const computePageCount = (file?: JobFile | null): number | null => {
@@ -114,6 +116,7 @@ const FileDetailsDrawer: React.FC<FileDetailsDrawerProps> = ({
   file,
   open,
   onClose,
+  zIndex,
 }) => {
   const selectedFilePageCount = computePageCount(file);
 
@@ -134,6 +137,7 @@ const FileDetailsDrawer: React.FC<FileDetailsDrawerProps> = ({
       onClose={onClose}
       open={open}
       width={600}
+      zIndex={zIndex}
     >
       {file && (
         <div className="space-y-6">
