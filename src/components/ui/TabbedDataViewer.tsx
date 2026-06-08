@@ -7,6 +7,12 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { jsonToCsv } from "@/lib/csvExport";
 import { buildFieldDescriptionMap } from "@/lib/schemaDescriptions";
+import {
+  getByPath,
+  setByPath,
+  coerceExpected,
+  APPLYABLE_ISSUE_TYPES,
+} from "@/lib/jsonPath";
 import { ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
 import { App, Button, Input, Popconfirm, Select, Typography } from "antd";
 import { JsonViewer } from "@/components/json";
@@ -243,9 +249,15 @@ const SEVERITY_CONFIG = {
 function QAFindingsPanel({
   findings,
   onUpdate,
+  onApply,
+  canApply,
 }: {
   findings: import("@/lib/api").QAFinding[];
   onUpdate: (findingId: string, status: 'accepted' | 'dismissed') => Promise<void>;
+  /** Inject this finding's `expected` into the editable JSON (review then Save). */
+  onApply: (finding: import("@/lib/api").QAFinding) => void;
+  /** Only show "Apply" when the JSON is editable (otherwise it can't be saved). */
+  canApply: boolean;
 }) {
   const [updating, setUpdating] = useState<string | null>(null);
   const open = findings.filter(f => f.status === 'open');
@@ -279,6 +291,16 @@ function QAFindingsPanel({
           </div>
           {!isResolved && (
             <div className="flex gap-1 flex-shrink-0">
+              {canApply && APPLYABLE_ISSUE_TYPES.has(f.issue_type) && (
+                <>
+                  <button
+                    onClick={() => onApply(f)}
+                    className="text-xs text-blue-700 font-medium hover:underline"
+                    title={`Set ${f.field_path} = ${f.issue_type === 'extra_value' ? 'null' : (f.expected ?? 'null')}`}
+                  >Apply</button>
+                  <span className="text-gray-300">|</span>
+                </>
+              )}
               <button
                 disabled={updating === f.id}
                 onClick={() => handleAction(f.id, 'accepted')}
@@ -671,6 +693,30 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       setQaLoading('idle');
     }
   }, [fileId, message]);
+
+  // Inject a finding's "right answer" (expected) into the editable JSON at its
+  // field_path. The user reviews the change in the tree and Saves to persist
+  // (via the existing per-record PATCH). extra_value (hallucination) → set null.
+  const handleApplyFinding = useCallback((finding: import("@/lib/api").QAFinding) => {
+    try {
+      const parsed = JSON.parse(editableJson);
+      const current = getByPath(parsed, finding.field_path);
+      const newValue =
+        finding.issue_type === 'extra_value'
+          ? null
+          : coerceExpected(finding.expected, current);
+      const updated = setByPath(parsed, finding.field_path, newValue);
+      setEditableJson(JSON.stringify(updated, null, 2));
+      setJsonError(null);
+      message.success(
+        `Set ${finding.field_path} = ${newValue === null ? 'null' : JSON.stringify(newValue)} — review and Save to persist`,
+      );
+    } catch (err) {
+      message.error(
+        `Couldn't apply: ${err instanceof Error ? err.message : 'invalid JSON'}`,
+      );
+    }
+  }, [editableJson, message]);
 
   const handleUpdateFinding = useCallback(async (findingId: string, status: 'accepted' | 'dismissed') => {
     if (!fileId || !selectedSection?.sectionResultId) return;
@@ -1177,6 +1223,8 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
             <QAFindingsPanel
               findings={selectedSectionFindings}
               onUpdate={handleUpdateFinding}
+              onApply={handleApplyFinding}
+              canApply={editable}
             />
           )}
 
