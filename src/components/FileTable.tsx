@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import type { GetProp, TableProps } from "antd";
 import {
   App,
@@ -56,6 +56,7 @@ import styles from "./FileTable.module.css";
 import { Loader, MessageSquare, SearchIcon } from "lucide-react";
 import { SignalIcon } from "@heroicons/react/24/outline";
 import StatusIndicator from "@/components/ui/StatusIndicator";
+import type { ViewerPane, ViewerResultTab } from "@/lib/jobViewUrlState";
 
 const { TextArea } = Input;
 
@@ -85,6 +86,15 @@ interface FileTableProps {
   jobSchema: any;
   activeFileId?: string | null;
   onActiveFileIdChange?: (fileId: string | null) => void;
+  urlPage?: number;
+  urlPageSize?: number;
+  onUrlPaginationChange?: (page: number, size: number) => void;
+  viewerPane?: ViewerPane | null;
+  onViewerPaneChange?: (pane: ViewerPane) => void;
+  viewerSectionId?: string | null;
+  onViewerSectionChange?: (sectionResultId: string | null) => void;
+  viewerResultTab?: ViewerResultTab | null;
+  onViewerResultTabChange?: (tab: ViewerResultTab) => void;
   onAddToPreview: (fileId: string) => void;
   onEditResults: (file: JobFile) => void;
   onBulkAddToPreview: (fileIds: string[]) => void;
@@ -140,6 +150,15 @@ const FileTable: React.FC<FileTableProps> = ({
   jobSchema,
   activeFileId = null,
   onActiveFileIdChange,
+  urlPage = 1,
+  urlPageSize = DEFAULT_PAGE_SIZE,
+  onUrlPaginationChange,
+  viewerPane = null,
+  onViewerPaneChange,
+  viewerSectionId = null,
+  onViewerSectionChange,
+  viewerResultTab = null,
+  onViewerResultTabChange,
   onAddToPreview,
   onEditResults,
   onBulkAddToPreview,
@@ -210,6 +229,7 @@ const FileTable: React.FC<FileTableProps> = ({
     }>
   >([]);
   const viewerLoadedFileIdRef = useRef<string | null>(null);
+  const [viewerReloading, setViewerReloading] = useState(false);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
   const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -272,15 +292,32 @@ const FileTable: React.FC<FileTableProps> = ({
         ...prev,
         pagination: { ...prev.pagination, current: 1 },
       }));
+      onUrlPaginationChange?.(1, urlPageSize);
     }, 400);
   };
 
   const [tableParams, setTableParams] = useState<TableParams>({
     pagination: {
-      current: 1,
-      pageSize: DEFAULT_PAGE_SIZE,
+      current: urlPage,
+      pageSize: urlPageSize,
     },
   });
+
+  useEffect(() => {
+    setTableParams((prev) => {
+      const current = prev.pagination?.current ?? 1;
+      const pageSize = prev.pagination?.pageSize ?? DEFAULT_PAGE_SIZE;
+      if (current === urlPage && pageSize === urlPageSize) return prev;
+      return {
+        ...prev,
+        pagination: {
+          ...prev.pagination,
+          current: urlPage,
+          pageSize: urlPageSize,
+        },
+      };
+    });
+  }, [urlPage, urlPageSize]);
 
   // AJAX fetch function — Phase 6: passes search, filter & sort to server
   const fetchData = async () => {
@@ -387,6 +424,17 @@ const FileTable: React.FC<FileTableProps> = ({
       sortOrder: newSortOrder,
       sortField: newSortField,
     });
+
+    if (
+      onUrlPaginationChange &&
+      pagination.current != null &&
+      pagination.pageSize != null &&
+      !resetPage
+    ) {
+      onUrlPaginationChange(pagination.current, pagination.pageSize);
+    } else if (onUrlPaginationChange && resetPage) {
+      onUrlPaginationChange(1, pagination.pageSize ?? urlPageSize);
+    }
 
     // Clear data when page size changes
     if (pagination.pageSize !== tableParams.pagination?.pageSize) {
@@ -940,7 +988,81 @@ const FileTable: React.FC<FileTableProps> = ({
     });
   }, [activeFileId, data]);
 
-  // Load viewer assets only when the opened file id changes (not on table poll)
+  const loadFullscreenFile = useCallback(
+    async (fileId: string, opts?: { force?: boolean }) => {
+      if (!opts?.force && viewerLoadedFileIdRef.current === fileId) {
+        return;
+      }
+      viewerLoadedFileIdRef.current = fileId;
+
+      const indexInTable = data.findIndex((f) => f.id === fileId);
+      let record: JobFile | undefined =
+        indexInTable >= 0 && !opts?.force ? data[indexInTable] : undefined;
+
+      if (!record) {
+        try {
+          const response = await apiClient.getFileResult(fileId);
+          record = parseFileResultResponse(response);
+        } catch (err) {
+          console.error("Failed to load file for viewer:", err);
+        }
+      }
+
+      if (!record) return;
+
+      setFullscreenFileIndex(indexInTable >= 0 ? indexInTable : 0);
+      setFullscreenFileDetail(record);
+
+      const showEnrichLoading =
+        opts?.force ||
+        indexInTable < 0 ||
+        !tableRowCanShowViewer(record);
+
+      setPdfUrlLoading(true);
+      try {
+        const url = await getFilePdfUrl(record.id);
+        setPdfUrl(url);
+      } catch (error) {
+        console.error("Error fetching PDF URL:", error);
+        setPdfUrl(null);
+      } finally {
+        setPdfUrlLoading(false);
+      }
+
+      try {
+        const commentsResponse = await apiClient.getFileComments(record.id);
+        if (commentsResponse.success && commentsResponse.data?.comments) {
+          setFullscreenComments(commentsResponse.data.comments);
+        } else {
+          setFullscreenComments([]);
+        }
+      } catch (err) {
+        console.error("Failed to load comments:", err);
+        setFullscreenComments([]);
+      }
+
+      await enrichFullscreenFileDetail(record.id, {
+        showLoading: showEnrichLoading,
+      });
+    },
+    [data],
+  );
+
+  const handleReloadFullscreenFile = useCallback(async () => {
+    if (!activeFileId) return;
+    setViewerReloading(true);
+    viewerLoadedFileIdRef.current = null;
+    try {
+      await loadFullscreenFile(activeFileId, { force: true });
+      message.success("File data refreshed");
+    } catch {
+      message.error("Failed to refresh file data");
+    } finally {
+      setViewerReloading(false);
+    }
+  }, [activeFileId, loadFullscreenFile, message]);
+
+  // Load viewer assets when the opened file id changes (not on table poll)
   useEffect(() => {
     if (!activeFileId) {
       viewerLoadedFileIdRef.current = null;
@@ -951,79 +1073,8 @@ const FileTable: React.FC<FileTableProps> = ({
       return;
     }
 
-    if (viewerLoadedFileIdRef.current === activeFileId) {
-      return;
-    }
-    viewerLoadedFileIdRef.current = activeFileId;
-
-    let cancelled = false;
-
-    const openFile = async () => {
-      const indexInTable = data.findIndex((f) => f.id === activeFileId);
-      let record: JobFile | undefined =
-        indexInTable >= 0 ? data[indexInTable] : undefined;
-
-      if (!record) {
-        try {
-          const response = await apiClient.getFileResult(activeFileId);
-          record = parseFileResultResponse(response);
-        } catch (err) {
-          console.error("Failed to load file for viewer:", err);
-        }
-      }
-
-      if (cancelled || !record) return;
-
-      setFullscreenFileIndex(indexInTable >= 0 ? indexInTable : 0);
-      setFullscreenFileDetail(record);
-
-      const fromTable = indexInTable >= 0;
-      const showEnrichLoading = !fromTable || !tableRowCanShowViewer(record);
-
-      const pdfTask = (async () => {
-        setPdfUrlLoading(true);
-        try {
-          const url = await getFilePdfUrl(record.id);
-          if (!cancelled) setPdfUrl(url);
-        } catch (error) {
-          console.error("Error fetching PDF URL:", error);
-          if (!cancelled) setPdfUrl(null);
-        } finally {
-          if (!cancelled) setPdfUrlLoading(false);
-        }
-      })();
-
-      const commentsTask = (async () => {
-        try {
-          const commentsResponse = await apiClient.getFileComments(record.id);
-          if (
-            !cancelled &&
-            commentsResponse.success &&
-            commentsResponse.data?.comments
-          ) {
-            setFullscreenComments(commentsResponse.data.comments);
-          }
-        } catch (err) {
-          console.error("Failed to load comments:", err);
-          if (!cancelled) setFullscreenComments([]);
-        }
-      })();
-
-      const enrichTask = enrichFullscreenFileDetail(record.id, {
-        showLoading: showEnrichLoading,
-      });
-
-      await Promise.all([pdfTask, commentsTask, enrichTask]);
-    };
-
-    void openFile();
-    return () => {
-      cancelled = true;
-      if (viewerLoadedFileIdRef.current === activeFileId) {
-        viewerLoadedFileIdRef.current = null;
-      }
-    };
-  }, [activeFileId]);
+    void loadFullscreenFile(activeFileId);
+  }, [activeFileId, loadFullscreenFile]);
 
   // Keyboard navigation for fullscreen modal
   useEffect(() => {
@@ -2657,6 +2708,14 @@ const FileTable: React.FC<FileTableProps> = ({
         onPreviousFile={handlePreviousFile}
         onNextFile={handleNextFile}
         detailLoading={fullscreenDetailLoading}
+        viewerReloading={viewerReloading}
+        onReloadFile={handleReloadFullscreenFile}
+        viewerPane={viewerPane}
+        onViewerPaneChange={onViewerPaneChange}
+        viewerSectionId={viewerSectionId}
+        onViewerSectionChange={onViewerSectionChange}
+        viewerResultTab={viewerResultTab}
+        onViewerResultTabChange={onViewerResultTabChange}
         onSectionsUpdated={(fileId, sections) => {
           setFullscreenFileDetail((prev) =>
             prev?.id === fileId

@@ -28,6 +28,8 @@ export interface FileViewerActionsProps {
   onReviewAndVerifyFile: (fileId: string) => void;
   onReprocessFile: (fileId: string) => void;
   onOpenFileDetails?: (file: JobFile) => void;
+  onReload?: () => void;
+  reloadLoading?: boolean;
   onClose?: () => void;
   moreMenuItems?: MenuProps["items"];
   showReviewAndVerifyInBar?: boolean;
@@ -44,6 +46,8 @@ export default function FileViewerActions({
   onReviewAndVerifyFile,
   onReprocessFile,
   onOpenFileDetails,
+  onReload,
+  reloadLoading = false,
   onClose,
   moreMenuItems = [],
   showReviewAndVerifyInBar = false,
@@ -141,6 +145,25 @@ export default function FileViewerActions({
         <Dropdown menu={{ items: moreMenuItems }} trigger={["click"]}>
           <Button type="text" size="small" icon={<MoreOutlined />} />
         </Dropdown>
+      )}
+
+      {onReload && (
+        <Tooltip title="Reload file data">
+          <Button
+            type="text"
+            size="small"
+            icon={
+              reloadLoading ? (
+                <Loader className="w-3 h-3 animate-spin" />
+              ) : (
+                <ReloadOutlined />
+              )
+            }
+            onClick={onReload}
+            disabled={reloadLoading}
+            aria-label="Reload file data"
+          />
+        </Tooltip>
       )}
 
       {onOpenFileDetails && (

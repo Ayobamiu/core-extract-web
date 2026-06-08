@@ -3,6 +3,7 @@
 import React from "react";
 import { Modal, Spin } from "antd";
 import { JobFile } from "@/lib/api";
+import type { ViewerPane, ViewerResultTab } from "@/lib/jobViewUrlState";
 import FileViewerLayout from "./FileViewerLayout";
 
 interface FullscreenModalProps {
@@ -12,6 +13,14 @@ interface FullscreenModalProps {
   onOpenFileDetails: (file: JobFile) => void;
   onPreviousFile: () => void;
   onNextFile: () => void;
+  onReloadFile?: () => void;
+  viewerReloading?: boolean;
+  viewerPane?: ViewerPane | null;
+  onViewerPaneChange?: (pane: ViewerPane) => void;
+  viewerSectionId?: string | null;
+  onViewerSectionChange?: (sectionResultId: string | null) => void;
+  viewerResultTab?: ViewerResultTab | null;
+  onViewerResultTabChange?: (tab: ViewerResultTab) => void;
   onUpdateReviewStatus: (
     fileId: string,
     status: "reviewed" | "pending",
@@ -52,6 +61,14 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
   onOpenFileDetails,
   onPreviousFile,
   onNextFile,
+  onReloadFile,
+  viewerReloading = false,
+  viewerPane = null,
+  onViewerPaneChange,
+  viewerSectionId = null,
+  onViewerSectionChange,
+  viewerResultTab = null,
+  onViewerResultTabChange,
   onUpdateReviewStatus,
   onVerifyFile,
   onReviewAndVerifyFile,
@@ -132,7 +149,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
         onAddComment={onAddComment}
         onUpdate={handleUpdate}
         onSectionsUpdated={(next) => onSectionsUpdated?.(file.id, next)}
-        detailLoading={detailLoading}
+        detailLoading={detailLoading || viewerReloading}
         splitContainerClassName="file-viewer-split-modal"
         showNavigation
         fileIndex={fileIndex}
@@ -140,7 +157,15 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
         onPrevious={onPreviousFile}
         onNext={onNextFile}
         onClose={onClose}
+        onReload={onReloadFile}
+        reloadLoading={viewerReloading}
         onOpenFileDetails={onOpenFileDetails}
+        viewerPane={viewerPane}
+        onViewerPaneChange={onViewerPaneChange}
+        viewerSectionId={viewerSectionId}
+        onViewerSectionChange={onViewerSectionChange}
+        viewerResultTab={viewerResultTab}
+        onViewerResultTabChange={onViewerResultTabChange}
         onUpdateReviewStatus={onUpdateReviewStatus}
         onVerifyFile={onVerifyFile}
         onReviewAndVerifyFile={onReviewAndVerifyFile}
