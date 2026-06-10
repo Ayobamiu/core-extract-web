@@ -32,6 +32,8 @@ import {
   splitSection,
   mergeSections,
   changeSectionSlug,
+  addPageToSection,
+  createSectionFromPage,
   hasUnsavedChanges,
   getSectionsNeedingExtraction,
 } from "@/lib/routingEdits";
@@ -59,10 +61,12 @@ interface Props {
   onSectionsUpdated?: (next: DetectedSections) => void;
 }
 
-type ActionKind = "change_slug" | "split" | "merge";
+type ActionKind = "change_slug" | "split" | "merge" | "new_section";
 interface ActionState {
   kind: ActionKind;
   sectionIndex: number;
+  // For "new_section": the orphan page the section is created from.
+  pageNumber?: number;
 }
 
 // ─── Per-page thumbnail with intersection-observer-based lazy fetch ────────
@@ -243,6 +247,21 @@ function pagesOutsideAnySection(
   );
 }
 
+// For an orphan page, find the nearest section ending before it (prev) and the
+// nearest section starting after it (next). Sections are in document order.
+function adjacentSectionIndices(
+  pageNumber: number,
+  sections: DetectedSection[]
+): { prevIdx: number; nextIdx: number } {
+  let prevIdx = -1;
+  let nextIdx = -1;
+  for (let i = 0; i < sections.length; i++) {
+    if (sections[i].page_range[1] < pageNumber) prevIdx = i;
+    if (sections[i].page_range[0] > pageNumber && nextIdx === -1) nextIdx = i;
+  }
+  return { prevIdx, nextIdx };
+}
+
 // ─── Main component ───────────────────────────────────────────────────────
 
 export default function DocumentRoutingPanel({
@@ -369,6 +388,40 @@ export default function DocumentRoutingPanel({
     [activeSections],
   );
 
+  const handleAddToSection = useCallback(
+    (pageNumber: number, sectionIndex: number) => {
+      if (!activeSections) return;
+      try {
+        const updated = addPageToSection(activeSections, sectionIndex, pageNumber);
+        setDraft(updated);
+        message.success(`Page ${pageNumber} added to section (unsaved)`);
+      } catch (err: unknown) {
+        message.error(err instanceof Error ? err.message : "Add failed");
+      }
+    },
+    [activeSections],
+  );
+
+  const handleCreateSection = useCallback(() => {
+    if (!activeAction || activeAction.kind !== "new_section") return;
+    if (activeAction.pageNumber == null || !pickedSlug) return;
+    if (!activeSections) return;
+    try {
+      const updated = createSectionFromPage(
+        activeSections,
+        activeAction.pageNumber,
+        pickedSlug,
+      );
+      setDraft(updated);
+      message.success(
+        `Page ${activeAction.pageNumber} → new ${pickedSlug} section (unsaved)`,
+      );
+      closeAction();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Create failed");
+    }
+  }, [activeAction, pickedSlug, activeSections, closeAction]);
+
   const handleDiscard = useCallback(() => {
     setDraft(null);
     message.info("Changes discarded");
@@ -390,6 +443,14 @@ export default function DocumentRoutingPanel({
             ? `Saved and re-extracted ${count} section${count === 1 ? "" : "s"}`
             : "Saved (no extraction needed)",
         );
+        const noText = res.pages_without_text ?? [];
+        if (noText.length > 0) {
+          message.warning(
+            `No extractable text found for page${noText.length === 1 ? "" : "s"} ${noText.join(", ")} — ` +
+              `the corresponding section${noText.length === 1 ? "" : "s"} may have produced no content.`,
+            8,
+          );
+        }
         if (res.detected_sections) {
           onSectionsUpdated?.(res.detected_sections);
         }
@@ -664,17 +725,116 @@ export default function DocumentRoutingPanel({
                     {orphans.length} page
                     {orphans.length === 1 ? "" : "s"} outside any section
                   </span>
+                  <span className="text-xs text-gray-400">
+                    — assign to extract their content
+                  </span>
                 </div>
               ),
               children: (
                 <div className="flex flex-col gap-2">
-                  {orphans.map((p) => (
-                    <PageRow
-                      key={p.page_number}
-                      fileId={fileId}
-                      d={{ page: p, decision: "outside" }}
-                    />
-                  ))}
+                  {orphans.map((p) => {
+                    const { prevIdx, nextIdx } = adjacentSectionIndices(
+                      p.page_number,
+                      sections,
+                    );
+                    const canPrev =
+                      prevIdx >= 0 &&
+                      sections[prevIdx].page_range[1] + 1 === p.page_number;
+                    const canNext =
+                      nextIdx >= 0 &&
+                      sections[nextIdx].page_range[0] - 1 === p.page_number;
+                    return (
+                      <PageRow
+                        key={p.page_number}
+                        fileId={fileId}
+                        d={{ page: p, decision: "outside" }}
+                        actions={
+                          <div className="flex flex-col gap-1 items-stretch min-w-[190px]">
+                            <span className="text-xs font-medium text-gray-500">
+                              Assign this page
+                            </span>
+                            {canPrev && (
+                              <Popconfirm
+                                title={`Add page ${p.page_number} to the previous section`}
+                                description={
+                                  <span className="text-xs">
+                                    It will be extracted as part of{" "}
+                                    <b>{sections[prevIdx].document_type_slug}</b>{" "}
+                                    (pages {sections[prevIdx].page_range[0]}–
+                                    {sections[prevIdx].page_range[1]}). The
+                                    page&apos;s text is pulled from the original
+                                    PDF when you Save &amp; Re-extract.
+                                  </span>
+                                }
+                                okText="Add page"
+                                cancelText="Cancel"
+                                onConfirm={() =>
+                                  handleAddToSection(p.page_number, prevIdx)
+                                }
+                              >
+                                <Tooltip
+                                  title={`Merge into the preceding ${sections[prevIdx].document_type_slug} section (pages ${sections[prevIdx].page_range[0]}–${sections[prevIdx].page_range[1]})`}
+                                >
+                                  <Button size="small" block>
+                                    ← Add to {sections[prevIdx].document_type_slug}{" "}
+                                    (p{sections[prevIdx].page_range[0]}–
+                                    {sections[prevIdx].page_range[1]})
+                                  </Button>
+                                </Tooltip>
+                              </Popconfirm>
+                            )}
+                            {canNext && (
+                              <Popconfirm
+                                title={`Add page ${p.page_number} to the next section`}
+                                description={
+                                  <span className="text-xs">
+                                    It will be extracted as part of{" "}
+                                    <b>{sections[nextIdx].document_type_slug}</b>{" "}
+                                    (pages {sections[nextIdx].page_range[0]}–
+                                    {sections[nextIdx].page_range[1]}). The
+                                    page&apos;s text is pulled from the original
+                                    PDF when you Save &amp; Re-extract.
+                                  </span>
+                                }
+                                okText="Add page"
+                                cancelText="Cancel"
+                                onConfirm={() =>
+                                  handleAddToSection(p.page_number, nextIdx)
+                                }
+                              >
+                                <Tooltip
+                                  title={`Merge into the following ${sections[nextIdx].document_type_slug} section (pages ${sections[nextIdx].page_range[0]}–${sections[nextIdx].page_range[1]})`}
+                                >
+                                  <Button size="small" block>
+                                    Add to {sections[nextIdx].document_type_slug}{" "}
+                                    (p{sections[nextIdx].page_range[0]}–
+                                    {sections[nextIdx].page_range[1]}) →
+                                  </Button>
+                                </Tooltip>
+                              </Popconfirm>
+                            )}
+                            <Tooltip title="Create a new single-page section for this page with a document type you choose">
+                              <Button
+                                size="small"
+                                type="dashed"
+                                block
+                                onClick={() => {
+                                  setPickedSlug(null);
+                                  setActiveAction({
+                                    kind: "new_section",
+                                    sectionIndex: -1,
+                                    pageNumber: p.page_number,
+                                  });
+                                }}
+                              >
+                                + New section…
+                              </Button>
+                            </Tooltip>
+                          </div>
+                        }
+                      />
+                    );
+                  })}
                 </div>
               ),
             },
@@ -772,6 +932,41 @@ export default function DocumentRoutingPanel({
               />
             );
           })()}
+        </div>
+      </Modal>
+
+      {/* New-section-from-orphan-page modal */}
+      <Modal
+        title={
+          activeAction?.kind === "new_section"
+            ? `New section from page ${activeAction.pageNumber}`
+            : "New section"
+        }
+        open={activeAction?.kind === "new_section"}
+        onCancel={closeAction}
+        onOk={handleCreateSection}
+        okText="Create section"
+        okButtonProps={{ disabled: !pickedSlug }}
+        destroyOnHidden
+      >
+        <div className="space-y-3">
+          <div className="text-xs text-gray-500">
+            Creates a new single-page section for this page. Its text wasn&apos;t
+            extracted at ingest, so on Save it will be extracted from the
+            original PDF, then run through the chosen type&apos;s schema.
+          </div>
+          <Select
+            showSearch
+            value={pickedSlug ?? undefined}
+            onChange={(v) => setPickedSlug(v)}
+            placeholder={slugsLoaded ? "Pick a document type" : "Loading types…"}
+            optionFilterProp="label"
+            className="w-full"
+            options={availableSlugs.map((d) => ({
+              value: d.slug,
+              label: `${d.display_name}  ·  ${d.slug}${d.status !== "active" ? " (deprecated)" : ""}`,
+            }))}
+          />
         </div>
       </Modal>
     </div>
@@ -900,9 +1095,11 @@ function SectionHeader({ section }: { section: DetectedSection }) {
 function PageRow({
   fileId,
   d,
+  actions,
 }: {
   fileId: string;
   d: PageDecision;
+  actions?: React.ReactNode;
 }) {
   const { page, decision, reason, duplicate_of } = d;
   return (
@@ -960,6 +1157,7 @@ function PageRow({
           )}
         </div>
       </div>
+      {actions && <div className="shrink-0">{actions}</div>}
     </div>
   );
 }
