@@ -1050,7 +1050,7 @@ class ApiClient {
     async saveAndReextractSections(
         fileId: string,
         detectedSections: DetectedSections,
-    ): Promise<ApiResponse<{ detected_sections?: DetectedSections; sectionResults?: unknown[] }>> {
+    ): Promise<ApiResponse<{ detected_sections?: DetectedSections; sectionResults?: unknown[]; pages_without_text?: number[] }>> {
         // Send only the edited `sections` array — the server preserves all other
         // classifier metadata (pages, page_summaries, …). This keeps the body
         // small (avoids PayloadTooLargeError on large files).

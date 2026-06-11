@@ -197,6 +197,123 @@ export function changeSectionSlug(
   return blob;
 }
 
+const DEFAULT_THRESHOLD = 0.75;
+
+/**
+ * Add a single page (typically one the classifier left "outside any section")
+ * into an existing section, as an extraction page. This is a reviewer override
+ * of the classifier's skip decision, so the page is forced into
+ * `extraction_pages` regardless of its page_purpose. The section's range is
+ * widened to cover the page and it's marked for re-extraction.
+ *
+ * Intended for pages adjacent to the section boundary; the caller (UI) only
+ * offers this when `page === section.end + 1` or `page === section.start - 1`,
+ * which keeps the [start,end] range contiguous and avoids swallowing other
+ * unassigned pages into the section's display range.
+ */
+export function addPageToSection(
+  detectedSections: DetectedSections,
+  index: number,
+  pageNumber: number
+): DetectedSections {
+  if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+    throw new Error(`Invalid pageNumber '${pageNumber}' — must be a positive integer`);
+  }
+
+  const blob = cloneBlob(detectedSections);
+  const section = requireSection(blob, index);
+
+  if (section.extraction_pages.includes(pageNumber)) {
+    throw new Error(`Page ${pageNumber} is already in this section`);
+  }
+
+  // Force into extraction (override the classifier's skip), keep sorted.
+  section.extraction_pages = [...section.extraction_pages, pageNumber].sort(
+    (a, b) => a - b
+  );
+  // If it was previously recorded as a skipped page here, drop that record.
+  section.skipped_pages = section.skipped_pages.filter(
+    (s) => s.page_number !== pageNumber
+  );
+
+  const start = Math.min(section.page_range[0], pageNumber);
+  const end = Math.max(section.page_range[1], pageNumber);
+  section.page_range = [start, end];
+  section.page_count = end - start + 1;
+  section.status = "approved";
+  section.section_result_id = null;
+
+  blob.status = deriveFileStatus(blob.sections);
+  return blob;
+}
+
+/**
+ * Create a brand-new single-page section from a page the classifier left
+ * outside any section, with the reviewer-chosen slug. Inserted at the correct
+ * document-order position (by page number) so the section ordering — and the
+ * V2 envelope's positional pairing — stays consistent. Marked for extraction.
+ */
+export function createSectionFromPage(
+  detectedSections: DetectedSections,
+  pageNumber: number,
+  slug: string
+): DetectedSections {
+  if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+    throw new Error(`Invalid pageNumber '${pageNumber}' — must be a positive integer`);
+  }
+  if (!slug) {
+    throw new Error("A document type slug is required");
+  }
+
+  const blob = cloneBlob(detectedSections);
+
+  if (
+    Array.isArray(blob.sections) &&
+    blob.sections.some(
+      (s) =>
+        pageNumber >= s.page_range[0] && pageNumber <= s.page_range[1]
+    )
+  ) {
+    throw new Error(`Page ${pageNumber} already belongs to a section`);
+  }
+
+  const page = (blob.pages ?? []).find((p) => p.page_number === pageNumber);
+  const conf = typeof page?.confidence === "number" ? page.confidence : 0;
+  // Inherit threshold from an existing section of the same slug, if any.
+  const sameSlug = (blob.sections ?? []).find(
+    (s) => s.document_type_slug === slug
+  );
+
+  const newSection: DetectedSection = {
+    document_type_slug: slug,
+    page_range: [pageNumber, pageNumber],
+    page_count: 1,
+    extraction_pages: [pageNumber],
+    skipped_pages: [],
+    page_roles: [page?.page_role ?? null],
+    page_purposes: [page?.page_purpose ?? "unknown"],
+    confidence: Number(conf.toFixed(4)),
+    min_page_confidence: Number(conf.toFixed(4)),
+    status: "approved",
+    threshold_used: sameSlug?.threshold_used ?? DEFAULT_THRESHOLD,
+    section_result_id: null,
+  };
+
+  if (!Array.isArray(blob.sections)) blob.sections = [];
+  const insertAt = blob.sections.findIndex(
+    (s) => s.page_range[0] > pageNumber
+  );
+  if (insertAt === -1) blob.sections.push(newSection);
+  else blob.sections.splice(insertAt, 0, newSection);
+
+  // Reflect the reviewer's decision on the page itself, so it no longer reads
+  // as "none"/unassigned in the per-page view.
+  if (page) page.document_type_slug = slug;
+
+  blob.status = deriveFileStatus(blob.sections);
+  return blob;
+}
+
 /**
  * Check if a DetectedSections blob has unsaved changes compared to another.
  * Compares section count, page ranges, slugs, and section_result_ids.
