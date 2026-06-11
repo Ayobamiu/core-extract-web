@@ -444,6 +444,9 @@ function SectionVerifyControls({
       verificationMap.get(e.sectionResultId)?.status === "approved",
   ).length;
   const allApproved = approvedCount === totalSections && totalSections > 0;
+  const remainingApproveCount = totalSections - approvedCount;
+  const bulkApproveLabel =
+    approvedCount > 0 ? "Approve remaining" : "Approve all";
 
   return (
     <div className="flex items-center gap-2">
@@ -531,9 +534,17 @@ function SectionVerifyControls({
           <>
             <span className="w-px h-3.5 bg-gray-200 mx-0.5" />
             <Popconfirm
-              title={`Approve all ${totalSections} sections?`}
-              description="Every section in this file will be marked approved."
-              okText="Approve all"
+              title={
+                approvedCount > 0
+                  ? `Approve remaining ${remainingApproveCount} section${remainingApproveCount === 1 ? "" : "s"}?`
+                  : `Approve all ${totalSections} sections?`
+              }
+              description={
+                approvedCount > 0
+                  ? "Every not-yet-approved section in this file will be marked approved."
+                  : "Every section in this file will be marked approved."
+              }
+              okText={bulkApproveLabel}
               cancelText="Cancel"
               disabled={loading}
               onConfirm={onBulkApprove}
@@ -543,9 +554,9 @@ function SectionVerifyControls({
                   type="button"
                   disabled={loading}
                   className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-                  title={`Approve all ${totalSections} sections`}
+                  title={bulkApproveLabel}
                 >
-                  Approve all
+                  {bulkApproveLabel}
                 </button>
               </span>
             </Popconfirm>
@@ -762,21 +773,24 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const handleBulkVerify = useCallback(
     async (status: SectionVerificationStatus) => {
       if (!onBulkSectionVerify) return;
+      // Only touch sections not already in the target status, so "Approve
+      // remaining" acts on exactly the sections that still need it.
       const ids = sectionEntries
         .map((e) => e.sectionResultId)
-        .filter((id): id is string => !!id);
+        .filter((id): id is string => !!id)
+        .filter((id) => verificationMap.get(id)?.status !== status);
       if (ids.length === 0) return;
       setVerifyLoading(true);
       try {
         await onBulkSectionVerify(ids, status);
-        message.success(`All ${ids.length} sections marked as ${status}`);
+        message.success(`${ids.length} section${ids.length === 1 ? "" : "s"} marked as ${status}`);
       } catch {
         message.error("Failed to bulk update");
       } finally {
         setVerifyLoading(false);
       }
     },
-    [sectionEntries, onBulkSectionVerify, message],
+    [sectionEntries, onBulkSectionVerify, verificationMap, message],
   );
 
   // ── QA state ──────────────────────────────────────────────────────
@@ -786,6 +800,12 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   >({});
   const [qaLoading, setQaLoading] = useState<"idle" | "section" | "all">(
     "idle",
+  );
+  // Sections QA'd during this session. A clean pass persists no findings, so it
+  // can't be inferred from qaFindings alone — we track it here so the buttons
+  // still reflect that QA ran.
+  const [sessionQaedIds, setSessionQaedIds] = useState<Set<string>>(
+    () => new Set(),
   );
 
   // Load existing findings when the component mounts or fileId changes
@@ -814,6 +834,61 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     [selectedSectionFindings],
   );
 
+  // A section counts as "QA'd" if it has persisted findings or was QA'd this
+  // session. Drives "Run QA" → "Re-run QA" and "Run all" → "Run remaining".
+  const qaedSectionIds = useMemo(() => {
+    const ids = new Set(sessionQaedIds);
+    for (const [sid, findings] of Object.entries(qaFindings)) {
+      if (findings && findings.length > 0) ids.add(sid);
+    }
+    return ids;
+  }, [qaFindings, sessionQaedIds]);
+
+  const allSectionIds = useMemo(
+    () =>
+      sectionEntries
+        .map((e) => e.sectionResultId)
+        .filter((id): id is string => !!id),
+    [sectionEntries],
+  );
+  const qaedCount = useMemo(
+    () => allSectionIds.filter((id) => qaedSectionIds.has(id)).length,
+    [allSectionIds, qaedSectionIds],
+  );
+  const remainingQaCount = allSectionIds.length - qaedCount;
+  const someQaed = qaedCount > 0;
+  const allQaed = allSectionIds.length > 0 && remainingQaCount === 0;
+
+  const selectedSectionQaed =
+    !!selectedSection?.sectionResultId &&
+    qaedSectionIds.has(selectedSection.sectionResultId);
+  const sectionQaBase = selectedSectionQaed ? "Re-run QA" : "Run QA";
+
+  // Copy + label for the run-all / run-remaining control.
+  const runAllLabel =
+    qaLoading === "all"
+      ? "Running…"
+      : !someQaed
+        ? "Run all sections"
+        : allQaed
+          ? "Re-run all sections"
+          : `Run remaining sections · ${remainingQaCount}`;
+  const runAllOkText = !someQaed
+    ? "Run all"
+    : allQaed
+      ? "Re-run all"
+      : "Run remaining";
+  const runAllTitle = !someQaed
+    ? "Run QA on all sections?"
+    : allQaed
+      ? "Re-run QA on all sections?"
+      : "Run QA on remaining sections?";
+  const runAllDescription = !someQaed
+    ? "Analyzes every section in this file. This may take longer."
+    : allQaed
+      ? "Re-analyzes every section in this file. This may take longer."
+      : `Analyzes the ${remainingQaCount} section${remainingQaCount === 1 ? "" : "s"} not yet QA'd.`;
+
   const handleRunSectionQA = useCallback(async () => {
     if (!fileId || !selectedSection?.sectionResultId) return;
     setQaLoading("section");
@@ -825,6 +900,11 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       if (res.status === "success" && res.findings) {
         const id = selectedSection.sectionResultId;
         setQaFindings((prev) => ({ ...prev, [id]: res.findings }));
+        setSessionQaedIds((prev) => {
+          const next = new Set(prev);
+          next.add(id);
+          return next;
+        });
         const count = res.findings.filter(
           (f: import("@/lib/api").QAFinding) => f.status === "open",
         ).length;
@@ -843,28 +923,52 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
   const handleRunAllQA = useCallback(async () => {
     if (!fileId) return;
+    const remaining = allSectionIds.filter((id) => !qaedSectionIds.has(id));
+    // Only a subset is left → QA just those (so "Run remaining" doesn't waste a
+    // QA pass on sections already done). Otherwise run the whole file in one
+    // batched call — also covers the "Re-run all" case once everything is QA'd.
+    const remainingOnly =
+      remaining.length > 0 && remaining.length < allSectionIds.length;
     setQaLoading("all");
     try {
-      const res = await apiClient.runFileQA(fileId);
-      if (res.status === "success") {
-        // Reload all findings from server
-        const findingsRes = await apiClient.getQAFindings(fileId);
-        if (findingsRes.status === "success" && findingsRes.findings) {
-          setQaFindings(findingsRes.findings);
+      if (remainingOnly) {
+        let openCount = 0;
+        for (const id of remaining) {
+          const res = await apiClient.runSectionQA(fileId, id);
+          if (res.status === "success" && res.findings) {
+            setQaFindings((prev) => ({ ...prev, [id]: res.findings }));
+            openCount += res.findings.filter(
+              (f: import("@/lib/api").QAFinding) => f.status === "open",
+            ).length;
+          }
         }
-        const total = (res as any).totalFindings ?? 0;
+        setSessionQaedIds((prev) => new Set([...prev, ...remaining]));
         message.success(
-          `QA complete — ${total} issue${total === 1 ? "" : "s"} found across all sections`,
+          `QA complete — ${remaining.length} section${remaining.length === 1 ? "" : "s"}, ${openCount} issue${openCount === 1 ? "" : "s"} found`,
         );
       } else {
-        message.error(res.message || "QA failed");
+        const res = await apiClient.runFileQA(fileId);
+        if (res.status === "success") {
+          // Reload all findings from server
+          const findingsRes = await apiClient.getQAFindings(fileId);
+          if (findingsRes.status === "success" && findingsRes.findings) {
+            setQaFindings(findingsRes.findings);
+          }
+          setSessionQaedIds(new Set(allSectionIds));
+          const total = (res as any).totalFindings ?? 0;
+          message.success(
+            `QA complete — ${total} issue${total === 1 ? "" : "s"} found across all sections`,
+          );
+        } else {
+          message.error(res.message || "QA failed");
+        }
       }
     } catch (err) {
       message.error(err instanceof Error ? err.message : "QA failed");
     } finally {
       setQaLoading("idle");
     }
-  }, [fileId, message]);
+  }, [fileId, allSectionIds, qaedSectionIds, message]);
 
   // Inject a finding's "right answer" (expected) into the editable JSON at its
   // field_path. The user reviews the change in the tree and Saves to persist
@@ -1218,9 +1322,13 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                 </span>
                 <div className="flex items-center gap-0.5">
                   <Popconfirm
-                    title="Run QA on this section?"
+                    title={
+                      selectedSectionQaed
+                        ? "Re-run QA on this section?"
+                        : "Run QA on this section?"
+                    }
                     description="Analyzes the current section's extracted data. This may take a moment."
-                    okText="Run QA"
+                    okText={sectionQaBase}
                     cancelText="Cancel"
                     disabled={qaLoading !== "idle"}
                     onConfirm={handleRunSectionQA}
@@ -1234,15 +1342,15 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                         {qaLoading === "section"
                           ? "Running…"
                           : openFindingsCount > 0
-                            ? `Run QA · ${openFindingsCount} open`
-                            : "Run QA"}
+                            ? `${sectionQaBase} · ${openFindingsCount} open`
+                            : sectionQaBase}
                       </button>
                     </span>
                   </Popconfirm>
                   <Popconfirm
-                    title="Run QA on all sections?"
-                    description="Analyzes every section in this file. This may take longer."
-                    okText="Run all"
+                    title={runAllTitle}
+                    description={runAllDescription}
+                    okText={runAllOkText}
                     cancelText="Cancel"
                     disabled={qaLoading !== "idle"}
                     onConfirm={handleRunAllQA}
@@ -1253,7 +1361,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                         disabled={qaLoading !== "idle"}
                         className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
                       >
-                        {qaLoading === "all" ? "Running…" : "Run all sections"}
+                        {runAllLabel}
                       </button>
                     </span>
                   </Popconfirm>
