@@ -807,8 +807,13 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const [sessionQaedIds, setSessionQaedIds] = useState<Set<string>>(
     () => new Set(),
   );
+  // Sections with a persisted QA-run record (from the backend, incl. clean
+  // passes). Makes "Re-run QA" / "Run remaining" correct across reloads.
+  const [persistedQaedIds, setPersistedQaedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
-  // Load existing findings when the component mounts or fileId changes
+  // Load existing findings + run records when the component mounts or fileId changes
   useEffect(() => {
     if (!fileId) return;
     apiClient
@@ -816,6 +821,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       .then((res) => {
         if (res.status === "success" && res.findings) {
           setQaFindings(res.findings);
+        }
+        if (res.status === "success" && res.qaRuns) {
+          setPersistedQaedIds(new Set(Object.keys(res.qaRuns)));
         }
       })
       .catch(() => {
@@ -837,12 +845,12 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   // A section counts as "QA'd" if it has persisted findings or was QA'd this
   // session. Drives "Run QA" → "Re-run QA" and "Run all" → "Run remaining".
   const qaedSectionIds = useMemo(() => {
-    const ids = new Set(sessionQaedIds);
+    const ids = new Set([...persistedQaedIds, ...sessionQaedIds]);
     for (const [sid, findings] of Object.entries(qaFindings)) {
       if (findings && findings.length > 0) ids.add(sid);
     }
     return ids;
-  }, [qaFindings, sessionQaedIds]);
+  }, [qaFindings, sessionQaedIds, persistedQaedIds]);
 
   const allSectionIds = useMemo(
     () =>
@@ -924,44 +932,37 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const handleRunAllQA = useCallback(async () => {
     if (!fileId) return;
     const remaining = allSectionIds.filter((id) => !qaedSectionIds.has(id));
-    // Only a subset is left → QA just those (so "Run remaining" doesn't waste a
-    // QA pass on sections already done). Otherwise run the whole file in one
-    // batched call — also covers the "Re-run all" case once everything is QA'd.
+    // Only a subset is left → ask the server to QA just those (scope=remaining),
+    // so "Run remaining" doesn't waste a pass on sections already done.
+    // Otherwise run the whole file — also covers "Re-run all" once all QA'd.
     const remainingOnly =
       remaining.length > 0 && remaining.length < allSectionIds.length;
     setQaLoading("all");
     try {
-      if (remainingOnly) {
-        let openCount = 0;
-        for (const id of remaining) {
-          const res = await apiClient.runSectionQA(fileId, id);
-          if (res.status === "success" && res.findings) {
-            setQaFindings((prev) => ({ ...prev, [id]: res.findings }));
-            openCount += res.findings.filter(
-              (f: import("@/lib/api").QAFinding) => f.status === "open",
-            ).length;
-          }
+      const res = await apiClient.runFileQA(
+        fileId,
+        remainingOnly ? "remaining" : undefined,
+      );
+      if (res.status === "success") {
+        // Reload findings + run records from the server (authoritative).
+        const findingsRes = await apiClient.getQAFindings(fileId);
+        if (findingsRes.status === "success") {
+          if (findingsRes.findings) setQaFindings(findingsRes.findings);
+          if (findingsRes.qaRuns)
+            setPersistedQaedIds(new Set(Object.keys(findingsRes.qaRuns)));
         }
-        setSessionQaedIds((prev) => new Set([...prev, ...remaining]));
+        setSessionQaedIds((prev) =>
+          remainingOnly ? new Set([...prev, ...remaining]) : new Set(allSectionIds),
+        );
+        const total = (res as any).totalFindings ?? 0;
+        const scopeLabel = remainingOnly
+          ? `${remaining.length} remaining section${remaining.length === 1 ? "" : "s"}`
+          : "all sections";
         message.success(
-          `QA complete — ${remaining.length} section${remaining.length === 1 ? "" : "s"}, ${openCount} issue${openCount === 1 ? "" : "s"} found`,
+          `QA complete — ${total} issue${total === 1 ? "" : "s"} found across ${scopeLabel}`,
         );
       } else {
-        const res = await apiClient.runFileQA(fileId);
-        if (res.status === "success") {
-          // Reload all findings from server
-          const findingsRes = await apiClient.getQAFindings(fileId);
-          if (findingsRes.status === "success" && findingsRes.findings) {
-            setQaFindings(findingsRes.findings);
-          }
-          setSessionQaedIds(new Set(allSectionIds));
-          const total = (res as any).totalFindings ?? 0;
-          message.success(
-            `QA complete — ${total} issue${total === 1 ? "" : "s"} found across all sections`,
-          );
-        } else {
-          message.error(res.message || "QA failed");
-        }
+        message.error(res.message || "QA failed");
       }
     } catch (err) {
       message.error(err instanceof Error ? err.message : "QA failed");

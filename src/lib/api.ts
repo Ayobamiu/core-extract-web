@@ -355,6 +355,16 @@ export interface QAFinding {
     updated_at: string;
 }
 
+/** A record that QA ran on a section (present even for clean, zero-finding runs). */
+export interface QARun {
+    section_result_id: string;
+    overall_quality: QAOverallQuality | null;
+    summary: string | null;
+    findings_count: number;
+    qa_model: string | null;
+    last_qa_at: string;
+}
+
 // ── Processing timeline (curated, frontend-facing progress events) ──
 export type ProcessingPhase =
     | 'queued' | 'classifying' | 'extracting' | 'ai_extraction'
@@ -1569,12 +1579,17 @@ class ApiClient {
         );
     }
 
-    /** Run VLM QA on all sections in a file. */
+    /**
+     * Run VLM QA on a file's sections. `scope: 'remaining'` QAs only the
+     * sections that haven't been QA'd yet (decided server-side); omit for all.
+     */
     async runFileQA(
         fileId: string,
+        scope?: 'remaining',
     ): Promise<ApiResponse<{ totalSections: number; totalFindings: number; results: unknown[] }>> {
+        const qs = scope ? `?scope=${scope}` : '';
         return this.request(
-            `/files/${encodeURIComponent(fileId)}/qa`,
+            `/files/${encodeURIComponent(fileId)}/qa${qs}`,
             { method: 'POST' },
         );
     }
@@ -1582,7 +1597,7 @@ class ApiClient {
     /** Get all QA findings for a file, grouped by section_result_id. */
     async getQAFindings(
         fileId: string,
-    ): Promise<ApiResponse<{ findings: Record<string, QAFinding[]> }>> {
+    ): Promise<ApiResponse<{ findings: Record<string, QAFinding[]>; qaRuns?: Record<string, QARun> }>> {
         return this.request(`/files/${encodeURIComponent(fileId)}/qa-findings`);
     }
 
