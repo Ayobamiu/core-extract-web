@@ -13,8 +13,14 @@ import {
   coerceExpected,
   APPLYABLE_ISSUE_TYPES,
 } from "@/lib/jsonPath";
-import { ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
-import { App, Button, Input, Popconfirm, Select, Typography } from "antd";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MessageSquare,
+  MoreHorizontal,
+} from "lucide-react";
+import { App, Button, Dropdown, Input, Popconfirm, Select, Typography } from "antd";
+import type { MenuProps } from "antd";
 import { JsonViewer } from "@/components/json";
 import {
   apiClient,
@@ -421,7 +427,6 @@ function SectionVerifyControls({
   verification,
   loading,
   onVerify,
-  onBulkApprove,
   totalSections,
   verificationMap,
   sectionEntries,
@@ -429,7 +434,6 @@ function SectionVerifyControls({
   verification: SectionVerification | null;
   loading: boolean;
   onVerify: (status: SectionVerificationStatus) => void;
-  onBulkApprove?: () => void;
   totalSections: number;
   verificationMap: Map<string, SectionVerification>;
   sectionEntries: SectionPickerEntry[];
@@ -437,16 +441,12 @@ function SectionVerifyControls({
   const currentStatus = verification?.status ?? "pending";
   const cfg = VERIFY_STATUS_CONFIG[currentStatus];
 
-  // Count approved / total for progress
+  // Count approved / total for progress (bulk approve now lives in the ⋯ menu)
   const approvedCount = sectionEntries.filter(
     (e) =>
       e.sectionResultId &&
       verificationMap.get(e.sectionResultId)?.status === "approved",
   ).length;
-  const allApproved = approvedCount === totalSections && totalSections > 0;
-  const remainingApproveCount = totalSections - approvedCount;
-  const bulkApproveLabel =
-    approvedCount > 0 ? "Approve remaining" : "Approve all";
 
   return (
     <div className="flex items-center gap-2">
@@ -530,38 +530,6 @@ function SectionVerifyControls({
             </span>
           </Popconfirm>
         )}
-        {onBulkApprove && !allApproved && totalSections > 1 && (
-          <>
-            <span className="w-px h-3.5 bg-gray-200 mx-0.5" />
-            <Popconfirm
-              title={
-                approvedCount > 0
-                  ? `Approve remaining ${remainingApproveCount} section${remainingApproveCount === 1 ? "" : "s"}?`
-                  : `Approve all ${totalSections} sections?`
-              }
-              description={
-                approvedCount > 0
-                  ? "Every not-yet-approved section in this file will be marked approved."
-                  : "Every section in this file will be marked approved."
-              }
-              okText={bulkApproveLabel}
-              cancelText="Cancel"
-              disabled={loading}
-              onConfirm={onBulkApprove}
-            >
-              <span className="inline-flex">
-                <button
-                  type="button"
-                  disabled={loading}
-                  className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-                  title={bulkApproveLabel}
-                >
-                  {bulkApproveLabel}
-                </button>
-              </span>
-            </Popconfirm>
-          </>
-        )}
       </div>
     </div>
   );
@@ -594,7 +562,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   activeResultTab = null,
   onActiveResultTabChange,
 }) => {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [fallbackTab, setFallbackTab] = useState<TabType>("results");
   const [markdownView, setMarkdownView] = useState<MarkdownViewType>("full");
   const [editableJson, setEditableJson] = useState<string>("");
@@ -897,6 +865,20 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       ? "Re-analyzes every section in this file. This may take longer."
       : `Analyzes the ${remainingQaCount} section${remainingQaCount === 1 ? "" : "s"} not yet QA'd.`;
 
+  // Bulk approve — lives in the ⋯ menu alongside bulk QA.
+  const sectionApprovedCount = useMemo(
+    () =>
+      allSectionIds.filter(
+        (id) => verificationMap.get(id)?.status === "approved",
+      ).length,
+    [allSectionIds, verificationMap],
+  );
+  const allSectionsApproved =
+    allSectionIds.length > 0 && sectionApprovedCount === allSectionIds.length;
+  const remainingApproveCount = allSectionIds.length - sectionApprovedCount;
+  const bulkApproveLabel =
+    sectionApprovedCount > 0 ? "Approve remaining" : "Approve all";
+
   const handleRunSectionQA = useCallback(async () => {
     if (!fileId || !selectedSection?.sectionResultId) return;
     setQaLoading("section");
@@ -970,6 +952,52 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       setQaLoading("idle");
     }
   }, [fileId, allSectionIds, qaedSectionIds, message]);
+
+  // Items for the ⋯ "more actions" menu. Bulk QA and bulk approve are occasional
+  // — tucking them here keeps the per-section actions front-and-centre.
+  // Confirmations use modal.confirm (a Popconfirm anchored to a menu item that
+  // closes on click is awkward).
+  const bulkMenuItems: MenuProps["items"] = [];
+  if (fileId && allSectionIds.length > 0) {
+    bulkMenuItems.push({
+      key: "run-all-qa",
+      label: runAllLabel,
+      disabled: qaLoading !== "idle",
+      onClick: () =>
+        modal.confirm({
+          title: runAllTitle,
+          content: runAllDescription,
+          okText: runAllOkText,
+          cancelText: "Cancel",
+          onOk: handleRunAllQA,
+        }),
+    });
+  }
+  if (
+    onBulkSectionVerify &&
+    !allSectionsApproved &&
+    allSectionIds.length > 1
+  ) {
+    bulkMenuItems.push({
+      key: "bulk-approve",
+      label: bulkApproveLabel,
+      disabled: verifyLoading,
+      onClick: () =>
+        modal.confirm({
+          title:
+            sectionApprovedCount > 0
+              ? `Approve remaining ${remainingApproveCount} section${remainingApproveCount === 1 ? "" : "s"}?`
+              : `Approve all ${allSectionIds.length} sections?`,
+          content:
+            sectionApprovedCount > 0
+              ? "Every not-yet-approved section in this file will be marked approved."
+              : "Every section in this file will be marked approved.",
+          okText: bulkApproveLabel,
+          cancelText: "Cancel",
+          onOk: () => handleBulkVerify("approved"),
+        }),
+    });
+  }
 
   // Inject a finding's "right answer" (expected) into the editable JSON at its
   // field_path. The user reviews the change in the tree and Saves to persist
@@ -1348,24 +1376,6 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                       </button>
                     </span>
                   </Popconfirm>
-                  <Popconfirm
-                    title={runAllTitle}
-                    description={runAllDescription}
-                    okText={runAllOkText}
-                    cancelText="Cancel"
-                    disabled={qaLoading !== "idle"}
-                    onConfirm={handleRunAllQA}
-                  >
-                    <span className="inline-flex">
-                      <button
-                        type="button"
-                        disabled={qaLoading !== "idle"}
-                        className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-                      >
-                        {runAllLabel}
-                      </button>
-                    </span>
-                  </Popconfirm>
                 </div>
               </>
             )}
@@ -1376,16 +1386,30 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   verification={selectedVerification}
                   loading={verifyLoading}
                   onVerify={handleVerify}
-                  onBulkApprove={
-                    onBulkSectionVerify
-                      ? () => handleBulkVerify("approved")
-                      : undefined
-                  }
                   totalSections={sectionEntries.length}
                   verificationMap={verificationMap}
                   sectionEntries={sectionEntries}
                 />
               </>
+            )}
+
+            {/* Occasional bulk actions live in a ⋯ menu on the right, keeping
+                the frequently-used per-section actions uncrowded. */}
+            {bulkMenuItems.length > 0 && (
+              <Dropdown
+                menu={{ items: bulkMenuItems }}
+                trigger={["click"]}
+                placement="bottomRight"
+              >
+                <button
+                  type="button"
+                  className="ml-auto px-1 py-0.5 text-gray-400 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors cursor-pointer"
+                  title="More actions"
+                  aria-label="More actions"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              </Dropdown>
             )}
           </div>
         )}
