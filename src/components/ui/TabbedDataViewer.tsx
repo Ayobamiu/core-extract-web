@@ -196,7 +196,10 @@ function formatSectionLabel(entry: SectionPickerEntry): string {
   return parts.join(" · ");
 }
 
-function formatSectionOptionLabel(entry: SectionPickerEntry): string {
+function formatSectionOptionLabel(
+  entry: SectionPickerEntry,
+  verificationMap?: Map<string, SectionVerification>,
+): string {
   const range = entry.pageRange;
   const pageBit =
     range && range[0] != null && range[1] != null
@@ -208,7 +211,11 @@ function formatSectionOptionLabel(entry: SectionPickerEntry): string {
   if (entry.recordId) parts.push(entry.recordId);
   if (pageBit) parts.push(pageBit);
   parts.push(`${entry.fieldCount} fields`);
-  return parts.join(" · ");
+  const label = parts.join(" · ");
+  const isApproved =
+    entry.sectionResultId &&
+    verificationMap?.get(entry.sectionResultId)?.status === "approved";
+  return isApproved ? `${label} (Approved)` : label;
 }
 
 /* ── Verification status helpers ───────────────────────────────── */
@@ -246,9 +253,24 @@ const VERIFY_STATUS_CONFIG: Record<
 // ── QA Findings Panel ──────────────────────────────────────────────
 
 const SEVERITY_CONFIG = {
-  error:   { icon: '❌', bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-800'    },
-  warning: { icon: '⚠️', bg: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-800'  },
-  info:    { icon: 'ℹ️', bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-800'   },
+  error: {
+    icon: "❌",
+    bg: "bg-red-50",
+    border: "border-red-200",
+    text: "text-red-800",
+  },
+  warning: {
+    icon: "⚠️",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+    text: "text-amber-800",
+  },
+  info: {
+    icon: "ℹ️",
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+    text: "text-blue-800",
+  },
 } as const;
 
 function QAFindingsPanel({
@@ -258,38 +280,63 @@ function QAFindingsPanel({
   canApply,
 }: {
   findings: import("@/lib/api").QAFinding[];
-  onUpdate: (findingId: string, status: 'accepted' | 'dismissed') => Promise<void>;
+  onUpdate: (
+    findingId: string,
+    status: "accepted" | "dismissed",
+  ) => Promise<void>;
   /** Inject this finding's `expected` into the editable JSON (review then Save). */
   onApply: (finding: import("@/lib/api").QAFinding) => void;
   /** Only show "Apply" when the JSON is editable (otherwise it can't be saved). */
   canApply: boolean;
 }) {
   const [updating, setUpdating] = useState<string | null>(null);
-  const open = findings.filter(f => f.status === 'open');
-  const resolved = findings.filter(f => f.status !== 'open');
+  const open = findings.filter((f) => f.status === "open");
+  const resolved = findings.filter((f) => f.status !== "open");
   const [showResolved, setShowResolved] = useState(false);
 
-  const handleAction = async (findingId: string, status: 'accepted' | 'dismissed') => {
+  const handleAction = async (
+    findingId: string,
+    status: "accepted" | "dismissed",
+  ) => {
     setUpdating(findingId);
-    try { await onUpdate(findingId, status); } finally { setUpdating(null); }
+    try {
+      await onUpdate(findingId, status);
+    } finally {
+      setUpdating(null);
+    }
   };
 
   const renderFinding = (f: import("@/lib/api").QAFinding) => {
     const cfg = SEVERITY_CONFIG[f.severity] ?? SEVERITY_CONFIG.info;
-    const isResolved = f.status !== 'open';
+    const isResolved = f.status !== "open";
     return (
-      <div key={f.id} className={`rounded-md border px-3 py-2 ${cfg.bg} ${cfg.border} ${isResolved ? 'opacity-60' : ''}`}>
+      <div
+        key={f.id}
+        className={`rounded-md border px-3 py-2 ${cfg.bg} ${cfg.border} ${isResolved ? "opacity-60" : ""}`}
+      >
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span>{cfg.icon}</span>
-              <code className="text-xs font-mono font-semibold text-gray-800 break-all">{f.field_path}</code>
-              <span className={`text-xs ${cfg.text} capitalize`}>{f.issue_type.replace(/_/g, ' ')}</span>
+              <code className="text-xs font-mono font-semibold text-gray-800 break-all">
+                {f.field_path}
+              </code>
+              <span className={`text-xs ${cfg.text} capitalize`}>
+                {f.issue_type.replace(/_/g, " ")}
+              </span>
             </div>
             {(f.expected || f.actual) && (
               <div className="mt-1 text-xs text-gray-600 space-y-0.5">
-                {f.expected && <div><span className="font-medium">Expected:</span> {f.expected}</div>}
-                {f.actual   && <div><span className="font-medium">Actual:</span>   {f.actual}</div>}
+                {f.expected && (
+                  <div>
+                    <span className="font-medium">Expected:</span> {f.expected}
+                  </div>
+                )}
+                {f.actual && (
+                  <div>
+                    <span className="font-medium">Actual:</span> {f.actual}
+                  </div>
+                )}
               </div>
             )}
             <p className="mt-1 text-xs text-gray-500 italic">{f.explanation}</p>
@@ -301,26 +348,34 @@ function QAFindingsPanel({
                   <button
                     onClick={() => onApply(f)}
                     className="text-xs text-blue-700 font-medium hover:underline"
-                    title={`Set ${f.field_path} = ${f.issue_type === 'extra_value' ? 'null' : (f.expected ?? 'null')}`}
-                  >Apply</button>
+                    title={`Set ${f.field_path} = ${f.issue_type === "extra_value" ? "null" : (f.expected ?? "null")}`}
+                  >
+                    Apply
+                  </button>
                   <span className="text-gray-300">|</span>
                 </>
               )}
               <button
                 disabled={updating === f.id}
-                onClick={() => handleAction(f.id, 'accepted')}
+                onClick={() => handleAction(f.id, "accepted")}
                 className="text-xs text-green-700 hover:underline disabled:opacity-50"
-              >Accept</button>
+              >
+                Accept
+              </button>
               <span className="text-gray-300">|</span>
               <button
                 disabled={updating === f.id}
-                onClick={() => handleAction(f.id, 'dismissed')}
+                onClick={() => handleAction(f.id, "dismissed")}
                 className="text-xs text-gray-500 hover:underline disabled:opacity-50"
-              >Dismiss</button>
+              >
+                Dismiss
+              </button>
             </div>
           )}
           {isResolved && (
-            <span className={`text-xs px-1.5 py-0.5 rounded-full capitalize ${f.status === 'accepted' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+            <span
+              className={`text-xs px-1.5 py-0.5 rounded-full capitalize ${f.status === "accepted" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}
+            >
               {f.status}
             </span>
           )}
@@ -333,19 +388,26 @@ function QAFindingsPanel({
     <div className="flex-shrink-0 border-t border-gray-200 bg-white px-3 py-2 space-y-2 max-h-64 overflow-y-auto">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-          QA Findings {open.length > 0 && <span className="text-red-600 ml-1">({open.length} open)</span>}
+          QA Findings{" "}
+          {open.length > 0 && (
+            <span className="text-red-600 ml-1">({open.length} open)</span>
+          )}
         </span>
         {resolved.length > 0 && (
           <button
-            onClick={() => setShowResolved(v => !v)}
+            onClick={() => setShowResolved((v) => !v)}
             className="text-xs text-gray-400 hover:text-gray-600"
           >
-            {showResolved ? 'Hide resolved' : `Show resolved (${resolved.length})`}
+            {showResolved
+              ? "Hide resolved"
+              : `Show resolved (${resolved.length})`}
           </button>
         )}
       </div>
       {open.length === 0 && (
-        <p className="text-xs text-gray-400 italic">No open issues — all clear ✅</p>
+        <p className="text-xs text-gray-400 italic">
+          No open issues — all clear ✅
+        </p>
       )}
       <div className="space-y-1.5">
         {open.map(renderFinding)}
@@ -568,10 +630,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     const wanted = activeResultTab ?? fallbackTab;
     if (wanted === "markdown" && !markdown) return "results" as TabType;
     if (wanted === "compare" && !actual_result) return "results" as TabType;
-    if (
-      wanted === "comments" &&
-      !(comments.length > 0 || onAddComment)
-    ) {
+    if (wanted === "comments" && !(comments.length > 0 || onAddComment)) {
       return "results" as TabType;
     }
     return wanted as TabType;
@@ -646,25 +705,42 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   // Fetch the active schema for the selected section's slug, flatten it to a
   // path→description map, cache per slug. Falls back gracefully when there's no
   // slug (v1) or the schema can't be loaded.
-  const schemaDescCacheRef = React.useRef<Record<string, Record<string, string>>>({});
-  const [fieldDescriptions, setFieldDescriptions] = useState<Record<string, string>>({});
+  const schemaDescCacheRef = React.useRef<
+    Record<string, Record<string, string>>
+  >({});
+  const [fieldDescriptions, setFieldDescriptions] = useState<
+    Record<string, string>
+  >({});
   const descSlug = selectedSection?.slug ?? null;
   useEffect(() => {
-    if (!descSlug) { setFieldDescriptions({}); return; }
+    if (!descSlug) {
+      setFieldDescriptions({});
+      return;
+    }
     const cached = schemaDescCacheRef.current[descSlug];
-    if (cached) { setFieldDescriptions(cached); return; }
+    if (cached) {
+      setFieldDescriptions(cached);
+      return;
+    }
     let cancelled = false;
-    apiClient.getDocumentTypeSchema(descSlug).then((res) => {
-      if (cancelled) return;
-      if (res.status === "success" && res.json_schema) {
-        const map = buildFieldDescriptionMap(res.json_schema);
-        schemaDescCacheRef.current[descSlug] = map;
-        setFieldDescriptions(map);
-      } else {
-        setFieldDescriptions({});
-      }
-    }).catch(() => { if (!cancelled) setFieldDescriptions({}); });
-    return () => { cancelled = true; };
+    apiClient
+      .getDocumentTypeSchema(descSlug)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.status === "success" && res.json_schema) {
+          const map = buildFieldDescriptionMap(res.json_schema);
+          schemaDescCacheRef.current[descSlug] = map;
+          setFieldDescriptions(map);
+        } else {
+          setFieldDescriptions({});
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFieldDescriptions({});
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [descSlug]);
 
   const handleVerify = useCallback(
@@ -705,17 +781,26 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
   // ── QA state ──────────────────────────────────────────────────────
   // Findings are loaded per-file on mount, then refreshed after a QA run.
-  const [qaFindings, setQaFindings] = useState<Record<string, import("@/lib/api").QAFinding[]>>({});
-  const [qaLoading, setQaLoading] = useState<'idle' | 'section' | 'all'>('idle');
+  const [qaFindings, setQaFindings] = useState<
+    Record<string, import("@/lib/api").QAFinding[]>
+  >({});
+  const [qaLoading, setQaLoading] = useState<"idle" | "section" | "all">(
+    "idle",
+  );
 
   // Load existing findings when the component mounts or fileId changes
   useEffect(() => {
     if (!fileId) return;
-    apiClient.getQAFindings(fileId).then((res) => {
-      if (res.status === 'success' && res.findings) {
-        setQaFindings(res.findings);
-      }
-    }).catch(() => {/* non-fatal */});
+    apiClient
+      .getQAFindings(fileId)
+      .then((res) => {
+        if (res.status === "success" && res.findings) {
+          setQaFindings(res.findings);
+        }
+      })
+      .catch(() => {
+        /* non-fatal */
+      });
   }, [fileId]);
 
   // Findings for the currently selected section
@@ -724,94 +809,115 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     return qaFindings[selectedSection.sectionResultId] ?? [];
   }, [qaFindings, selectedSection?.sectionResultId]);
 
-  const openFindingsCount = useMemo(() =>
-    selectedSectionFindings.filter(f => f.status === 'open').length,
-    [selectedSectionFindings]
+  const openFindingsCount = useMemo(
+    () => selectedSectionFindings.filter((f) => f.status === "open").length,
+    [selectedSectionFindings],
   );
 
   const handleRunSectionQA = useCallback(async () => {
     if (!fileId || !selectedSection?.sectionResultId) return;
-    setQaLoading('section');
+    setQaLoading("section");
     try {
-      const res = await apiClient.runSectionQA(fileId, selectedSection.sectionResultId);
-      if (res.status === 'success' && res.findings) {
+      const res = await apiClient.runSectionQA(
+        fileId,
+        selectedSection.sectionResultId,
+      );
+      if (res.status === "success" && res.findings) {
         const id = selectedSection.sectionResultId;
-        setQaFindings(prev => ({ ...prev, [id]: res.findings }));
-        const count = res.findings.filter((f: import("@/lib/api").QAFinding) => f.status === 'open').length;
-        message.success(`QA complete — ${count} issue${count === 1 ? '' : 's'} found`);
+        setQaFindings((prev) => ({ ...prev, [id]: res.findings }));
+        const count = res.findings.filter(
+          (f: import("@/lib/api").QAFinding) => f.status === "open",
+        ).length;
+        message.success(
+          `QA complete — ${count} issue${count === 1 ? "" : "s"} found`,
+        );
       } else {
-        message.error(res.message || 'QA failed');
+        message.error(res.message || "QA failed");
       }
     } catch (err) {
-      message.error(err instanceof Error ? err.message : 'QA failed');
+      message.error(err instanceof Error ? err.message : "QA failed");
     } finally {
-      setQaLoading('idle');
+      setQaLoading("idle");
     }
   }, [fileId, selectedSection?.sectionResultId, message]);
 
   const handleRunAllQA = useCallback(async () => {
     if (!fileId) return;
-    setQaLoading('all');
+    setQaLoading("all");
     try {
       const res = await apiClient.runFileQA(fileId);
-      if (res.status === 'success') {
+      if (res.status === "success") {
         // Reload all findings from server
         const findingsRes = await apiClient.getQAFindings(fileId);
-        if (findingsRes.status === 'success' && findingsRes.findings) {
+        if (findingsRes.status === "success" && findingsRes.findings) {
           setQaFindings(findingsRes.findings);
         }
         const total = (res as any).totalFindings ?? 0;
-        message.success(`QA complete — ${total} issue${total === 1 ? '' : 's'} found across all sections`);
+        message.success(
+          `QA complete — ${total} issue${total === 1 ? "" : "s"} found across all sections`,
+        );
       } else {
-        message.error(res.message || 'QA failed');
+        message.error(res.message || "QA failed");
       }
     } catch (err) {
-      message.error(err instanceof Error ? err.message : 'QA failed');
+      message.error(err instanceof Error ? err.message : "QA failed");
     } finally {
-      setQaLoading('idle');
+      setQaLoading("idle");
     }
   }, [fileId, message]);
 
   // Inject a finding's "right answer" (expected) into the editable JSON at its
   // field_path. The user reviews the change in the tree and Saves to persist
   // (via the existing per-record PATCH). extra_value (hallucination) → set null.
-  const handleApplyFinding = useCallback((finding: import("@/lib/api").QAFinding) => {
-    try {
-      const parsed = JSON.parse(editableJson);
-      const current = getByPath(parsed, finding.field_path);
-      const newValue =
-        finding.issue_type === 'extra_value'
-          ? null
-          : coerceExpected(finding.expected, current);
-      const updated = setByPath(parsed, finding.field_path, newValue);
-      setEditableJson(JSON.stringify(updated, null, 2));
-      setJsonError(null);
-      message.success(
-        `Set ${finding.field_path} = ${newValue === null ? 'null' : JSON.stringify(newValue)} — review and Save to persist`,
-      );
-    } catch (err) {
-      message.error(
-        `Couldn't apply: ${err instanceof Error ? err.message : 'invalid JSON'}`,
-      );
-    }
-  }, [editableJson, message]);
-
-  const handleUpdateFinding = useCallback(async (findingId: string, status: 'accepted' | 'dismissed') => {
-    if (!fileId || !selectedSection?.sectionResultId) return;
-    try {
-      const res = await apiClient.updateQAFindingStatus(fileId, findingId, status);
-      if (res.status === 'success' && res.finding) {
-        const updated = res.finding;
-        const sectionId = updated.section_result_id;
-        setQaFindings(prev => ({
-          ...prev,
-          [sectionId]: (prev[sectionId] ?? []).map(f => f.id === findingId ? updated : f),
-        }));
+  const handleApplyFinding = useCallback(
+    (finding: import("@/lib/api").QAFinding) => {
+      try {
+        const parsed = JSON.parse(editableJson);
+        const current = getByPath(parsed, finding.field_path);
+        const newValue =
+          finding.issue_type === "extra_value"
+            ? null
+            : coerceExpected(finding.expected, current);
+        const updated = setByPath(parsed, finding.field_path, newValue);
+        setEditableJson(JSON.stringify(updated, null, 2));
+        setJsonError(null);
+        message.success(
+          `Set ${finding.field_path} = ${newValue === null ? "null" : JSON.stringify(newValue)} — review and Save to persist`,
+        );
+      } catch (err) {
+        message.error(
+          `Couldn't apply: ${err instanceof Error ? err.message : "invalid JSON"}`,
+        );
       }
-    } catch {
-      message.error('Failed to update finding');
-    }
-  }, [fileId, selectedSection?.sectionResultId, message]);
+    },
+    [editableJson, message],
+  );
+
+  const handleUpdateFinding = useCallback(
+    async (findingId: string, status: "accepted" | "dismissed") => {
+      if (!fileId || !selectedSection?.sectionResultId) return;
+      try {
+        const res = await apiClient.updateQAFindingStatus(
+          fileId,
+          findingId,
+          status,
+        );
+        if (res.status === "success" && res.finding) {
+          const updated = res.finding;
+          const sectionId = updated.section_result_id;
+          setQaFindings((prev) => ({
+            ...prev,
+            [sectionId]: (prev[sectionId] ?? []).map((f) =>
+              f.id === findingId ? updated : f,
+            ),
+          }));
+        }
+      } catch {
+        message.error("Failed to update finding");
+      }
+    },
+    [fileId, selectedSection?.sectionResultId, message],
+  );
 
   // The data that the data-shaped tabs (Preview, JSON, CSV, Edit) operate on.
   // When v2 we scope to the selected section so the user sees one focused
@@ -875,7 +981,8 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         if (isV2 && selectedSection?.sectionResultId && fileId) {
           // V2 path: patch just this one record by section_result_id.
           // Strip section_result_id from the edited data (the endpoint preserves it).
-          const { section_result_id: _strip, ...recordData } = parsedSectionData;
+          const { section_result_id: _strip, ...recordData } =
+            parsedSectionData;
           const res = await apiClient.patchResultRecord(
             fileId,
             selectedSection.sectionResultId,
@@ -912,7 +1019,16 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         setIsSaving(false);
       }
     },
-    [onUpdate, jsonError, isSaving, editableJson, isV2, selectedSection, data, fileId],
+    [
+      onUpdate,
+      jsonError,
+      isSaving,
+      editableJson,
+      isV2,
+      selectedSection,
+      data,
+      fileId,
+    ],
   );
 
   useEffect(() => {
@@ -1043,9 +1159,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   <Select.Option
                     key={entry.globalIndex}
                     value={entry.globalIndex}
-                    label={formatSectionOptionLabel(entry)}
+                    label={formatSectionOptionLabel(entry, verificationMap)}
                   >
-                    {formatSectionOptionLabel(entry)}
+                    {formatSectionOptionLabel(entry, verificationMap)}
                   </Select.Option>
                 ));
               }
@@ -1062,9 +1178,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                       <Select.Option
                         key={entry.globalIndex}
                         value={entry.globalIndex}
-                        label={`${entry.recordId ?? ""} ${formatSectionOptionLabel(entry)}`}
+                        label={`${entry.recordId ?? ""} ${formatSectionOptionLabel(entry, verificationMap)}`}
                       >
-                        {formatSectionOptionLabel(entry)}
+                        {formatSectionOptionLabel(entry, verificationMap)}
                       </Select.Option>
                     ))}
                 </Select.OptGroup>
@@ -1094,76 +1210,76 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       {isV2 &&
         selectedSection?.sectionResultId &&
         (fileId || onSectionVerify) && (
-        <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 border-b border-gray-100 bg-gray-50 flex-shrink-0">
-          {fileId && (
-            <>
-              <span className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">
-                QA
-              </span>
-              <div className="flex items-center gap-0.5">
-                <Popconfirm
-                  title="Run QA on this section?"
-                  description="Analyzes the current section's extracted data. This may take a moment."
-                  okText="Run QA"
-                  cancelText="Cancel"
-                  disabled={qaLoading !== "idle"}
-                  onConfirm={handleRunSectionQA}
-                >
-                  <span className="inline-flex">
-                    <button
-                      type="button"
-                      disabled={qaLoading !== "idle"}
-                      className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      {qaLoading === "section"
-                        ? "Running…"
-                        : openFindingsCount > 0
-                          ? `Run QA · ${openFindingsCount} open`
-                          : "Run QA"}
-                    </button>
-                  </span>
-                </Popconfirm>
-                <Popconfirm
-                  title="Run QA on all sections?"
-                  description="Analyzes every section in this file. This may take longer."
-                  okText="Run all"
-                  cancelText="Cancel"
-                  disabled={qaLoading !== "idle"}
-                  onConfirm={handleRunAllQA}
-                >
-                  <span className="inline-flex">
-                    <button
-                      type="button"
-                      disabled={qaLoading !== "idle"}
-                      className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-                    >
-                      {qaLoading === "all" ? "Running…" : "Run all sections"}
-                    </button>
-                  </span>
-                </Popconfirm>
-              </div>
-            </>
-          )}
-          {onSectionVerify && (
-            <>
-              {fileId && <span className="w-px h-5 bg-gray-200" />}
-              <SectionVerifyControls
-                verification={selectedVerification}
-                loading={verifyLoading}
-                onVerify={handleVerify}
-                onBulkApprove={
-                  onBulkSectionVerify
-                    ? () => handleBulkVerify("approved")
-                    : undefined
-                }
-                totalSections={sectionEntries.length}
-                verificationMap={verificationMap}
-                sectionEntries={sectionEntries}
-              />
-            </>
-          )}
-        </div>
-      )}
+          <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 border-b border-gray-100 bg-gray-50 flex-shrink-0">
+            {fileId && (
+              <>
+                <span className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">
+                  QA
+                </span>
+                <div className="flex items-center gap-0.5">
+                  <Popconfirm
+                    title="Run QA on this section?"
+                    description="Analyzes the current section's extracted data. This may take a moment."
+                    okText="Run QA"
+                    cancelText="Cancel"
+                    disabled={qaLoading !== "idle"}
+                    onConfirm={handleRunSectionQA}
+                  >
+                    <span className="inline-flex">
+                      <button
+                        type="button"
+                        disabled={qaLoading !== "idle"}
+                        className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        {qaLoading === "section"
+                          ? "Running…"
+                          : openFindingsCount > 0
+                            ? `Run QA · ${openFindingsCount} open`
+                            : "Run QA"}
+                      </button>
+                    </span>
+                  </Popconfirm>
+                  <Popconfirm
+                    title="Run QA on all sections?"
+                    description="Analyzes every section in this file. This may take longer."
+                    okText="Run all"
+                    cancelText="Cancel"
+                    disabled={qaLoading !== "idle"}
+                    onConfirm={handleRunAllQA}
+                  >
+                    <span className="inline-flex">
+                      <button
+                        type="button"
+                        disabled={qaLoading !== "idle"}
+                        className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        {qaLoading === "all" ? "Running…" : "Run all sections"}
+                      </button>
+                    </span>
+                  </Popconfirm>
+                </div>
+              </>
+            )}
+            {onSectionVerify && (
+              <>
+                {fileId && <span className="w-px h-5 bg-gray-200" />}
+                <SectionVerifyControls
+                  verification={selectedVerification}
+                  loading={verifyLoading}
+                  onVerify={handleVerify}
+                  onBulkApprove={
+                    onBulkSectionVerify
+                      ? () => handleBulkVerify("approved")
+                      : undefined
+                  }
+                  totalSections={sectionEntries.length}
+                  verificationMap={verificationMap}
+                  sectionEntries={sectionEntries}
+                />
+              </>
+            )}
+          </div>
+        )}
 
       {/* Tab Headers */}
       <div className="flex items-center justify-between border-b border-gray-200 flex-shrink-0">
@@ -1296,14 +1412,17 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           )}
 
           {/* QA Findings Panel — shown below the JSON editor when section is selected */}
-          {activeTab === "results" && isV2 && selectedSection?.sectionResultId && selectedSectionFindings.length > 0 && (
-            <QAFindingsPanel
-              findings={selectedSectionFindings}
-              onUpdate={handleUpdateFinding}
-              onApply={handleApplyFinding}
-              canApply={editable}
-            />
-          )}
+          {activeTab === "results" &&
+            isV2 &&
+            selectedSection?.sectionResultId &&
+            selectedSectionFindings.length > 0 && (
+              <QAFindingsPanel
+                findings={selectedSectionFindings}
+                onUpdate={handleUpdateFinding}
+                onApply={handleApplyFinding}
+                canApply={editable}
+              />
+            )}
 
           {activeTab === "markdown" && markdown && (
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
