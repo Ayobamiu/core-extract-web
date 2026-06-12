@@ -16,12 +16,19 @@ const DEFAULT_TOOLBAR: ToolbarItem[] = [
   "mode",
   "format",
   "minify",
+  "wrap",
   "search",
   "copy",
   "download",
 ];
 
-const READONLY_TOOLBAR: ToolbarItem[] = ["mode", "search", "copy", "download"];
+const READONLY_TOOLBAR: ToolbarItem[] = [
+  "mode",
+  "wrap",
+  "search",
+  "copy",
+  "download",
+];
 
 export interface JsonViewerProps extends JsonViewerCommonProps {
   /** Internal: when true, toolbar gets save/cancel by default. */
@@ -44,22 +51,9 @@ function deriveMode(opts: {
   return "tree";
 }
 
-function useIsDarkAntd(theme: "light" | "dark" | "auto"): "light" | "dark" {
-  // Inspect the AntD theme token at render-time. We do this with a hook that
-  // reads from ConfigProvider's token; for simplicity we use a media query +
-  // explicit override.
-  const [systemDark, setSystemDark] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    setSystemDark(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-  if (theme === "light") return "light";
-  if (theme === "dark") return "dark";
-  return systemDark ? "dark" : "light";
+/** CodeMirror / @uiw default is light; only use dark when explicitly requested. */
+function resolveEditorTheme(theme: "light" | "dark" | "auto"): "light" | "dark" {
+  return theme === "dark" ? "dark" : "light";
 }
 
 const JsonViewer: React.FC<JsonViewerProps> = (props) => {
@@ -87,13 +81,16 @@ const JsonViewer: React.FC<JsonViewerProps> = (props) => {
     extraActions,
     showStatusBar = true,
     showLineNumbers = true,
+    lineWrap: lineWrapProp,
+    defaultLineWrap = false,
+    onLineWrapChange,
     bordered = true,
     onSave,
     onCancel,
     saveLabel,
     cancelLabel,
     saving,
-    theme = "auto",
+    theme = "light",
     placeholder,
     emptyText,
     className,
@@ -125,6 +122,19 @@ const JsonViewer: React.FC<JsonViewerProps> = (props) => {
     [],
   );
   const [mode, setMode] = useState<JsonMode>(initialMode);
+  const [internalLineWrap, setInternalLineWrap] = useState(defaultLineWrap);
+  const lineWrap = lineWrapProp ?? internalLineWrap;
+  const setLineWrap = useCallback(
+    (wrap: boolean) => {
+      if (lineWrapProp === undefined) setInternalLineWrap(wrap);
+      onLineWrapChange?.(wrap);
+    },
+    [lineWrapProp, onLineWrapChange],
+  );
+
+  useEffect(() => {
+    if (lineWrapProp !== undefined) setInternalLineWrap(lineWrapProp);
+  }, [lineWrapProp]);
 
   useEffect(() => {
     if (modeProp && modeProp !== "auto" && modeProp !== mode) {
@@ -142,7 +152,7 @@ const JsonViewer: React.FC<JsonViewerProps> = (props) => {
   );
 
   const codeRef = useRef<ReactCodeMirrorRef | null>(null);
-  const themeMode = useIsDarkAntd(theme);
+  const themeMode = resolveEditorTheme(theme);
 
   const resolvedToolbarItems = useMemo<ToolbarItem[]>(() => {
     if (toolbar === false) return [];
@@ -296,6 +306,8 @@ const JsonViewer: React.FC<JsonViewerProps> = (props) => {
               onDownload={handleDownload}
               onUpload={handleUpload}
               onSearch={handleSearch}
+              lineWrap={lineWrap}
+              onLineWrapChange={setLineWrap}
               onSave={onSave ? handleSave : undefined}
               onCancel={onCancel}
             />
@@ -313,6 +325,7 @@ const JsonViewer: React.FC<JsonViewerProps> = (props) => {
                 onChange={editor.setText}
                 readOnly={readOnly}
                 theme={themeMode}
+                lineWrap={lineWrap}
                 placeholder={placeholder}
                 editorRef={codeRef}
                 showLineNumbers={showLineNumbers}

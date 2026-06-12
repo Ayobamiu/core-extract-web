@@ -8,6 +8,7 @@ export type ToolbarItem =
   | "mode"
   | "format"
   | "minify"
+  | "wrap"
   | "copy"
   | "download"
   | "upload"
@@ -65,6 +66,10 @@ export interface JsonViewerCommonProps {
   showSearch?: boolean;
   showStatusBar?: boolean;
   showLineNumbers?: boolean;
+  /** Code mode: wrap long lines (toolbar toggle when uncontrolled). */
+  lineWrap?: boolean;
+  defaultLineWrap?: boolean;
+  onLineWrapChange?: (wrap: boolean) => void;
   bordered?: boolean;
 
   // Save / Cancel hooks
@@ -74,7 +79,7 @@ export interface JsonViewerCommonProps {
   cancelLabel?: string;
   saving?: boolean;
 
-  // Theming
+  // Theming — matches @uiw/react-codemirror default (light). `auto` is treated as light.
   theme?: "light" | "dark" | "auto";
 
   // Misc

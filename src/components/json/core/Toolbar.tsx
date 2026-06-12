@@ -14,6 +14,7 @@ import {
   AppstoreOutlined,
   CodeOutlined,
   DiffOutlined,
+  ColumnWidthOutlined,
 } from "@ant-design/icons";
 import type { JsonMode, ToolbarItem } from "../types";
 
@@ -34,6 +35,8 @@ interface ToolbarProps {
   onDownload: () => void;
   onUpload: (file: File) => Promise<void>;
   onSearch?: () => void;
+  lineWrap?: boolean;
+  onLineWrapChange?: (wrap: boolean) => void;
   onSave?: () => void;
   onCancel?: () => void;
   size?: "small" | "middle";
@@ -56,6 +59,8 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onDownload,
   onUpload,
   onSearch,
+  lineWrap = false,
+  onLineWrapChange,
   onSave,
   onCancel,
   size = "small",
@@ -138,6 +143,17 @@ const Toolbar: React.FC<ToolbarProps> = ({
               type="text"
               icon={<SearchOutlined />}
               onClick={onSearch}
+            />
+          </Tooltip>
+        )}
+        {includes("wrap") && mode === "code" && onLineWrapChange && (
+          <Tooltip title={lineWrap ? "Disable line wrap" : "Wrap lines"}>
+            <Button
+              size={size}
+              type={lineWrap ? "primary" : "text"}
+              icon={<ColumnWidthOutlined />}
+              onClick={() => onLineWrapChange(!lineWrap)}
+              aria-pressed={lineWrap}
             />
           </Tooltip>
         )}
