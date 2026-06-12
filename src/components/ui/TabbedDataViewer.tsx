@@ -19,7 +19,17 @@ import {
   MessageSquare,
   MoreHorizontal,
 } from "lucide-react";
-import { App, Button, Dropdown, Input, Popconfirm, Select, Typography } from "antd";
+import {
+  App,
+  Button,
+  Checkbox,
+  Dropdown,
+  Input,
+  Modal,
+  Popconfirm,
+  Select,
+  Typography,
+} from "antd";
 import type { MenuProps } from "antd";
 import { JsonViewer } from "@/components/json";
 import {
@@ -775,6 +785,24 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const [sessionQaedIds, setSessionQaedIds] = useState<Set<string>>(
     () => new Set(),
   );
+
+  // ── Single-section reprocess (mirror of the file reprocess modal) ──
+  const [reprocessOpen, setReprocessOpen] = useState(false);
+  const [reprocessLoading, setReprocessLoading] = useState(false);
+  const [reprocessOpts, setReprocessOpts] = useState({
+    reExtractText: true,
+    reProcessAi: true,
+  });
+
+  // ── Per-section markdown scope ("This section" vs "Whole file") ──
+  const [markdownScope, setMarkdownScope] = useState<"section" | "file">(
+    "section",
+  );
+  const [sectionMarkdownLoading, setSectionMarkdownLoading] = useState(false);
+  // Cache section markdown by sectionResultId so toggling/navigating is instant.
+  const [sectionMarkdownCache, setSectionMarkdownCache] = useState<
+    Record<string, { markdown: string; pages: { page_number: number; markdown: string }[] }>
+  >({});
   // Sections with a persisted QA-run record (from the backend, incl. clean
   // passes). Makes "Re-run QA" / "Run remaining" correct across reloads.
   const [persistedQaedIds, setPersistedQaedIds] = useState<Set<string>>(
@@ -953,11 +981,94 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     }
   }, [fileId, allSectionIds, qaedSectionIds, message]);
 
+  const handleReprocessSection = useCallback(async () => {
+    if (!fileId || !selectedSection?.sectionResultId) return;
+    if (!reprocessOpts.reExtractText && !reprocessOpts.reProcessAi) {
+      message.error("Pick at least one operation");
+      return;
+    }
+    const sid = selectedSection.sectionResultId;
+    setReprocessLoading(true);
+    try {
+      const res = await apiClient.reprocessSection(fileId, sid, reprocessOpts);
+      if (res.status === "success") {
+        // Result/detected_sections update arrives via the socket file-patch the
+        // server emits (same path reextract-sections uses). Drop any cached
+        // section markdown so the Markdown tab refetches the new text, and
+        // refresh QA findings since the data changed.
+        setSectionMarkdownCache((prev) => {
+          const next = { ...prev };
+          delete next[sid];
+          return next;
+        });
+        apiClient
+          .getQAFindings(fileId)
+          .then((r) => {
+            if (r.status === "success" && r.findings) setQaFindings(r.findings);
+          })
+          .catch(() => {});
+        message.success("Section reprocessed");
+        setReprocessOpen(false);
+      } else {
+        message.error(res.message || "Reprocess failed");
+      }
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Reprocess failed");
+    } finally {
+      setReprocessLoading(false);
+    }
+  }, [fileId, selectedSection?.sectionResultId, reprocessOpts, message]);
+
+  // Lazily fetch the selected section's markdown when the Markdown tab is open
+  // and scoped to "This section". Cached by sectionResultId.
+  useEffect(() => {
+    const sid = selectedSection?.sectionResultId;
+    if (
+      activeTab !== "markdown" ||
+      markdownScope !== "section" ||
+      !fileId ||
+      !sid ||
+      sectionMarkdownCache[sid]
+    ) {
+      return;
+    }
+    let cancelled = false;
+    setSectionMarkdownLoading(true);
+    apiClient
+      .getSectionMarkdown(fileId, sid)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.status === "success") {
+          setSectionMarkdownCache((prev) => ({
+            ...prev,
+            [sid]: { markdown: res.markdown ?? "", pages: res.pages ?? [] },
+          }));
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setSectionMarkdownLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, markdownScope, fileId, selectedSection?.sectionResultId, sectionMarkdownCache]);
+
   // Items for the ⋯ "more actions" menu. Bulk QA and bulk approve are occasional
   // — tucking them here keeps the per-section actions front-and-centre.
   // Confirmations use modal.confirm (a Popconfirm anchored to a menu item that
   // closes on click is awkward).
   const bulkMenuItems: MenuProps["items"] = [];
+  if (fileId && selectedSection?.sectionResultId) {
+    bulkMenuItems.push({
+      key: "reprocess-section",
+      label: "Reprocess section…",
+      onClick: () => {
+        setReprocessOpts({ reExtractText: true, reProcessAi: true });
+        setReprocessOpen(true);
+      },
+    });
+  }
   if (fileId && allSectionIds.length > 0) {
     bulkMenuItems.push({
       key: "run-all-qa",
@@ -998,6 +1109,20 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         }),
     });
   }
+
+  // Markdown view scoping: when a section is selected and scope is "section",
+  // feed the section's sliced markdown/pages into the existing renderer.
+  const sectionScopeActive =
+    isV2 && !!selectedSection?.sectionResultId && markdownScope === "section";
+  const currentSectionMarkdown = selectedSection?.sectionResultId
+    ? sectionMarkdownCache[selectedSection.sectionResultId]
+    : undefined;
+  const mdForView = sectionScopeActive
+    ? currentSectionMarkdown?.markdown ?? ""
+    : markdown ?? "";
+  const pagesForView = sectionScopeActive
+    ? currentSectionMarkdown?.pages ?? []
+    : pages;
 
   // Inject a finding's "right answer" (expected) into the editable JSON at its
   // field_path. The user reviews the change in the tree and Saves to persist
@@ -1560,8 +1685,34 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
           {activeTab === "markdown" && markdown && (
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+              {/* Source scope: this section vs the whole file */}
+              {isV2 && selectedSection?.sectionResultId && (
+                <div className="flex items-center gap-1 border-b border-gray-100 bg-gray-50 px-4 py-1.5">
+                  <span className="text-[10px] uppercase tracking-wide text-gray-400 mr-1">
+                    Source
+                  </span>
+                  {(["section", "file"] as const).map((scope) => (
+                    <button
+                      key={scope}
+                      onClick={() => {
+                        setMarkdownScope(scope);
+                        if (scope === "section" && markdownView === "chunks") {
+                          setMarkdownView("full");
+                        }
+                      }}
+                      className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                        markdownScope === scope
+                          ? "bg-blue-100 text-blue-700 font-medium"
+                          : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      {scope === "section" ? "This section" : "Whole file"}
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* Markdown Subtabs */}
-              {pages && Array.isArray(pages) && pages.length > 0 && (
+              {pagesForView && Array.isArray(pagesForView) && pagesForView.length > 0 && (
                 <div className="flex border-b border-gray-200 bg-gray-50 px-4">
                   <button
                     onClick={() => setMarkdownView("full")}
@@ -1583,18 +1734,32 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   >
                     Pages
                   </button>
-                  <button
-                    onClick={() => setMarkdownView("chunks")}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      markdownView === "chunks"
-                        ? "text-blue-600 border-b-2 border-blue-600"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    Chunks
-                  </button>
+                  {!sectionScopeActive && (
+                    <button
+                      onClick={() => setMarkdownView("chunks")}
+                      className={`px-4 py-2 text-sm font-medium transition-colors ${
+                        markdownView === "chunks"
+                          ? "text-blue-600 border-b-2 border-blue-600"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      Chunks
+                    </button>
+                  )}
                 </div>
               )}
+              {sectionScopeActive && sectionMarkdownLoading && (
+                <div className="px-6 py-4 text-sm text-gray-400">
+                  Loading section source…
+                </div>
+              )}
+              {sectionScopeActive &&
+                !sectionMarkdownLoading &&
+                mdForView.length === 0 && (
+                  <div className="px-6 py-4 text-sm text-gray-400">
+                    No source text for this section.
+                  </div>
+                )}
 
               {/* Markdown Content */}
               <div className="overflow-auto flex-1 p-6 min-h-0">
@@ -1733,19 +1898,23 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                       ),
                     }}
                   >
-                    {markdown}
+                    {mdForView}
                   </ReactMarkdown>
                 )}
 
-                {markdownView === "pages" && pages && Array.isArray(pages) && (
+                {markdownView === "pages" &&
+                  pagesForView &&
+                  Array.isArray(pagesForView) && (
                   <div className="space-y-8">
-                    {pages.map((page: any, index: number) => {
+                    {pagesForView.map((page: any, index: number) => {
                       const pageMarkdown =
-                        page?.markdown?.text || page?.markdown || "";
+                        page?.markdown?.text || page?.markdown || page?.text || "";
                       const pageNumber =
-                        page?.pageIndex !== undefined
-                          ? page.pageIndex + 1
-                          : index + 1;
+                        page?.page_number !== undefined
+                          ? page.page_number
+                          : page?.pageIndex !== undefined
+                            ? page.pageIndex + 1
+                            : index + 1;
 
                       return (
                         <div
@@ -1852,7 +2021,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   </div>
                 )}
 
-                {markdownView === "chunks" && pages && Array.isArray(pages) && (
+                {markdownView === "chunks" &&
+                  !sectionScopeActive &&
+                  pages &&
+                  Array.isArray(pages) && (
                   <div className="space-y-8">
                     {pages.map((page: any, pageIndex: number) => {
                       const pageNumber =
@@ -2069,6 +2241,61 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           )}
         </motion.div>
       </div>
+
+      {/* Single-section reprocess modal (mirrors the file reprocess modal) */}
+      <Modal
+        title="Reprocess section"
+        open={reprocessOpen}
+        onCancel={() => setReprocessOpen(false)}
+        confirmLoading={reprocessLoading}
+        okText="Reprocess section"
+        okButtonProps={{
+          disabled:
+            !reprocessOpts.reExtractText && !reprocessOpts.reProcessAi,
+        }}
+        onOk={handleReprocessSection}
+        width={520}
+      >
+        <p className="text-sm text-gray-600 mb-3">
+          Choose what to re-run for{" "}
+          <span className="font-medium">
+            {selectedSection?.recordId ||
+              selectedSection?.slug ||
+              "this section"}
+          </span>
+          .
+        </p>
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+          <Checkbox
+            checked={reprocessOpts.reExtractText}
+            onChange={(e) =>
+              setReprocessOpts((p) => ({
+                ...p,
+                reExtractText: e.target.checked,
+              }))
+            }
+          >
+            <span className="font-medium">Re-run Text Extraction</span>
+            <div className="text-xs text-gray-600 ml-6">
+              Re-OCR this section&apos;s pages from the original PDF
+            </div>
+          </Checkbox>
+          <Checkbox
+            checked={reprocessOpts.reProcessAi}
+            onChange={(e) =>
+              setReprocessOpts((p) => ({
+                ...p,
+                reProcessAi: e.target.checked,
+              }))
+            }
+          >
+            <span className="font-medium">Re-run AI Processing</span>
+            <div className="text-xs text-gray-600 ml-6">
+              Re-extract structured data with AI using the current schema
+            </div>
+          </Checkbox>
+        </div>
+      </Modal>
     </div>
   );
 };

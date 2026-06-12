@@ -1086,6 +1086,42 @@ class ApiClient {
         );
     }
 
+    /**
+     * Reprocess a SINGLE section: re-extract its text (re-OCR its pages),
+     * re-run AI on it, or both. At least one of the two must be true.
+     */
+    async reprocessSection(
+        fileId: string,
+        sectionResultId: string,
+        opts: { reExtractText: boolean; reProcessAi: boolean },
+    ): Promise<ApiResponse<{
+        sectionResultId: string;
+        reExtractText: boolean;
+        reProcessAi: boolean;
+        result?: unknown;
+        detected_sections?: DetectedSections;
+    }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/${encodeURIComponent(sectionResultId)}/reprocess`,
+            { method: 'POST', body: JSON.stringify(opts) },
+        );
+    }
+
+    /** Get one section's source markdown (sliced from the file's page text). */
+    async getSectionMarkdown(
+        fileId: string,
+        sectionResultId: string,
+    ): Promise<ApiResponse<{
+        sectionResultId: string;
+        extraction_pages: number[];
+        markdown: string;
+        pages: { page_number: number; markdown: string }[];
+    }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/${encodeURIComponent(sectionResultId)}/markdown`,
+        );
+    }
+
     // Fetch a rasterised JPEG of a single PDF page and return a blob URL
     // ready to drop into <img src>. Caller is responsible for revoking the
     // URL when the consumer unmounts (URL.revokeObjectURL).
