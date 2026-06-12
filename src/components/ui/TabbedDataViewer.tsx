@@ -1513,6 +1513,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                         "mode",
                         "format",
                         "minify",
+                        "wrap",
                         "search",
                         "copy",
                         "download",
@@ -1520,7 +1521,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                         "cancel",
                         "save",
                       ]
-                    : ["mode", "search", "copy", "download"]
+                    : ["mode", "wrap", "search", "copy", "download"]
                 }
                 onSave={
                   editable

@@ -9,13 +9,13 @@ import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { linter, lintGutter } from "@codemirror/lint";
 import { search, openSearchPanel } from "@codemirror/search";
 import { foldGutter } from "@codemirror/language";
-import { getCodeMirrorTheme } from "./theme";
 
 export interface JsonCodeEditorProps {
   value: string;
   onChange?: (value: string) => void;
   readOnly?: boolean;
   theme?: "light" | "dark";
+  lineWrap?: boolean;
   height?: string | number;
   minHeight?: string | number;
   maxHeight?: string | number;
@@ -30,6 +30,7 @@ const JsonCodeEditor: React.FC<JsonCodeEditorProps> = ({
   onChange,
   readOnly,
   theme = "light",
+  lineWrap = false,
   height,
   minHeight,
   maxHeight,
@@ -45,10 +46,9 @@ const JsonCodeEditor: React.FC<JsonCodeEditorProps> = ({
       lintGutter(),
       search({ top: true }),
       foldGutter(),
-      EditorView.lineWrapping,
-      ...getCodeMirrorTheme(theme),
+      ...(lineWrap ? [EditorView.lineWrapping] : []),
     ],
-    [theme],
+    [lineWrap],
   );
 
   const handleChange = useCallback(
@@ -99,11 +99,11 @@ const JsonCodeEditor: React.FC<JsonCodeEditorProps> = ({
           bracketMatching: true,
           closeBrackets: true,
           indentOnInput: true,
-          syntaxHighlighting: false,
+          syntaxHighlighting: true,
           dropCursor: true,
         }}
         placeholder={placeholder}
-        theme="none"
+        theme={theme}
         autoFocus={autoFocus}
         style={{ height: "100%" }}
       />
