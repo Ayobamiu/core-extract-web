@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   App,
   Button,
+  Checkbox,
   Empty,
   Collapse,
   Modal,
@@ -61,7 +62,12 @@ interface Props {
   onSectionsUpdated?: (next: DetectedSections) => void;
 }
 
-type ActionKind = "change_slug" | "split" | "merge" | "new_section";
+type ActionKind =
+  | "change_slug"
+  | "split"
+  | "merge"
+  | "new_section"
+  | "include_skipped";
 interface ActionState {
   kind: ActionKind;
   sectionIndex: number;
@@ -297,6 +303,7 @@ export default function DocumentRoutingPanel({
   const [actionLoadingFor, setActionLoadingFor] = useState<number | null>(null);
   const [pickedSlug, setPickedSlug] = useState<string | null>(null);
   const [pickedSplitPage, setPickedSplitPage] = useState<number | null>(null);
+  const [pickedSkippedPages, setPickedSkippedPages] = useState<number[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -322,6 +329,7 @@ export default function DocumentRoutingPanel({
     setActiveAction(null);
     setPickedSlug(null);
     setPickedSplitPage(null);
+    setPickedSkippedPages([]);
   }, []);
 
   // ── Client-side edit handlers (no server calls) ───────────────────
@@ -401,6 +409,27 @@ export default function DocumentRoutingPanel({
     },
     [activeSections],
   );
+
+  const handleIncludeSkipped = useCallback(() => {
+    if (!activeAction || activeAction.kind !== "include_skipped") return;
+    if (!activeSections || pickedSkippedPages.length === 0) return;
+    try {
+      // Force each picked page into the section (in document order). In-range
+      // additions don't reorder sections, so sectionIndex stays valid.
+      let blob = activeSections;
+      const pages = [...pickedSkippedPages].sort((a, b) => a - b);
+      for (const pageNumber of pages) {
+        blob = addPageToSection(blob, activeAction.sectionIndex, pageNumber);
+      }
+      setDraft(blob);
+      message.success(
+        `${pages.length} page${pages.length === 1 ? "" : "s"} added to section (unsaved)`,
+      );
+      closeAction();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Include failed");
+    }
+  }, [activeAction, pickedSkippedPages, activeSections, closeAction]);
 
   const handleCreateSection = useCallback(() => {
     if (!activeAction || activeAction.kind !== "new_section") return;
@@ -698,6 +727,10 @@ export default function DocumentRoutingPanel({
                     setActiveAction({ kind: "split", sectionIndex: i });
                   }}
                   onMerge={() => handleMerge(i)}
+                  onIncludeSkipped={() => {
+                    setPickedSkippedPages([]);
+                    setActiveAction({ kind: "include_skipped", sectionIndex: i });
+                  }}
                 />
               ),
               children: (
@@ -969,6 +1002,67 @@ export default function DocumentRoutingPanel({
           />
         </div>
       </Modal>
+
+      {/* Include-skipped-pages checklist modal */}
+      <Modal
+        title={
+          activeAction?.kind === "include_skipped" &&
+          sections[activeAction.sectionIndex]
+            ? `Include skipped pages — ${sections[activeAction.sectionIndex].document_type_slug} (pages ${sections[activeAction.sectionIndex].page_range[0]}–${sections[activeAction.sectionIndex].page_range[1]})`
+            : "Include skipped pages"
+        }
+        open={activeAction?.kind === "include_skipped"}
+        onCancel={closeAction}
+        onOk={handleIncludeSkipped}
+        okText={
+          pickedSkippedPages.length > 0
+            ? `Include ${pickedSkippedPages.length} page${pickedSkippedPages.length === 1 ? "" : "s"}`
+            : "Include pages"
+        }
+        okButtonProps={{ disabled: pickedSkippedPages.length === 0 }}
+        destroyOnHidden
+      >
+        <div className="space-y-3">
+          <div className="text-xs text-gray-500">
+            These pages are inside this section&apos;s range but the classifier
+            left them out of extraction. Tick the ones to pull back in — their
+            text is re-fed (or re-extracted) into this section on Save &amp;
+            Re-extract.
+          </div>
+          {(() => {
+            if (activeAction?.kind !== "include_skipped") return null;
+            const section = sections[activeAction.sectionIndex];
+            const skipped = section?.skipped_pages ?? [];
+            if (skipped.length === 0) {
+              return (
+                <div className="text-sm text-amber-700">
+                  This section has no skipped pages.
+                </div>
+              );
+            }
+            return (
+              <Checkbox.Group
+                className="flex flex-col gap-2"
+                value={pickedSkippedPages}
+                onChange={(v) => setPickedSkippedPages(v as number[])}
+              >
+                {skipped
+                  .slice()
+                  .sort((a, b) => a.page_number - b.page_number)
+                  .map((s) => (
+                    <Checkbox key={s.page_number} value={s.page_number}>
+                      <span className="font-medium">Page {s.page_number}</span>
+                      <span className="ml-2 text-xs text-gray-500">
+                        skipped: {s.reason}
+                        {s.duplicate_of != null && ` of p.${s.duplicate_of}`}
+                      </span>
+                    </Checkbox>
+                  ))}
+              </Checkbox.Group>
+            );
+          })()}
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -981,6 +1075,7 @@ function SectionActions({
   onChangeSlug,
   onSplit,
   onMerge,
+  onIncludeSkipped,
 }: {
   section: DetectedSection;
   loading: boolean;
@@ -989,11 +1084,13 @@ function SectionActions({
   onChangeSlug: () => void;
   onSplit: () => void;
   onMerge: () => void;
+  onIncludeSkipped: () => void;
 }) {
   const [start, end] = section.page_range;
   const canSplit = end > start;
   const canMerge = !isLastSection; // can merge with next section (unless this is the last one)
   const isPending = section.status === "pending_review";
+  const skippedCount = section.skipped_pages?.length ?? 0;
 
   // stopPropagation so clicks don't toggle the Collapse panel.
   const stop = (e: React.MouseEvent) => e.stopPropagation();
@@ -1042,6 +1139,13 @@ function SectionActions({
           Merge
         </Button>
       </Tooltip>
+      {skippedCount > 0 && (
+        <Tooltip title="Re-include pages the classifier skipped in this section">
+          <Button size="small" onClick={onIncludeSkipped} disabled={loading}>
+            Include pages ({skippedCount})
+          </Button>
+        </Tooltip>
+      )}
     </Space>
   );
 }
