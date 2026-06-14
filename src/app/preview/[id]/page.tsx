@@ -22,6 +22,7 @@ import {
   Spin,
 } from "antd";
 import { RecordView } from "@/components/record/RecordView";
+import { humanizeKey } from "@/components/record/recordSchema";
 import {
   PreviewRail,
   PreviewView,
@@ -141,9 +142,85 @@ interface TableColumn {
 
 interface ArrayPopupData {
   columnKey: string;
-  items: any[];
   title: string;
+  /** For array cells. */
+  items?: any[];
+  /** For object cells. */
+  object?: Record<string, any>;
 }
+
+// Recursive, human-readable renderer for nested values in the detail modal —
+// primitives, arrays (of primitives → inline; of objects → blocks) and objects
+// (key/value rows), so nothing ever shows "[object Object]".
+const RenderValue: React.FC<{ value: any; depth?: number }> = ({
+  value,
+  depth = 0,
+}) => {
+  if (value === null || value === undefined || value === "") {
+    return <span className="text-gray-400 italic">Not recorded</span>;
+  }
+  if (typeof value === "boolean") {
+    return <span className="text-gray-900">{value ? "Yes" : "No"}</span>;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return <span className="text-gray-400 italic">None</span>;
+    }
+    const allPrimitive = value.every(
+      (v) => v === null || typeof v !== "object",
+    );
+    if (allPrimitive) {
+      return (
+        <span className="text-gray-900 break-words">
+          {value.map((v) => String(v)).join(", ")}
+        </span>
+      );
+    }
+    return (
+      <div className="space-y-2">
+        {value.map((item, i) => (
+          <div
+            key={i}
+            className="rounded-md border border-gray-100 bg-gray-50/60 p-2"
+          >
+            <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+              Item {i + 1}
+            </div>
+            <RenderValue value={item} depth={depth + 1} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value);
+    if (entries.length === 0) {
+      return <span className="text-gray-400 italic">Empty</span>;
+    }
+    return (
+      <div
+        className={
+          depth > 0 ? "space-y-1.5 pl-3 border-l border-gray-100" : "space-y-2"
+        }
+      >
+        {entries.map(([k, v]) => (
+          <div
+            key={k}
+            className="grid grid-cols-[minmax(7rem,11rem)_1fr] gap-3 items-start"
+          >
+            <span className="text-[13px] font-medium text-gray-500 break-words">
+              {humanizeKey(k)}
+            </span>
+            <span className="text-[13.5px] text-gray-900 break-words">
+              <RenderValue value={v} depth={depth + 1} />
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return <span className="text-gray-900 break-words">{String(value)}</span>;
+};
 
 // Component for displaying complex data (arrays and objects)
 const ComplexDataCell: React.FC<{
@@ -176,7 +253,7 @@ const ComplexDataCell: React.FC<{
             onArrayClick({
               columnKey,
               items: value,
-              title: `${columnKey} (${value.length} items)`,
+              title: `${humanizeKey(columnKey)} (${value.length} items)`,
             })
           }
           className="p-0 h-auto text-blue-600 hover:text-blue-800"
@@ -214,36 +291,28 @@ const ComplexDataCell: React.FC<{
     );
   }
 
-  // Handle objects
+  // Handle objects — match the array treatment: a count chip that opens the
+  // full key/value breakdown in the detail modal.
   if (typeof value === "object" && value !== null) {
     const entries = Object.entries(value);
     if (entries.length === 0) {
       return <span className="text-gray-400">{"{}"}</span>;
     }
-
-    // Show first 2 key-value pairs + count if more
-    const maxDisplay = 2;
-    const displayEntries = entries.slice(0, maxDisplay);
-    const remainingCount = entries.length - maxDisplay;
-
     return (
-      <div className="text-xs truncate block" title={JSON.stringify(value)}>
-        <span className="truncate block">
-          {displayEntries.map(([key, val], index) => (
-            <span key={index}>
-              <span className="font-medium text-gray-600">{key}:</span>{" "}
-              <span className="text-gray-900">"{String(val)}"</span>
-              {index < displayEntries.length - 1 && ", "}
-            </span>
-          ))}
-          {remainingCount > 0 && (
-            <span className="text-blue-600 font-medium">
-              {" "}
-              +{remainingCount} more
-            </span>
-          )}
-        </span>
-      </div>
+      <AntButton
+        type="link"
+        size="small"
+        onClick={() =>
+          onArrayClick({
+            columnKey,
+            title: `${humanizeKey(columnKey)} (${entries.length} field${entries.length === 1 ? "" : "s"})`,
+            object: value,
+          })
+        }
+        className="p-0 h-auto text-blue-600 hover:text-blue-800"
+      >
+        {entries.length} field{entries.length === 1 ? "" : "s"}
+      </AntButton>
     );
   }
 
@@ -1403,38 +1472,22 @@ const PreviewPage: React.FC = () => {
         style={{ top: 20 }}
       >
         <div className="max-h-[60vh] overflow-y-auto">
-          <div className="divide-y divide-gray-200">
-            {arrayPopup?.items.map((item, index) => (
-              <div key={index} className="px-4 py-3 hover:bg-gray-50">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-gray-500 uppercase tracking-wider">
+          {arrayPopup?.object ? (
+            <div className="px-4 py-3">
+              <RenderValue value={arrayPopup.object} />
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {arrayPopup?.items?.map((item, index) => (
+                <div key={index} className="px-4 py-3 hover:bg-gray-50">
+                  <div className="text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-2">
                     Item {index + 1}
-                  </span>
+                  </div>
+                  <RenderValue value={item} depth={1} />
                 </div>
-                <div className="text-sm text-gray-900">
-                  {typeof item === "object" && item !== null ? (
-                    <div className="space-y-2">
-                      {Object.entries(item).map(([key, val]) => (
-                        <div
-                          key={key}
-                          className="flex border-b border-gray-100 pb-1 last:border-b-0"
-                        >
-                          <span className="font-medium text-gray-600 flex-shrink-0 mr-3 w-24">
-                            {key}:
-                          </span>
-                          <span className="text-gray-900 break-words">
-                            {String(val)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="break-words">{String(item)}</span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </Modal>
 
