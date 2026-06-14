@@ -1,7 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { useParams, useRouter, usePathname, useSearchParams } from "next/navigation";
+import {
+  useParams,
+  useRouter,
+  usePathname,
+  useSearchParams,
+} from "next/navigation";
 import { apiClient, PreviewDataTable, PreviewJobFile } from "@/lib/api";
 import {
   getCachedPreviewData,
@@ -23,11 +28,7 @@ import {
 } from "antd";
 import { RecordView } from "@/components/record/RecordView";
 import { humanizeKey } from "@/components/record/recordSchema";
-import {
-  PreviewRail,
-  PreviewView,
-  documentTypeLabel,
-} from "./PreviewRail";
+import { PreviewRail, PreviewView, documentTypeLabel } from "./PreviewRail";
 import { parsePreviewUrl, buildPreviewParams } from "./previewUrlState";
 import { ChevronLeftIcon } from "@heroicons/react/24/outline";
 import {
@@ -685,8 +686,7 @@ const PreviewPage: React.FC = () => {
         const slugFilter = view.kind === "records" ? view.slug : undefined;
         const fileFilter = view.kind === "file" ? view.fileId : undefined;
         // Only the unfiltered "all records" view uses the page cache.
-        const useCache =
-          !forceRefresh && view.kind === "records" && !view.slug;
+        const useCache = !forceRefresh && view.kind === "records" && !view.slug;
 
         if (useCache) {
           const cached = getCachedPreviewData(
@@ -910,6 +910,24 @@ const PreviewPage: React.FC = () => {
     }
 
     return String(obj);
+  };
+
+  // GIS-ready CSV: all records of the selected type (not just this page),
+  // flattened to a clean attribute table server-side. Streams the download.
+  const gisExportSlug =
+    view.kind === "records" && view.slug && view.slug !== "untyped"
+      ? view.slug
+      : null;
+
+  const handleGisExport = () => {
+    if (!gisExportSlug) return;
+    const url = apiClient.getPreviewGisExportUrl(previewId, gisExportSlug);
+    const a = document.createElement("a");
+    a.href = url;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const handleExport = (format: "csv" | "json") => {
@@ -1161,15 +1179,28 @@ const PreviewPage: React.FC = () => {
             <Dropdown
               menu={{
                 items: [
+                  ...(gisExportSlug
+                    ? [
+                        {
+                          key: "gis",
+                          label: `Export for GIS — ${documentTypeLabel(
+                            gisExportSlug,
+                          )} (CSV)`,
+                          icon: <DownloadOutlined />,
+                          onClick: handleGisExport,
+                        },
+                        { type: "divider" as const },
+                      ]
+                    : []),
                   {
                     key: "csv",
-                    label: "Export as CSV",
+                    label: "Export as CSV (this page)",
                     icon: <DownloadOutlined />,
                     onClick: () => handleExport("csv"),
                   },
                   {
                     key: "json",
-                    label: "Export as JSON",
+                    label: "Export as JSON (this page)",
                     icon: <DownloadOutlined />,
                     onClick: () => handleExport("json"),
                   },
