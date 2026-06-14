@@ -1444,6 +1444,16 @@ class ApiClient {
         return this.request(`/previews/${id}/files?${params.toString()}`);
     }
 
+    /**
+     * Direct URL for the GIS-ready CSV export of one document type across a
+     * preview (all records of that type). Use as an anchor href to stream the
+     * download; the endpoint is unauthenticated like the other preview reads.
+     */
+    getPreviewGisExportUrl(id: string, slug: string): string {
+        const params = new URLSearchParams({ slug, format: "csv" });
+        return `${this.baseURL}/previews/${id}/export?${params.toString()}`;
+    }
+
     async getPreviewStatistics(id: string): Promise<ApiResponse<{
         total: number;
         humanVerified: number;
