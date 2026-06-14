@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, usePathname, useSearchParams } from "next/navigation";
 import { apiClient, PreviewDataTable, PreviewJobFile } from "@/lib/api";
 import {
   getCachedPreviewData,
@@ -15,11 +15,20 @@ import {
   Modal,
   Button as AntButton,
   Dropdown,
+  Drawer,
   Tag,
   Tooltip,
   notification,
   Spin,
 } from "antd";
+import { RecordView } from "@/components/record/RecordView";
+import { humanizeKey } from "@/components/record/recordSchema";
+import {
+  PreviewRail,
+  PreviewView,
+  documentTypeLabel,
+} from "./PreviewRail";
+import { parsePreviewUrl, buildPreviewParams } from "./previewUrlState";
 import { ChevronLeftIcon } from "@heroicons/react/24/outline";
 import {
   SearchOutlined,
@@ -133,9 +142,85 @@ interface TableColumn {
 
 interface ArrayPopupData {
   columnKey: string;
-  items: any[];
   title: string;
+  /** For array cells. */
+  items?: any[];
+  /** For object cells. */
+  object?: Record<string, any>;
 }
+
+// Recursive, human-readable renderer for nested values in the detail modal —
+// primitives, arrays (of primitives → inline; of objects → blocks) and objects
+// (key/value rows), so nothing ever shows "[object Object]".
+const RenderValue: React.FC<{ value: any; depth?: number }> = ({
+  value,
+  depth = 0,
+}) => {
+  if (value === null || value === undefined || value === "") {
+    return <span className="text-gray-400 italic">Not recorded</span>;
+  }
+  if (typeof value === "boolean") {
+    return <span className="text-gray-900">{value ? "Yes" : "No"}</span>;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return <span className="text-gray-400 italic">None</span>;
+    }
+    const allPrimitive = value.every(
+      (v) => v === null || typeof v !== "object",
+    );
+    if (allPrimitive) {
+      return (
+        <span className="text-gray-900 break-words">
+          {value.map((v) => String(v)).join(", ")}
+        </span>
+      );
+    }
+    return (
+      <div className="space-y-2">
+        {value.map((item, i) => (
+          <div
+            key={i}
+            className="rounded-md border border-gray-100 bg-gray-50/60 p-2"
+          >
+            <div className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+              Item {i + 1}
+            </div>
+            <RenderValue value={item} depth={depth + 1} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value);
+    if (entries.length === 0) {
+      return <span className="text-gray-400 italic">Empty</span>;
+    }
+    return (
+      <div
+        className={
+          depth > 0 ? "space-y-1.5 pl-3 border-l border-gray-100" : "space-y-2"
+        }
+      >
+        {entries.map(([k, v]) => (
+          <div
+            key={k}
+            className="grid grid-cols-[minmax(7rem,11rem)_1fr] gap-3 items-start"
+          >
+            <span className="text-[13px] font-medium text-gray-500 break-words">
+              {humanizeKey(k)}
+            </span>
+            <span className="text-[13.5px] text-gray-900 break-words">
+              <RenderValue value={v} depth={depth + 1} />
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return <span className="text-gray-900 break-words">{String(value)}</span>;
+};
 
 // Component for displaying complex data (arrays and objects)
 const ComplexDataCell: React.FC<{
@@ -168,7 +253,7 @@ const ComplexDataCell: React.FC<{
             onArrayClick({
               columnKey,
               items: value,
-              title: `${columnKey} (${value.length} items)`,
+              title: `${humanizeKey(columnKey)} (${value.length} items)`,
             })
           }
           className="p-0 h-auto text-blue-600 hover:text-blue-800"
@@ -206,36 +291,28 @@ const ComplexDataCell: React.FC<{
     );
   }
 
-  // Handle objects
+  // Handle objects — match the array treatment: a count chip that opens the
+  // full key/value breakdown in the detail modal.
   if (typeof value === "object" && value !== null) {
     const entries = Object.entries(value);
     if (entries.length === 0) {
       return <span className="text-gray-400">{"{}"}</span>;
     }
-
-    // Show first 2 key-value pairs + count if more
-    const maxDisplay = 2;
-    const displayEntries = entries.slice(0, maxDisplay);
-    const remainingCount = entries.length - maxDisplay;
-
     return (
-      <div className="text-xs truncate block" title={JSON.stringify(value)}>
-        <span className="truncate block">
-          {displayEntries.map(([key, val], index) => (
-            <span key={index}>
-              <span className="font-medium text-gray-600">{key}:</span>{" "}
-              <span className="text-gray-900">"{String(val)}"</span>
-              {index < displayEntries.length - 1 && ", "}
-            </span>
-          ))}
-          {remainingCount > 0 && (
-            <span className="text-blue-600 font-medium">
-              {" "}
-              +{remainingCount} more
-            </span>
-          )}
-        </span>
-      </div>
+      <AntButton
+        type="link"
+        size="small"
+        onClick={() =>
+          onArrayClick({
+            columnKey,
+            title: `${humanizeKey(columnKey)} (${entries.length} field${entries.length === 1 ? "" : "s"})`,
+            object: value,
+          })
+        }
+        className="p-0 h-auto text-blue-600 hover:text-blue-800"
+      >
+        {entries.length} field{entries.length === 1 ? "" : "s"}
+      </AntButton>
     );
   }
 
@@ -250,14 +327,27 @@ const ComplexDataCell: React.FC<{
 const PreviewPage: React.FC = () => {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const previewId = params.id as string;
+
+  // Initial page/per_page/slug/view come from the URL (so they're shareable).
+  const initialUrlRef = React.useRef<ReturnType<typeof parsePreviewUrl> | null>(
+    null,
+  );
+  if (!initialUrlRef.current) {
+    initialUrlRef.current = parsePreviewUrl(
+      new URLSearchParams(searchParams?.toString() ?? ""),
+    );
+  }
+  const initialUrl = initialUrlRef.current;
 
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useState(initialUrl.page);
+  const [pageSize, setPageSize] = useState(initialUrl.pageSize);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [searchInput, setSearchInput] = useState("");
@@ -280,6 +370,20 @@ const PreviewPage: React.FC = () => {
   const [wellboreModalOpen, setWellboreModalOpen] = useState(false);
   const [selectedWellData, setSelectedWellData] = useState<any>(null);
   const [selectedFilename, setSelectedFilename] = useState<string>("");
+
+  // Rail navigation: which lens is active.
+  const [view, setView] = useState<PreviewView>(initialUrl.view);
+  const [slugs, setSlugs] = useState<
+    Array<{ slug: string | null; count: number }>
+  >([]);
+  const [fileSummaries, setFileSummaries] = useState<any[]>([]);
+  const [filesTotal, setFilesTotal] = useState<number>(0);
+
+  // Record detail drawer (RecordView engine + hero). The preview is a PUBLIC
+  // page, so we don't fetch the per-type schema from an authed endpoint — we
+  // reuse the preview's own (public) schema for labels and let the engine's
+  // data-driven fallback + slug-based hero handle the rest.
+  const [recordDrawer, setRecordDrawer] = useState<any>(null);
 
   useEffect(() => {
     document.title = previewData?.preview.name ?? "Preview";
@@ -351,9 +455,17 @@ const PreviewPage: React.FC = () => {
                   />
                 </Tooltip>
               )}
-              <span className="text-gray-900 truncate block" title={text}>
+              <button
+                type="button"
+                className="text-blue-600 hover:text-blue-800 hover:underline truncate block text-left bg-transparent border-0 p-0 cursor-pointer"
+                title={`View ${text}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRecordDrawer(record);
+                }}
+              >
                 {text}
-              </span>
+              </button>
             </div>
           );
         },
@@ -481,8 +593,14 @@ const PreviewPage: React.FC = () => {
     if (!previewData?.jobFiles) return [];
 
     const data = previewData.jobFiles.map((file) => ({
+      // _rowId is unique per record; _fileId is the originating file (V2 files
+      // contribute many records, so these differ).
+      _rowId: file.id,
+      _record: file.result, // raw record, for the RecordView detail drawer
       _filename: file.filename,
-      _fileId: file.id,
+      _fileId: file.file_id ?? file.id,
+      _slug: file.slug ?? null,
+      _sectionId: file.section_result_id ?? null,
       _jobName: file.job_name,
       _createdAt: file.created_at,
       _adminVerified: file.admin_verified || false,
@@ -543,15 +661,40 @@ const PreviewPage: React.FC = () => {
           clearPreviewCache(previewId);
         }
 
-        // Check cache first (unless forcing refresh)
-        if (!forceRefresh) {
+        // "By file" lens — file summaries (no record cache).
+        if (view.kind === "files") {
+          const resp = await apiClient.getPreviewFiles(
+            previewId,
+            currentPage,
+            pageSize,
+            searchTerm || undefined,
+          );
+          if (resp.success && resp.data) {
+            setFileSummaries(resp.data.files);
+            setFilesTotal(resp.data.pagination.total);
+            setTotalItems(resp.data.pagination.total);
+            setTotalPages(resp.data.pagination.totalPages);
+          } else {
+            setError("Failed to load files");
+          }
+          setLoading(false);
+          return;
+        }
+
+        // Record lenses (all / by type / scoped to one file).
+        const slugFilter = view.kind === "records" ? view.slug : undefined;
+        const fileFilter = view.kind === "file" ? view.fileId : undefined;
+        // Only the unfiltered "all records" view uses the page cache.
+        const useCache =
+          !forceRefresh && view.kind === "records" && !view.slug;
+
+        if (useCache) {
           const cached = getCachedPreviewData(
             previewId,
             currentPage,
             pageSize,
             searchTerm || undefined,
           );
-
           if (cached) {
             setPreviewData({
               preview: cached.preview,
@@ -564,12 +707,12 @@ const PreviewPage: React.FC = () => {
           }
         }
 
-        // Fetch from API
         const response = await apiClient.getPreviewDataPaginated(
           previewId,
           currentPage,
           pageSize,
           searchTerm || undefined,
+          { slug: slugFilter, fileId: fileFilter },
         );
 
         if (response.success && response.data) {
@@ -579,19 +722,21 @@ const PreviewPage: React.FC = () => {
           });
           setTotalItems(response.data.pagination.total);
           setTotalPages(response.data.pagination.totalPages);
+          if (response.data.slugs) setSlugs(response.data.slugs);
 
-          // Cache the result
-          setCachedPreviewData(
-            previewId,
-            currentPage,
-            pageSize,
-            {
-              preview: response.data.preview,
-              jobFiles: response.data.jobFiles,
-              pagination: response.data.pagination,
-            },
-            searchTerm || undefined,
-          );
+          if (useCache) {
+            setCachedPreviewData(
+              previewId,
+              currentPage,
+              pageSize,
+              {
+                preview: response.data.preview,
+                jobFiles: response.data.jobFiles,
+                pagination: response.data.pagination,
+              },
+              searchTerm || undefined,
+            );
+          }
         } else {
           setError("Failed to load preview data");
         }
@@ -602,8 +747,30 @@ const PreviewPage: React.FC = () => {
         setLoading(false);
       }
     },
-    [previewId, currentPage, pageSize, searchTerm],
+    [previewId, currentPage, pageSize, searchTerm, view],
   );
+
+  // Reset to the first page whenever the rail view changes (but not on the
+  // initial mount, so a `page` restored from the URL isn't clobbered).
+  const firstViewRef = React.useRef(true);
+  useEffect(() => {
+    if (firstViewRef.current) {
+      firstViewRef.current = false;
+      return;
+    }
+    setCurrentPage(1);
+  }, [view]);
+
+  // Persist page / per_page / slug / view in the URL (shareable, restored on load).
+  useEffect(() => {
+    const next = buildPreviewParams(new URLSearchParams(), {
+      page: currentPage,
+      pageSize,
+      view,
+    });
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [currentPage, pageSize, view, pathname, router]);
 
   // Force refresh function
   const handleRefresh = useCallback(async () => {
@@ -1024,45 +1191,144 @@ const PreviewPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-hidden">
-        <Table
-          columns={tableColumns}
-          bordered
-          dataSource={processedData}
-          rowKey={(record) => `${record._fileId}-${record._filename}`}
-          scroll={{ x: "max-content", y: "calc(100vh - 200px)" }}
-          loading={loading}
-          pagination={
-            totalItems > 0 && !loading && processedData.length <= pageSize
-              ? {
-                  current: currentPage,
-                  total: totalItems,
-                  pageSize: pageSize,
-                  showSizeChanger: true,
-                  showQuickJumper: false,
-                  showTotal: (total, range) =>
-                    `${range[0]}-${range[1]} of ${total} items`,
-                  onChange: (page, size) => {
-                    setCurrentPage(page);
-                    if (size !== pageSize) {
-                      setPageSize(size);
-                    }
-                  },
-                  onShowSizeChange: (current, size) => {
-                    setCurrentPage(1);
-                    setPageSize(size);
-                  },
-                  size: "small",
-                  hideOnSinglePage: totalPages <= 1,
-                  position: ["bottomCenter"],
-                  pageSizeOptions: ["10", "20", "50", "100"],
-                }
-              : false
-          }
-          size="small"
-          className="ant-table-custom h-full"
+      {/* Scrollable Content with rail */}
+      <div className="flex-1 overflow-hidden flex">
+        <PreviewRail
+          slugs={slugs}
+          totalRecords={slugs.reduce((a, s) => a + s.count, 0) || undefined}
+          totalFiles={filesTotal || undefined}
+          view={view}
+          onSelect={setView}
         />
+        <div className="flex-1 overflow-hidden flex flex-col">
+          {view.kind === "file" && (
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 text-sm bg-white">
+              <button
+                type="button"
+                className="text-blue-600 hover:underline bg-transparent border-0 p-0 cursor-pointer"
+                onClick={() => setView({ kind: "files" })}
+              >
+                ← Files
+              </button>
+              <span className="text-gray-400">/</span>
+              <span className="text-gray-700 truncate">{view.filename}</span>
+            </div>
+          )}
+
+          {view.kind === "files" ? (
+            <Table
+              columns={[
+                {
+                  title: "File",
+                  dataIndex: "filename",
+                  key: "filename",
+                  ellipsis: true,
+                  render: (text: string, f: any) => (
+                    <button
+                      type="button"
+                      className="text-blue-600 hover:text-blue-800 hover:underline text-left bg-transparent border-0 p-0 cursor-pointer truncate block"
+                      title={`Open ${text}`}
+                      onClick={() =>
+                        setView({
+                          kind: "file",
+                          fileId: f.id,
+                          filename: f.filename,
+                        })
+                      }
+                    >
+                      {text}
+                    </button>
+                  ),
+                },
+                {
+                  title: "Contents",
+                  key: "contents",
+                  render: (_: unknown, f: any) =>
+                    f.by_type && f.by_type.length
+                      ? f.by_type
+                          .map(
+                            (t: { slug: string | null; count: number }) =>
+                              `${t.count} ${documentTypeLabel(t.slug)}`,
+                          )
+                          .join(" · ")
+                      : `${f.total_records} records`,
+                },
+                {
+                  title: "Records",
+                  dataIndex: "total_records",
+                  key: "total_records",
+                  width: 90,
+                  align: "right" as const,
+                },
+                {
+                  title: "Status",
+                  dataIndex: "review_status",
+                  key: "review_status",
+                  width: 120,
+                  render: (s: string) => <Tag>{s || "pending"}</Tag>,
+                },
+              ]}
+              dataSource={fileSummaries}
+              rowKey="id"
+              loading={loading}
+              scroll={{ y: "calc(100vh - 200px)" }}
+              pagination={
+                filesTotal > pageSize
+                  ? {
+                      current: currentPage,
+                      total: filesTotal,
+                      pageSize,
+                      onChange: (p) => setCurrentPage(p),
+                      size: "small",
+                      position: ["bottomCenter"],
+                    }
+                  : false
+              }
+              size="small"
+              className="ant-table-custom"
+            />
+          ) : (
+            <Table
+              columns={tableColumns}
+              bordered
+              dataSource={processedData}
+              rowKey={(record) =>
+                record._rowId ?? `${record._fileId}-${record._filename}`
+              }
+              scroll={{ x: "max-content", y: "calc(100vh - 200px)" }}
+              loading={loading}
+              pagination={
+                totalItems > 0 && !loading && processedData.length <= pageSize
+                  ? {
+                      current: currentPage,
+                      total: totalItems,
+                      pageSize: pageSize,
+                      showSizeChanger: true,
+                      showQuickJumper: false,
+                      showTotal: (total, range) =>
+                        `${range[0]}-${range[1]} of ${total} items`,
+                      onChange: (page, size) => {
+                        setCurrentPage(page);
+                        if (size !== pageSize) {
+                          setPageSize(size);
+                        }
+                      },
+                      onShowSizeChange: (current, size) => {
+                        setCurrentPage(1);
+                        setPageSize(size);
+                      },
+                      size: "small",
+                      hideOnSinglePage: totalPages <= 1,
+                      position: ["bottomCenter"],
+                      pageSizeOptions: ["10", "20", "50", "100"],
+                    }
+                  : false
+              }
+              size="small"
+              className="ant-table-custom h-full"
+            />
+          )}
+        </div>
       </div>
 
       {/* Quality Score Info Modal */}
@@ -1206,40 +1472,51 @@ const PreviewPage: React.FC = () => {
         style={{ top: 20 }}
       >
         <div className="max-h-[60vh] overflow-y-auto">
-          <div className="divide-y divide-gray-200">
-            {arrayPopup?.items.map((item, index) => (
-              <div key={index} className="px-4 py-3 hover:bg-gray-50">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-gray-500 uppercase tracking-wider">
+          {arrayPopup?.object ? (
+            <div className="px-4 py-3">
+              <RenderValue value={arrayPopup.object} />
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {arrayPopup?.items?.map((item, index) => (
+                <div key={index} className="px-4 py-3 hover:bg-gray-50">
+                  <div className="text-[11px] font-medium text-gray-400 uppercase tracking-wider mb-2">
                     Item {index + 1}
-                  </span>
+                  </div>
+                  <RenderValue value={item} depth={1} />
                 </div>
-                <div className="text-sm text-gray-900">
-                  {typeof item === "object" && item !== null ? (
-                    <div className="space-y-2">
-                      {Object.entries(item).map(([key, val]) => (
-                        <div
-                          key={key}
-                          className="flex border-b border-gray-100 pb-1 last:border-b-0"
-                        >
-                          <span className="font-medium text-gray-600 flex-shrink-0 mr-3 w-24">
-                            {key}:
-                          </span>
-                          <span className="text-gray-900 break-words">
-                            {String(val)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="break-words">{String(item)}</span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </Modal>
+
+      {/* Record detail drawer — the schema-driven RecordView (engine + hero) */}
+      <Drawer
+        open={!!recordDrawer}
+        onClose={() => setRecordDrawer(null)}
+        width={920}
+        title={recordDrawer?._filename}
+        styles={{ body: { background: "#f9fafb" } }}
+        destroyOnClose
+      >
+        {recordDrawer && (
+          <RecordView
+            data={recordDrawer._record ?? recordDrawer}
+            schema={previewData?.preview?.schema as never}
+            slug={recordDrawer._slug ?? undefined}
+            trust={{
+              verification:
+                recordDrawer._reviewStatus === "approved"
+                  ? "approved"
+                  : recordDrawer._reviewStatus === "rejected"
+                    ? "rejected"
+                    : "pending",
+              qa: null,
+            }}
+          />
+        )}
+      </Drawer>
 
       {/* Wellbore Diagram Drawer */}
       <WellboreDiagramDrawer
