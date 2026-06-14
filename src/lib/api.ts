@@ -520,6 +520,7 @@ export interface PreviewDataTable {
 }
 
 export interface PreviewJobFile {
+    /** Unique row id — the record's section_result_id (or a synthetic fallback). */
     id: string;
     filename: string;
     result: any;
@@ -528,6 +529,11 @@ export interface PreviewJobFile {
     job_name: string;
     admin_verified?: boolean;
     review_status?: 'pending' | 'in_review' | 'reviewed' | 'approved' | 'rejected';
+    /** V2: the originating file id (multiple records can share one file). */
+    file_id?: string;
+    /** V2: the record's document type. */
+    slug?: string | null;
+    section_result_id?: string | null;
 }
 
 export interface PreviewAnalyticsReport {
@@ -1384,10 +1390,12 @@ class ApiClient {
         id: string,
         page: number = 1,
         pageSize: number = 20,
-        search?: string
+        search?: string,
+        opts?: { slug?: string | null; fileId?: string | null }
     ): Promise<ApiResponse<{
         preview: PreviewDataTable;
         jobFiles: PreviewJobFile[];
+        slugs?: Array<{ slug: string | null; count: number }>;
         pagination: {
             total: number;
             page: number;
@@ -1402,7 +1410,38 @@ class ApiClient {
         if (search && search.trim()) {
             params.append('search', search.trim());
         }
+        if (opts?.slug) params.append('slug', opts.slug);
+        if (opts?.fileId) params.append('fileId', opts.fileId);
         return this.request(`/previews/${id}/data?${params.toString()}`);
+    }
+
+    /** "By file" lens: files with a by-type record summary + review status. */
+    async getPreviewFiles(
+        id: string,
+        page: number = 1,
+        pageSize: number = 20,
+        search?: string
+    ): Promise<ApiResponse<{
+        preview: PreviewDataTable;
+        files: Array<{
+            id: string;
+            filename: string;
+            job_name: string;
+            created_at: string;
+            processing_status: string;
+            admin_verified?: boolean;
+            review_status?: string;
+            total_records: number;
+            by_type: Array<{ slug: string | null; count: number }>;
+        }>;
+        pagination: { total: number; page: number; pageSize: number; totalPages: number };
+    }>> {
+        const params = new URLSearchParams({
+            page: page.toString(),
+            pageSize: pageSize.toString(),
+        });
+        if (search && search.trim()) params.append('search', search.trim());
+        return this.request(`/previews/${id}/files?${params.toString()}`);
     }
 
     async getPreviewStatistics(id: string): Promise<ApiResponse<{
