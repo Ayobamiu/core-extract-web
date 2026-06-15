@@ -641,6 +641,42 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     [sectionEntries, onSelectedSectionResultIdChange],
   );
 
+  useEffect(() => {
+    if (sectionEntries.length <= 1) return;
+
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        return true;
+      }
+      if (target.isContentEditable) return true;
+      if (target.closest(".cm-editor")) return true;
+      if (target.closest(".ant-select-dropdown")) return true;
+      return false;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (isTypingTarget(e.target)) return;
+
+      if (e.key === "ArrowLeft" && selectedSectionIdx > 0) {
+        e.preventDefault();
+        selectSectionIdx(selectedSectionIdx - 1);
+      } else if (
+        e.key === "ArrowRight" &&
+        selectedSectionIdx < sectionEntries.length - 1
+      ) {
+        e.preventDefault();
+        selectSectionIdx(selectedSectionIdx + 1);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sectionEntries.length, selectedSectionIdx, selectSectionIdx]);
+
   const setResultTab = useCallback(
     (tab: TabType) => {
       setFallbackTab(tab);
@@ -1397,7 +1433,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               selectSectionIdx(Math.max(0, selectedSectionIdx - 1))
             }
             className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="Previous section"
+            title="Previous section (⌘←)"
           >
             <ChevronLeft className="w-4 h-4 text-gray-600" />
           </button>
@@ -1454,7 +1490,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               )
             }
             className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="Next section"
+            title="Next section (⌘→)"
           >
             <ChevronRight className="w-4 h-4 text-gray-600" />
           </button>

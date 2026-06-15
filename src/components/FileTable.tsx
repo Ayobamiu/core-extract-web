@@ -1081,6 +1081,7 @@ const FileTable: React.FC<FileTableProps> = ({
     if (!fullscreenModalOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey) return;
       if (e.key === "ArrowLeft" && fullscreenFileIndex > 0) {
         onActiveFileIdChange?.(data[fullscreenFileIndex - 1].id);
       } else if (
