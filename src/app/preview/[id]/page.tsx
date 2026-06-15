@@ -130,6 +130,67 @@ const tableStyles = `
   }
 `;
 
+// When showing records (rather than files), the first fixed column shows the
+// record's identifier instead of the filename — e.g. a borehole_log record is
+// identified by its boring_well_id. Identifier fields vary by vendor and are
+// often nested under a metadata container, so we search a prioritized list of
+// field names across the record root and the common container objects. Higher
+// priority = more specific identifier (a boring/well id beats a sample/location
+// id), so a record with several id-ish fields gets labeled by the best one.
+const ID_FIELD_PRIORITY = [
+  "boring_well_id",
+  "boring_well_id_full",
+  "boring_well_no",
+  "boring_id",
+  "borehole_no",
+  "boring_no",
+  "well_number",
+  "well_no",
+  "well_id",
+  "monitoring_well_id",
+  "well_name",
+  "api_number",
+  "location_id",
+  "station_id",
+  "site_id",
+  "sample_id",
+];
+
+// Objects (besides the record root) that commonly hold the identifier.
+const ID_CONTAINERS: Array<string | null> = [
+  null, // the record root itself (flat records)
+  "document_metadata",
+  "site_identification",
+  "site_and_location",
+  "boring_identification",
+  "test_setup",
+  "sample_collection",
+  "well_information",
+  "project_information",
+  "general_information",
+];
+
+function scalarField(obj: any, key: string): string | null {
+  if (!obj || typeof obj !== "object") return null;
+  const v = obj[key];
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  return null;
+}
+
+/** Resolve the identifier value used to label a record row, or null if none. */
+function recordIdentifier(record: any): string | null {
+  if (!record || typeof record !== "object") return null;
+  for (const field of ID_FIELD_PRIORITY) {
+    for (const container of ID_CONTAINERS) {
+      const obj = container ? record[container] : record;
+      const v = scalarField(obj, field);
+      if (v) return v;
+    }
+  }
+  return null;
+}
+
 interface PreviewData {
   preview: PreviewDataTable;
   jobFiles: PreviewJobFile[];
@@ -409,16 +470,38 @@ const PreviewPage: React.FC = () => {
 
   // Create Ant Design table columns
   const tableColumns: ColumnsType<any> = useMemo(() => {
+    // When showing files, the first fixed column is the filename. When showing
+    // records, it's the record's identifier (e.g. boring_well_id) instead — the
+    // filename is repetitive there (one file can yield many records).
+    const showingFiles = view.kind === "files";
+   
+
     const baseColumns: ColumnsType<any> = [
       {
-        title: "File",
-        dataIndex: "_filename",
-        key: "_filename",
+        title: showingFiles ? "File" : "ID",
+        key: showingFiles ? "_filename" : "_identifier",
         width: 200,
         fixed: "left",
         ellipsis: true,
-        sorter: (a, b) => a._filename.localeCompare(b._filename),
-        render: (text: string, record: any) => {
+        sorter: (a, b) => {
+          const aLabel = showingFiles
+            ? a._filename
+            : recordIdentifier(a) ?? a._filename ?? "";
+          const bLabel = showingFiles
+            ? b._filename
+            : recordIdentifier(b) ?? b._filename ?? "";
+          return String(aLabel).localeCompare(String(bLabel));
+        },
+        render: (_: unknown, record: any) => {
+          // Identifier shown in the cell — filename in files view, record id
+          // otherwise. Fall back to filename when a record has no id value.
+          const id = showingFiles ? null : recordIdentifier(record);
+          const label = showingFiles
+            ? record._filename
+            : id ?? record._filename;
+           console.log({id,label, showingFiles})
+          const isFallback = !showingFiles && !id;
+
           // Check if record has well data (formations, casing, etc.)
           const hasWellData =
             record.formations ||
@@ -438,18 +521,18 @@ const PreviewPage: React.FC = () => {
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedWellData(record);
-                      setSelectedFilename(text);
+                      setSelectedFilename(label);
                       setWellboreModalOpen(true);
                       trackPreviewAnalytics(previewId, [
                         {
                           type: "wellbore_open",
                           jobFileId: record._fileId,
-                          wellLabel: text,
+                          wellLabel: label,
                         },
                         {
                           type: "well_view",
                           jobFileId: record._fileId,
-                          wellLabel: text,
+                          wellLabel: label,
                         },
                       ]);
                     }}
@@ -458,14 +541,18 @@ const PreviewPage: React.FC = () => {
               )}
               <button
                 type="button"
-                className="text-blue-600 hover:text-blue-800 hover:underline truncate block text-left bg-transparent border-0 p-0 cursor-pointer"
-                title={`View ${text}`}
+                className={`hover:underline truncate block text-left bg-transparent border-0 p-0 cursor-pointer ${
+                  isFallback
+                    ? "text-gray-400 italic hover:text-gray-600"
+                    : "text-blue-600 hover:text-blue-800"
+                }`}
+                title={`View ${label}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   setRecordDrawer(record);
                 }}
               >
-                {text}
+                {label}
               </button>
             </div>
           );
@@ -587,7 +674,7 @@ const PreviewPage: React.FC = () => {
     };
 
     return [...baseColumns, ...dynamicColumns, qaStatusColumn];
-  }, [columns, handleArrayClick]);
+  }, [columns, handleArrayClick, view.kind, previewId]);
 
   // Process data (no client-side filtering since we use server-side search)
   const processedData = useMemo(() => {
