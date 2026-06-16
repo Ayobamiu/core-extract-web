@@ -9,7 +9,19 @@ import FileViewerHeader, {
   type FileViewerHeaderProps,
 } from "./FileViewerHeader";
 import FileViewerRightPane from "./FileViewerRightPane";
+import dynamic from "next/dynamic";
 import { Loader } from "lucide-react";
+
+// pdf.js (used by react-pdf) references browser-only globals like DOMMatrix at
+// import time, which throws during SSR. Load the viewer client-side only.
+const PdfViewer = dynamic(() => import("./PdfViewer"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full">
+      <Loader className="w-6 h-6 animate-spin text-gray-400" />
+    </div>
+  ),
+});
 
 const { Text } = Typography;
 
@@ -61,23 +73,6 @@ export default function FileViewerLayout({
   onViewerResultTabChange,
   ...headerProps
 }: FileViewerLayoutProps) {
-  const _pageCountDisplay = React.useMemo(() => {
-    if (!file) return null;
-    if (
-      typeof file.page_count === "number" &&
-      Number.isFinite(file.page_count)
-    ) {
-      return file.page_count;
-    }
-    if (typeof file.pages === "number" && Number.isFinite(file.pages)) {
-      return file.pages;
-    }
-    if (Array.isArray(file.pages)) {
-      return file.pages.length;
-    }
-    return null;
-  }, [file]);
-
   return (
     <div className={`flex flex-col overflow-hidden bg-gray-50 ${className}`}>
       <FileViewerHeader file={file} {...headerProps} />
@@ -94,26 +89,13 @@ export default function FileViewerLayout({
         <Splitter className="flex-1 min-h-0">
           <Splitter.Panel defaultSize="50%" min={200}>
             <div className="flex flex-col h-full min-w-0 overflow-hidden border-r border-gray-200 bg-gray-100">
-              <div className="px-3 py-1 bg-white border-b border-gray-200 flex-shrink-0 flex items-baseline gap-2">
-                <Text className="text-xs font-medium text-gray-600">PDF</Text>
-                {_pageCountDisplay != null && (
-                  <Text className="text-[11px] text-gray-400">
-                    {_pageCountDisplay} pages
-                  </Text>
-                )}
-              </div>
               <div className="flex-1 overflow-hidden min-h-0">
                 {pdfUrlLoading ? (
                   <div className="flex items-center justify-center h-full">
                     <Loader className="w-6 h-6 animate-spin text-gray-400" />
                   </div>
                 ) : pdfUrl ? (
-                  <iframe
-                    key={file.id}
-                    src={pdfUrl}
-                    className="w-full h-full border-0 bg-white"
-                    title={`PDF viewer for ${file.filename}`}
-                  />
+                  <PdfViewer url={pdfUrl} fileKey={file.id} />
                 ) : (
                   <div className="flex items-center justify-center h-full">
                     <Text type="secondary" className="text-sm">
