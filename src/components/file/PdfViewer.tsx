@@ -3,6 +3,7 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,12 +11,14 @@ import React, {
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import { Button, InputNumber, Tooltip, Typography } from "antd";
+import { Button, InputNumber, Segmented, Tooltip, Typography } from "antd";
 import {
   ChevronLeft,
   ChevronRight,
+  FileText,
   Loader,
   RotateCw,
+  ScrollText,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -32,6 +35,11 @@ pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 const ZOOM_STEP = 0.2;
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 4;
+const PAGE_GAP = 8;
+// Fallback aspect (height / width) for not-yet-rendered pages — US Letter.
+const DEFAULT_ASPECT = 11 / 8.5;
+
+type ViewMode = "continuous" | "single";
 
 type PdfViewerProps = {
   url: string;
@@ -39,17 +47,30 @@ type PdfViewerProps = {
   fileKey: string;
 };
 
+const clamp = (n: number, lo: number, hi: number) =>
+  Math.min(hi, Math.max(lo, n));
+
 export default function PdfViewer({ url, fileKey }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1); // 1 = fit container width
   const [rotation, setRotation] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>("continuous");
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // The page is rendered at (container width × zoom), so the default fills the
   // pane and stays responsive when the resizable split changes.
   const scrollRef = useRef<HTMLDivElement>(null);
   const [baseWidth, setBaseWidth] = useState(0);
+
+  // Virtualization state for continuous mode: which pages are mounted, and the
+  // measured height of each rendered page (used to size placeholders so the
+  // scrollbar is accurate without mounting all pages — matters for 100s of pages).
+  const [renderSet, setRenderSet] = useState<Set<number>>(new Set());
+  const pageHeights = useRef<Map<number, number>>(new Map());
+  const pageEls = useRef<Map<number, HTMLDivElement>>(new Map());
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const programmaticScroll = useRef(false);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -68,35 +89,170 @@ export default function PdfViewer({ url, fileKey }: PdfViewerProps) {
     setRotation(0);
     setLoadError(null);
     setNumPages(0);
+    setRenderSet(new Set());
+    pageHeights.current.clear();
   }, [fileKey]);
 
-  const onLoadSuccess = useCallback(
-    ({ numPages: n }: { numPages: number }) => {
-      setNumPages(n);
-      setPageNumber((p) => Math.min(Math.max(1, p), n));
+  // Page geometry changed → previous placeholder heights are stale.
+  useEffect(() => {
+    pageHeights.current.clear();
+  }, [zoom, rotation, baseWidth]);
+
+  const pageWidth =
+    baseWidth > 0 ? Math.max(1, (baseWidth - 16) * zoom) : undefined;
+
+  // Placeholder height for not-yet-mounted pages: reuse a measured page if we
+  // have one, else the Letter ratio. Cheap; recomputed each render (e.g. scroll).
+  const estimatedHeight = (() => {
+    const first = pageHeights.current.values().next().value as
+      | number
+      | undefined;
+    if (first) return first;
+    return pageWidth ? pageWidth * DEFAULT_ASPECT : 800;
+  })();
+
+  const onLoadSuccess = useCallback(({ numPages: n }: { numPages: number }) => {
+    setNumPages(n);
+    setPageNumber((p) => clamp(p, 1, n));
+  }, []);
+
+  // Recompute which pages to mount (visible ± 1 viewport) and the active page,
+  // from the scroll position. Cheap O(numPages) scan, throttled via rAF.
+  const recompute = useCallback(() => {
+    const cont = scrollRef.current;
+    if (!cont || viewMode !== "continuous") return;
+    const cr = cont.getBoundingClientRect();
+    const buffer = cr.height; // one viewport of look-ahead each side
+    const top = cr.top - buffer;
+    const bottom = cr.bottom + buffer;
+    const line = cr.top + 40; // "current page" is the one crossing this line
+    const next = new Set<number>();
+    let current = 1;
+    pageEls.current.forEach((el, p) => {
+      const r = el.getBoundingClientRect();
+      if (r.bottom >= top && r.top <= bottom) next.add(p);
+      if (r.top <= line) current = p;
+    });
+    setRenderSet((prev) => {
+      if (prev.size === next.size && [...next].every((p) => prev.has(p)))
+        return prev;
+      return next;
+    });
+    if (!programmaticScroll.current) {
+      setPageNumber((prev) => (prev === current ? prev : current));
+    }
+  }, [viewMode]);
+
+  // Trailing throttle (~60ms). setTimeout instead of rAF so virtualization keeps
+  // working in backgrounded tabs (where rAF is paused).
+  const onScroll = useCallback(() => {
+    if (scrollTimer.current != null) return;
+    scrollTimer.current = setTimeout(() => {
+      scrollTimer.current = null;
+      programmaticScroll.current = false;
+      recompute();
+    }, 60);
+  }, [recompute]);
+
+  useEffect(
+    () => () => {
+      if (scrollTimer.current != null) clearTimeout(scrollTimer.current);
     },
     [],
   );
 
-  const goTo = useCallback(
-    (next: number) => {
-      setPageNumber((p) => {
-        const target = Number.isFinite(next) ? next : p;
-        return Math.min(Math.max(1, target), numPages || 1);
-      });
+  // Initial / dependency-driven recompute for continuous mode.
+  useLayoutEffect(() => {
+    if (viewMode === "continuous" && numPages > 0 && baseWidth > 0) {
+      recompute();
+    }
+  }, [viewMode, numPages, baseWidth, recompute]);
+
+  const setPageRef = useCallback(
+    (p: number) => (el: HTMLDivElement | null) => {
+      if (el) pageEls.current.set(p, el);
+      else pageEls.current.delete(p);
     },
-    [numPages],
+    [],
   );
 
-  const zoomBy = useCallback((delta: number) => {
-    setZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z + delta).toFixed(2))));
+  const onPageRender = useCallback(
+    (p: number) => () => {
+      const el = pageEls.current.get(p);
+      if (el) {
+        const h = el.getBoundingClientRect().height;
+        if (h > 0) pageHeights.current.set(p, h);
+      }
+    },
+    [],
+  );
+
+  const scrollToPage = useCallback((p: number) => {
+    const el = pageEls.current.get(p);
+    const cont = scrollRef.current;
+    if (!el || !cont) return;
+    programmaticScroll.current = true;
+    cont.scrollTop +=
+      el.getBoundingClientRect().top - cont.getBoundingClientRect().top;
   }, []);
 
-  // Stable options object — react-pdf re-fetches if this identity changes.
-  const docOptions = useMemo(() => ({}), []);
+  const goTo = useCallback(
+    (next: number) => {
+      const target = clamp(Number.isFinite(next) ? next : 1, 1, numPages || 1);
+      setPageNumber(target);
+      if (viewMode === "continuous") scrollToPage(target);
+    },
+    [numPages, viewMode, scrollToPage],
+  );
 
-  // ~16px of horizontal breathing room inside the scroll area.
-  const pageWidth = baseWidth > 0 ? Math.max(1, (baseWidth - 16) * zoom) : undefined;
+  // When switching to continuous, jump to the page the user was on.
+  useEffect(() => {
+    if (viewMode === "continuous" && numPages > 0) {
+      const id = setTimeout(() => scrollToPage(pageNumber), 0);
+      return () => clearTimeout(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
+
+  const zoomBy = useCallback((delta: number) => {
+    setZoom((z) => clamp(+(z + delta).toFixed(2), MIN_ZOOM, MAX_ZOOM));
+  }, []);
+
+  const docOptions = useMemo(() => ({}), []); // stable — react-pdf refetches if identity changes
+
+  const renderPage = (p: number, mount: boolean) => (
+    <div
+      key={p}
+      ref={setPageRef(p)}
+      data-page={p}
+      className="flex justify-center"
+      style={
+        mount
+          ? undefined
+          : { height: pageHeights.current.get(p) ?? estimatedHeight }
+      }
+    >
+      {mount && (
+        <Page
+          pageNumber={p}
+          width={pageWidth}
+          rotate={rotation}
+          renderTextLayer
+          renderAnnotationLayer
+          onRenderSuccess={onPageRender(p)}
+          className="shadow-sm bg-white"
+          loading={
+            <div
+              className="flex items-center justify-center bg-white"
+              style={{ height: pageHeights.current.get(p) ?? estimatedHeight }}
+            >
+              <Loader className="w-5 h-5 animate-spin text-gray-300" />
+            </div>
+          }
+        />
+      )}
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-gray-100">
@@ -177,10 +333,40 @@ export default function PdfViewer({ url, fileKey }: PdfViewerProps) {
             onClick={() => setRotation((r) => (r + 90) % 360)}
           />
         </Tooltip>
+
+        <div className="flex-1" />
+
+        <Segmented<ViewMode>
+          size="small"
+          value={viewMode}
+          onChange={setViewMode}
+          options={[
+            {
+              value: "continuous",
+              label: (
+                <Tooltip title="Continuous scroll">
+                  <ScrollText className="w-4 h-4" />
+                </Tooltip>
+              ),
+            },
+            {
+              value: "single",
+              label: (
+                <Tooltip title="Single page">
+                  <FileText className="w-4 h-4" />
+                </Tooltip>
+              ),
+            },
+          ]}
+        />
       </div>
 
       {/* Page area */}
-      <div ref={scrollRef} className="flex-1 overflow-auto min-h-0 p-2">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="flex-1 overflow-auto min-h-0 p-2"
+      >
         {loadError ? (
           <div className="flex items-center justify-center h-full">
             <Text type="secondary" className="text-sm">
@@ -193,9 +379,7 @@ export default function PdfViewer({ url, fileKey }: PdfViewerProps) {
             file={url}
             options={docOptions}
             onLoadSuccess={onLoadSuccess}
-            onLoadError={(e) =>
-              setLoadError(e?.message || "Unable to load PDF")
-            }
+            onLoadError={(e) => setLoadError(e?.message || "Unable to load PDF")}
             loading={
               <div className="flex items-center justify-center h-full py-12">
                 <Loader className="w-6 h-6 animate-spin text-gray-400" />
@@ -209,24 +393,36 @@ export default function PdfViewer({ url, fileKey }: PdfViewerProps) {
                 </Text>
               </div>
             }
-            className="flex justify-center"
           >
-            {numPages > 0 && (
-              <Page
-                key={`${pageNumber}-${rotation}`}
-                pageNumber={pageNumber}
-                width={pageWidth}
-                rotate={rotation}
-                renderTextLayer
-                renderAnnotationLayer
-                className="shadow-sm bg-white"
-                loading={
-                  <div className="flex items-center justify-center py-12">
-                    <Loader className="w-6 h-6 animate-spin text-gray-400" />
-                  </div>
-                }
-              />
-            )}
+            {numPages > 0 &&
+              pageWidth != null &&
+              (viewMode === "single" ? (
+                <div className="flex justify-center">
+                  <Page
+                    key={`${pageNumber}-${rotation}`}
+                    pageNumber={pageNumber}
+                    width={pageWidth}
+                    rotate={rotation}
+                    renderTextLayer
+                    renderAnnotationLayer
+                    className="shadow-sm bg-white"
+                    loading={
+                      <div className="flex items-center justify-center py-12">
+                        <Loader className="w-6 h-6 animate-spin text-gray-400" />
+                      </div>
+                    }
+                  />
+                </div>
+              ) : (
+                <div
+                  className="flex flex-col items-center"
+                  style={{ gap: PAGE_GAP }}
+                >
+                  {Array.from({ length: numPages }, (_, i) =>
+                    renderPage(i + 1, renderSet.has(i + 1)),
+                  )}
+                </div>
+              ))}
           </Document>
         )}
       </div>
