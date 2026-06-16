@@ -28,6 +28,7 @@ import {
   Modal,
   Popconfirm,
   Select,
+  Splitter,
   Typography,
 } from "antd";
 import type { MenuProps } from "antd";
@@ -401,7 +402,7 @@ function QAFindingsPanel({
   };
 
   return (
-    <div className="flex-shrink-0 border-t border-gray-200 bg-white px-3 py-2 space-y-2 max-h-64 overflow-y-auto">
+    <div className="h-full bg-white px-3 py-2 space-y-2 overflow-y-auto">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
           QA Findings{" "}
@@ -1414,6 +1415,61 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     }
   };
 
+  // QA findings render below the JSON result, in a resizable bottom panel.
+  const showFindings =
+    isV2 &&
+    !!selectedSection?.sectionResultId &&
+    selectedSectionFindings.length > 0;
+
+  const jsonViewerEl = (
+    <JsonViewer
+      text={editableJson}
+      descriptions={fieldDescriptions}
+      onChange={({ text, isValid, error }) => {
+        setEditableJson(text);
+        setJsonError(isValid ? null : (error ?? "Invalid JSON"));
+      }}
+      readOnly={!editable}
+      bordered={false}
+      defaultMode="tree"
+      height="100%"
+      toolbar={
+        editable
+          ? [
+              "mode",
+              "format",
+              "minify",
+              "wrap",
+              "search",
+              "copy",
+              "download",
+              "upload",
+              "cancel",
+              "save",
+            ]
+          : ["mode", "wrap", "search", "copy", "download"]
+      }
+      onSave={
+        editable
+          ? async () => {
+              await handleSave();
+            }
+          : undefined
+      }
+      onCancel={
+        editable
+          ? () => {
+              setEditableJson(JSON.stringify(sectionData, null, 2));
+              setJsonError(null);
+            }
+          : undefined
+      }
+      cancelLabel="Reset"
+      saveLabel={saveLabel}
+      saving={isSaving}
+    />
+  );
+
   return (
     <div
       className={`bg-white flex flex-col h-full overflow-hidden ${className}`}
@@ -1655,69 +1711,28 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           transition={{ duration: 0.2 }}
           className="flex-1 overflow-hidden flex flex-col min-h-0"
         >
-          {activeTab === "results" && (
-            <div className="flex-1 min-h-0 flex flex-col">
-              <JsonViewer
-                text={editableJson}
-                descriptions={fieldDescriptions}
-                onChange={({ text, isValid, error }) => {
-                  setEditableJson(text);
-                  setJsonError(isValid ? null : (error ?? "Invalid JSON"));
-                }}
-                readOnly={!editable}
-                bordered={false}
-                defaultMode="tree"
-                height="100%"
-                toolbar={
-                  editable
-                    ? [
-                        "mode",
-                        "format",
-                        "minify",
-                        "wrap",
-                        "search",
-                        "copy",
-                        "download",
-                        "upload",
-                        "cancel",
-                        "save",
-                      ]
-                    : ["mode", "wrap", "search", "copy", "download"]
-                }
-                onSave={
-                  editable
-                    ? async () => {
-                        await handleSave();
-                      }
-                    : undefined
-                }
-                onCancel={
-                  editable
-                    ? () => {
-                        setEditableJson(JSON.stringify(sectionData, null, 2));
-                        setJsonError(null);
-                      }
-                    : undefined
-                }
-                cancelLabel="Reset"
-                saveLabel={saveLabel}
-                saving={isSaving}
-              />
-            </div>
-          )}
-
-          {/* QA Findings Panel — shown below the JSON editor when section is selected */}
           {activeTab === "results" &&
-            isV2 &&
-            selectedSection?.sectionResultId &&
-            selectedSectionFindings.length > 0 && (
-              <QAFindingsPanel
-                findings={selectedSectionFindings}
-                onUpdate={handleUpdateFinding}
-                onApply={handleApplyFinding}
-                canApply={editable}
-              />
-            )}
+            (showFindings ? (
+              // JSON result on top, QA findings below — the divider between them
+              // is draggable so the user can grow either pane.
+              <Splitter layout="vertical" className="flex-1 min-h-0">
+                <Splitter.Panel min={120}>
+                  <div className="h-full min-h-0 flex flex-col">
+                    {jsonViewerEl}
+                  </div>
+                </Splitter.Panel>
+                <Splitter.Panel defaultSize={220} min={80} max="70%">
+                  <QAFindingsPanel
+                    findings={selectedSectionFindings}
+                    onUpdate={handleUpdateFinding}
+                    onApply={handleApplyFinding}
+                    canApply={editable}
+                  />
+                </Splitter.Panel>
+              </Splitter>
+            ) : (
+              <div className="flex-1 min-h-0 flex flex-col">{jsonViewerEl}</div>
+            ))}
 
           {activeTab === "markdown" && markdown && (
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
