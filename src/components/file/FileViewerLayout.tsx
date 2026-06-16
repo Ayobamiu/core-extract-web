@@ -9,7 +9,19 @@ import FileViewerHeader, {
   type FileViewerHeaderProps,
 } from "./FileViewerHeader";
 import FileViewerRightPane from "./FileViewerRightPane";
+import dynamic from "next/dynamic";
 import { Loader } from "lucide-react";
+
+// pdf.js (used by react-pdf) references browser-only globals like DOMMatrix at
+// import time, which throws during SSR. Load the viewer client-side only.
+const PdfViewer = dynamic(() => import("./PdfViewer"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full">
+      <Loader className="w-6 h-6 animate-spin text-gray-400" />
+    </div>
+  ),
+});
 
 const { Text } = Typography;
 
@@ -168,12 +180,7 @@ export default function FileViewerLayout({
                 <Loader className="w-6 h-6 animate-spin text-gray-400" />
               </div>
             ) : pdfUrl ? (
-              <iframe
-                key={file.id}
-                src={pdfUrl}
-                className="w-full h-full border-0 bg-white"
-                title={`PDF viewer for ${file.filename}`}
-              />
+              <PdfViewer url={pdfUrl} fileKey={file.id} />
             ) : (
               <div className="flex items-center justify-center h-full">
                 <Text type="secondary" className="text-sm">
