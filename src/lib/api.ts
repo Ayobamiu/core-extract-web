@@ -1454,6 +1454,15 @@ class ApiClient {
         return `${this.baseURL}/previews/${id}/export?${params.toString()}`;
     }
 
+    /**
+     * Direct URL for the Wellogic-format multi-tab Excel export (Wells +
+     * linked Lithology) of one document type across a preview. Anchor href.
+     */
+    getPreviewWellogicExportUrl(id: string, slug: string): string {
+        const params = new URLSearchParams({ slug });
+        return `${this.baseURL}/previews/${id}/export-wellogic?${params.toString()}`;
+    }
+
     async getPreviewStatistics(id: string): Promise<ApiResponse<{
         total: number;
         humanVerified: number;

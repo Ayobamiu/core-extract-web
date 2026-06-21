@@ -19,7 +19,6 @@ import {
   Input,
   Modal,
   Button as AntButton,
-  Dropdown,
   Drawer,
   Tag,
   Tooltip,
@@ -284,6 +283,26 @@ const RenderValue: React.FC<{ value: any; depth?: number }> = ({
   return <span className="text-gray-900 break-words">{String(value)}</span>;
 };
 
+// A single download option in the export drawer: title + plain-English description.
+const ExportOption: React.FC<{
+  title: string;
+  desc: string;
+  onClick: () => void;
+  disabled?: boolean;
+}> = ({ title, desc, onClick, disabled }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    className="text-left rounded-lg border border-gray-200 p-3 transition hover:border-blue-400 hover:bg-blue-50/40 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    <div className="flex items-center gap-2 font-medium text-gray-900">
+      <DownloadOutlined /> {title}
+    </div>
+    <div className="mt-1 text-sm text-gray-500">{desc}</div>
+  </button>
+);
+
 // Component for displaying complex data (arrays and objects)
 const ComplexDataCell: React.FC<{
   value: any;
@@ -446,6 +465,7 @@ const PreviewPage: React.FC = () => {
   // reuse the preview's own (public) schema for labels and let the engine's
   // data-driven fallback + slug-based hero handle the rest.
   const [recordDrawer, setRecordDrawer] = useState<any>(null);
+  const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
 
   useEffect(() => {
     document.title = previewData?.preview.name ?? "Preview";
@@ -1006,15 +1026,24 @@ const PreviewPage: React.FC = () => {
       ? view.slug
       : null;
 
-  const handleGisExport = () => {
-    if (!gisExportSlug) return;
-    const url = apiClient.getPreviewGisExportUrl(previewId, gisExportSlug);
+  const triggerDownload = (url: string) => {
     const a = document.createElement("a");
     a.href = url;
     a.rel = "noopener";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleGisExport = () => {
+    if (!gisExportSlug) return;
+    triggerDownload(apiClient.getPreviewGisExportUrl(previewId, gisExportSlug));
+  };
+
+  // Wellogic-format multi-tab Excel (Wells + linked Lithology) for the type.
+  const handleWellogicExport = () => {
+    if (!gisExportSlug) return;
+    triggerDownload(apiClient.getPreviewWellogicExportUrl(previewId, gisExportSlug));
   };
 
   const handleExport = (format: "csv" | "json") => {
@@ -1263,41 +1292,75 @@ const PreviewPage: React.FC = () => {
               allowClear
             />
 
-            <Dropdown
-              menu={{
-                items: [
-                  ...(gisExportSlug
-                    ? [
-                        {
-                          key: "gis",
-                          label: `Export for GIS — ${documentTypeLabel(
-                            gisExportSlug,
-                          )} (CSV)`,
-                          icon: <DownloadOutlined />,
-                          onClick: handleGisExport,
-                        },
-                        { type: "divider" as const },
-                      ]
-                    : []),
-                  {
-                    key: "csv",
-                    label: "Export as CSV (this page)",
-                    icon: <DownloadOutlined />,
-                    onClick: () => handleExport("csv"),
-                  },
-                  {
-                    key: "json",
-                    label: "Export as JSON (this page)",
-                    icon: <DownloadOutlined />,
-                    onClick: () => handleExport("json"),
-                  },
-                ],
-              }}
-              trigger={["click"]}
-              disabled={!processedData.length}
+            <AntButton
+              icon={<DownloadOutlined />}
+              title="Download / export"
+              onClick={() => setExportDrawerOpen(true)}
             >
-              <AntButton icon={<DownloadOutlined />} title="Export Data" />
-            </Dropdown>
+              Download
+            </AntButton>
+
+            <Drawer
+              title="Download options"
+              placement="right"
+              width={440}
+              open={exportDrawerOpen}
+              onClose={() => setExportDrawerOpen(false)}
+            >
+              <div className="flex flex-col gap-3">
+                {!gisExportSlug && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                    Select a document type in the left rail to enable the Wellogic
+                    and GIS exports — they export <strong>all</strong> records of
+                    one type, not just this page.
+                  </div>
+                )}
+                {gisExportSlug && (
+                  <>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      {documentTypeLabel(gisExportSlug)} — all records
+                    </div>
+                    <ExportOption
+                      title="Wellogic Excel (Wells + linked tabs)"
+                      desc="Multi-tab spreadsheet modeled on Michigan Wellogic: a Wells tab with coordinates and precision, plus linked Lithology, SPT, Samples and Groundwater tabs (joined by well ID). Best for ArcGIS / Wellogic workflows."
+                      onClick={() => {
+                        handleWellogicExport();
+                        setExportDrawerOpen(false);
+                      }}
+                    />
+                    <ExportOption
+                      title="GIS CSV (flat attribute table)"
+                      desc="One clean row per record with GIS-safe headers and well ID as the join key. Best for joining to your own location source in GIS. (No nested tables.)"
+                      onClick={() => {
+                        handleGisExport();
+                        setExportDrawerOpen(false);
+                      }}
+                    />
+                  </>
+                )}
+                <div className="mt-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  This page only
+                </div>
+                <ExportOption
+                  title="CSV — current page"
+                  desc="The records currently shown on this page, as a simple comma-separated file."
+                  onClick={() => {
+                    handleExport("csv");
+                    setExportDrawerOpen(false);
+                  }}
+                  disabled={!processedData.length}
+                />
+                <ExportOption
+                  title="JSON — current page"
+                  desc="The records currently shown on this page, as raw JSON with the nested structure preserved."
+                  onClick={() => {
+                    handleExport("json");
+                    setExportDrawerOpen(false);
+                  }}
+                  disabled={!processedData.length}
+                />
+              </div>
+            </Drawer>
 
             <AntButton
               icon={<ReloadOutlined />}
