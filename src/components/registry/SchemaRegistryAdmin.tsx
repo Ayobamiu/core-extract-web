@@ -12,6 +12,7 @@ import {
   Popconfirm,
   Select,
   Space,
+  Switch,
   Table,
   Tabs,
   Tag,
@@ -63,6 +64,11 @@ export default function SchemaRegistryAdmin() {
   const [versions, setVersions] = useState<RegistrySchemaVersionSummary[]>([]);
   const [editForm] = Form.useForm();
   const [hintsText, setHintsText] = useState("");
+  // Post-processing defaults for the managed slug: registered services + the
+  // per-service enabled map (name → enabled) seeded from the document type.
+  const [ppServices, setPpServices] = useState<{ name: string; version: string }[]>([]);
+  const [ppEnabled, setPpEnabled] = useState<Record<string, boolean>>({});
+  const [ppSaving, setPpSaving] = useState(false);
   const [newSchemaText, setNewSchemaText] = useState("");
   const [newSchemaOpen, setNewSchemaOpen] = useState(false);
   const [schemaView, setSchemaView] = useState<{
@@ -118,8 +124,42 @@ export default function SchemaRegistryAdmin() {
           ? JSON.stringify(res.documentType.classifier_hints, null, 2)
           : "",
       );
+      // Seed post-processing defaults (name → enabled) from the document type.
+      const seeded: Record<string, boolean> = {};
+      for (const d of res.documentType.post_processing_defaults ?? []) {
+        if (d && typeof d.name === "string") seeded[d.name] = d.enabled !== false;
+      }
+      setPpEnabled(seeded);
     } finally {
       setDetailLoading(false);
+    }
+
+    // Load the registered service list once per manage-open (best-effort).
+    try {
+      const sres = await apiClient.registryGetServices();
+      const services = (sres.data as { services?: { name: string; version: string }[] })?.services;
+      if (sres.success && Array.isArray(services)) setPpServices(services);
+    } catch {
+      /* non-fatal: tab shows no services */
+    }
+  };
+
+  const savePostProcessing = async () => {
+    if (!manageSlug) return;
+    setPpSaving(true);
+    try {
+      // Persist only the services with an explicit toggle; absence = inherit/off.
+      const defaults = ppServices
+        .filter((s) => s.name in ppEnabled)
+        .map((s) => ({ name: s.name, enabled: !!ppEnabled[s.name] }));
+      const res = await apiClient.registryPutPostProcessingDefaults(manageSlug, defaults);
+      if (res.success) {
+        message.success("Post-processing defaults saved");
+        openManage(manageSlug);
+        loadTypes();
+      } else message.error(res.message || "Save failed");
+    } finally {
+      setPpSaving(false);
     }
   };
 
@@ -599,6 +639,56 @@ export default function SchemaRegistryAdmin() {
                     <Space>
                       <Button type="primary" onClick={saveHints}>
                         Save hints
+                      </Button>
+                    </Space>
+                  </div>
+                ),
+              },
+              {
+                key: "post_processing",
+                label: "Post-processing",
+                children: (
+                  <div className="space-y-3 pt-2">
+                    <Paragraph type="secondary" className="!text-xs">
+                      Services that run automatically after extraction for this
+                      document type. These are the defaults — a job can override
+                      any of them from its own settings (job override wins).
+                    </Paragraph>
+                    {ppServices.length === 0 ? (
+                      <Text type="secondary">No services registered.</Text>
+                    ) : (
+                      <div className="space-y-2">
+                        {ppServices.map((svc) => (
+                          <div
+                            key={svc.name}
+                            className="flex items-center justify-between gap-3"
+                          >
+                            <div className="text-sm">
+                              <span className="font-mono">{svc.name}</span>
+                              <span className="text-xs text-gray-400 ml-2">
+                                v{svc.version}
+                              </span>
+                            </div>
+                            <Switch
+                              checked={!!ppEnabled[svc.name]}
+                              onChange={(checked) =>
+                                setPpEnabled((prev) => ({
+                                  ...prev,
+                                  [svc.name]: checked,
+                                }))
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <Space>
+                      <Button
+                        type="primary"
+                        loading={ppSaving}
+                        onClick={savePostProcessing}
+                      >
+                        Save defaults
                       </Button>
                     </Space>
                   </div>
