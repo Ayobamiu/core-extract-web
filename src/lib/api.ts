@@ -224,6 +224,17 @@ export interface ProcessingConfig {
     useVisualClassifier?: boolean;
     usePerSectionExtraction?: boolean;
     documentTypeSlugs?: string[];
+    // Per-job post-processing overrides (auto-run services like geocoding).
+    // Each entry overrides the document-type default for that service. Resolution
+    // at processing time: enabled = jobOverride.enabled ?? slugDefault.enabled ?? false.
+    postProcessing?: PostProcessingOverride[];
+}
+
+/** A per-job post-processing service toggle (jobs.processing_config.postProcessing). */
+export interface PostProcessingOverride {
+    name: string;
+    enabled?: boolean;
+    options?: Record<string, unknown>;
 }
 
 // Document type registry (GET /document-types).
@@ -247,6 +258,7 @@ export interface RegistryDocumentTypeDetail {
     routing_confidence_threshold: number;
     status: string;
     classifier_hints?: Record<string, unknown> | null;
+    post_processing_defaults?: PostProcessingOverride[] | null;
     created_at?: string;
     updated_at?: string;
     current_schema_version_id?: string | null;
@@ -506,6 +518,18 @@ export interface MonitoringSummary {
     failed: number;
     avg_estimated_tokens: number;
     max_estimated_tokens: number;
+}
+
+/** Result of a post-processing service run (dry-run or apply). */
+export interface RunServiceResult {
+    apply: boolean;
+    filesScanned: number;
+    filesUpdated: number;
+    recordsMatched: number;
+    summary: Record<string, { applied: number; skipped: number; error: number }>;
+    sideEffects: number;
+    /** Present for the geocoder: count by precision tier. */
+    precisionTiers?: Record<string, number>;
 }
 
 export interface PreviewDataTable {
@@ -979,6 +1003,22 @@ class ApiClient {
         return this.request(`/registry/document-types/${encodeURIComponent(slug)}/classifier-hints`, {
             method: 'PUT',
             body: JSON.stringify({ hints }),
+        });
+    }
+
+    /** List registered post-processing services (for the document-type defaults tab). */
+    async registryGetServices(): Promise<ApiResponse<{ services: { name: string; version: string }[] }>> {
+        return this.request('/registry/services');
+    }
+
+    /** Replace a document type's post-processing defaults (services that auto-run for this slug). */
+    async registryPutPostProcessingDefaults(
+        slug: string,
+        defaults: PostProcessingOverride[]
+    ): Promise<ApiResponse<{ post_processing_defaults: PostProcessingOverride[]; updated_at: string }>> {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}/post-processing-defaults`, {
+            method: 'PUT',
+            body: JSON.stringify({ defaults }),
         });
     }
 
@@ -1650,6 +1690,30 @@ class ApiClient {
         return this.request(`/jobs/${jobId}/config`, {
             method: 'PUT',
             body: JSON.stringify(updates),
+        });
+    }
+
+    /**
+     * List the registered post-processing services, for the job settings
+     * activation UI. Job-scoped (access-checked) — post-processing is an
+     * operator/pipeline concern configured per job, not a client preview control.
+     */
+    async getJobServices(jobId: string): Promise<ApiResponse<{ services: { name: string; version: string }[] }>> {
+        return this.request(`/jobs/${jobId}/services`);
+    }
+
+    /**
+     * Run a post-processing service (backfill) over a job's completed files.
+     * The "run now" trigger lives on the job settings page. apply=false (default)
+     * is a dry-run: services execute and counts are returned, nothing persists.
+     */
+    async runJobService(
+        jobId: string,
+        body: { name: string; slug: string; options?: Record<string, unknown>; apply?: boolean; force?: boolean },
+    ): Promise<ApiResponse<RunServiceResult>> {
+        return this.request(`/jobs/${jobId}/run-service`, {
+            method: 'POST',
+            body: JSON.stringify(body),
         });
     }
 

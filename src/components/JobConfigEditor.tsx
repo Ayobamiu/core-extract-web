@@ -1,8 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { App, Modal, Form, Input, Select, Divider, Switch, Tag } from "antd";
-import { apiClient, DocumentTypeInfo, ProcessingConfig } from "@/lib/api";
+import { App, Drawer, Form, Input, Select, Divider, Switch, Tag } from "antd";
+import {
+  apiClient,
+  DocumentTypeInfo,
+  ProcessingConfig,
+  PostProcessingOverride,
+  RunServiceResult,
+} from "@/lib/api";
 import {
   PROCESSING_METHODS,
   getModelsForMethod,
@@ -95,6 +101,88 @@ export default function JobConfigEditor({
     };
   }, [open]);
 
+  // ── Post-processing services (auto-run config + manual backfill) ──
+  // Registered services available to enable per job.
+  const [ppServices, setPpServices] = useState<{ name: string; version: string }[]>([]);
+  // Per-job override state per service: 'default' (inherit doc-type default),
+  // 'on' (force enabled), 'off' (force disabled).
+  const [ppState, setPpState] = useState<Record<string, "default" | "on" | "off">>({});
+  // Manual "run now" backfill controls.
+  const [runService, setRunService] = useState<string | undefined>();
+  const [runSlug, setRunSlug] = useState<string | undefined>();
+  const [runBusy, setRunBusy] = useState(false);
+  const [runResult, setRunResult] = useState<(RunServiceResult & { applied: boolean }) | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    // Seed override state from the saved per-job config.
+    const overrides = currentConfig.processing_config?.postProcessing ?? [];
+    const seeded: Record<string, "default" | "on" | "off"> = {};
+    for (const o of overrides) {
+      if (o && typeof o.name === "string") {
+        seeded[o.name] = o.enabled === true ? "on" : o.enabled === false ? "off" : "default";
+      }
+    }
+    setPpState(seeded);
+    setRunResult(null);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.getJobServices(jobId);
+        if (cancelled) return;
+        const services = (res.data as any)?.services;
+        if (res.success && Array.isArray(services)) setPpServices(services);
+      } catch {
+        // Non-fatal: section just shows no services.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Seed once per open (not on every currentConfig identity change) so we don't
+    // clobber the user's in-progress toggle edits while the modal is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, jobId]);
+
+  // Build the postProcessing override array from tri-state (omit 'default').
+  const buildPostProcessing = (): PostProcessingOverride[] =>
+    Object.entries(ppState)
+      .filter(([, v]) => v !== "default")
+      .map(([name, v]) => ({ name, enabled: v === "on" }));
+
+  const handleRunService = async (apply: boolean) => {
+    if (!runService || !runSlug) {
+      message.warning("Pick a service and a document type first.");
+      return;
+    }
+    setRunBusy(true);
+    setRunResult(null);
+    try {
+      const res = await apiClient.runJobService(jobId, {
+        name: runService,
+        slug: runSlug,
+        apply,
+      });
+      if (res.success && res.data) {
+        setRunResult({ ...res.data, applied: apply });
+        message.success(apply ? "Backfill applied." : "Dry-run complete.");
+      } else {
+        message.error(res.message || "Run failed.");
+      }
+    } catch (e: any) {
+      message.error(e?.message || "Run failed.");
+    } finally {
+      setRunBusy(false);
+    }
+  };
+
+  // Slugs offered for backfill: the job's restricted set, else all registered types.
+  const runSlugOptions =
+    (currentConfig.processing_config?.documentTypeSlugs?.length
+      ? currentConfig.processing_config.documentTypeSlugs.map((s) => ({ value: s, label: s }))
+      : documentTypes.map((dt) => ({ value: dt.slug, label: `${dt.display_name} — ${dt.slug}` })));
+
   const handleProcessingMethodChange = (method: "openai" | "qwen") => {
     setSelectedProcessingMethod(method);
     const defaultModel = getDefaultModel(method);
@@ -136,6 +224,7 @@ export default function JobConfigEditor({
           values.document_type_slugs.length > 0
             ? values.document_type_slugs
             : undefined,
+        postProcessing: buildPostProcessing(),
       };
 
       // Prepare updates
@@ -179,6 +268,15 @@ export default function JobConfigEditor({
         .sort()
         .join(",");
 
+      // Normalize postProcessing overrides for change detection (order-insensitive).
+      const normPP = (list: PostProcessingOverride[] | undefined) =>
+        (list ?? [])
+          .map((o) => `${o.name}:${o.enabled === true ? 1 : o.enabled === false ? 0 : "-"}`)
+          .sort()
+          .join(",");
+      const currentPP = normPP(currentConfig.processing_config?.postProcessing);
+      const newPP = normPP(processingConfig.postProcessing);
+
       if (
         values.extraction_method !== currentExtractionMethod ||
         values.processing_method !== currentProcessingMethod ||
@@ -186,7 +284,8 @@ export default function JobConfigEditor({
         values.use_page_detection !== currentUsePageDetection ||
         values.use_visual_classifier !== currentUseVisualClassifier ||
         values.use_per_section_extraction !== currentUsePerSectionExtraction ||
-        currentSlugs !== newSlugs
+        currentSlugs !== newSlugs ||
+        currentPP !== newPP
       ) {
         updates.processing_config = processingConfig;
       }
@@ -220,13 +319,12 @@ export default function JobConfigEditor({
   const availableModels = getModelsForMethod(selectedProcessingMethod);
 
   return (
-    <Modal
+    <Drawer
       title="Edit Job Configuration"
       open={open}
-      onCancel={handleCancel}
-      footer={null}
-      width={600}
-      destroyOnHidden
+      onClose={handleCancel}
+      width={760}
+      destroyOnClose
     >
       <Form
         form={form}
@@ -430,6 +528,111 @@ export default function JobConfigEditor({
           </div>
         </div>
 
+        <Divider className="my-4" />
+
+        {/* Post-processing services (auto-run + manual backfill) */}
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">
+            Post-processing
+          </h3>
+          <div className="text-xs text-gray-500 mb-3">
+            Services that run automatically after extraction (e.g. geocoding).
+            “Default” inherits the document-type setting; choose On/Off to override
+            it for this job.
+          </div>
+
+          {ppServices.length === 0 ? (
+            <div className="text-xs text-gray-400">No services registered.</div>
+          ) : (
+            <div className="space-y-2">
+              {ppServices.map((svc) => (
+                <div key={svc.name} className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-gray-700">
+                    <span className="font-mono">{svc.name}</span>
+                    <span className="text-xs text-gray-400 ml-2">v{svc.version}</span>
+                  </div>
+                  <Select
+                    size="small"
+                    style={{ width: 130 }}
+                    value={ppState[svc.name] ?? "default"}
+                    onChange={(v) =>
+                      setPpState((prev) => ({ ...prev, [svc.name]: v }))
+                    }
+                  >
+                    <Option value="default">Default</Option>
+                    <Option value="on">On</Option>
+                    <Option value="off">Off</Option>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Divider className="my-4" />
+
+          {/* Run now (backfill over already-extracted files) */}
+          <h4 className="text-xs font-semibold text-gray-600 mb-2">
+            Run now (backfill existing files)
+          </h4>
+          <div className="text-xs text-gray-500 mb-2">
+            Applies a service to files already processed in this job.{" "}
+            <span className="font-medium text-gray-700">Dry run</span> previews
+            the result — how many records would change — and writes nothing.{" "}
+            <span className="font-medium text-gray-700">Apply</span> performs the
+            change and saves it. Start with Dry run.
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select
+              size="small"
+              style={{ minWidth: 170 }}
+              placeholder="Service"
+              value={runService}
+              onChange={setRunService}
+              options={ppServices.map((s) => ({ value: s.name, label: s.name }))}
+            />
+            <Select
+              size="small"
+              style={{ minWidth: 200 }}
+              placeholder="Document type"
+              value={runSlug}
+              onChange={setRunSlug}
+              options={runSlugOptions}
+              showSearch
+              optionFilterProp="label"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => handleRunService(false)}
+              loading={runBusy}
+            >
+              Dry run
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => handleRunService(true)}
+              loading={runBusy}
+            >
+              Apply
+            </Button>
+          </div>
+
+          {runResult && (
+            <div className="text-xs text-gray-600 mt-3 p-2 rounded bg-gray-50 border border-gray-200">
+              <div className="font-medium mb-1">
+                {runResult.applied ? "Applied" : "Dry-run"} · {runResult.filesScanned} file(s) scanned ·{" "}
+                {runResult.recordsMatched} record(s) matched
+                {runResult.applied ? ` · ${runResult.filesUpdated} file(s) updated` : ""}
+              </div>
+              <div>summary: {JSON.stringify(runResult.summary)}</div>
+              {runResult.precisionTiers && (
+                <div>precision: {JSON.stringify(runResult.precisionTiers)}</div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Form Actions */}
         <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200">
           <Button
@@ -445,6 +648,6 @@ export default function JobConfigEditor({
           </Button>
         </div>
       </Form>
-    </Modal>
+    </Drawer>
   );
 }
