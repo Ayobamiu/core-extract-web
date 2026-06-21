@@ -1006,15 +1006,24 @@ const PreviewPage: React.FC = () => {
       ? view.slug
       : null;
 
-  const handleGisExport = () => {
-    if (!gisExportSlug) return;
-    const url = apiClient.getPreviewGisExportUrl(previewId, gisExportSlug);
+  const triggerDownload = (url: string) => {
     const a = document.createElement("a");
     a.href = url;
     a.rel = "noopener";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleGisExport = () => {
+    if (!gisExportSlug) return;
+    triggerDownload(apiClient.getPreviewGisExportUrl(previewId, gisExportSlug));
+  };
+
+  // Wellogic-format multi-tab Excel (Wells + linked Lithology) for the type.
+  const handleWellogicExport = () => {
+    if (!gisExportSlug) return;
+    triggerDownload(apiClient.getPreviewWellogicExportUrl(previewId, gisExportSlug));
   };
 
   const handleExport = (format: "csv" | "json") => {
@@ -1268,6 +1277,14 @@ const PreviewPage: React.FC = () => {
                 items: [
                   ...(gisExportSlug
                     ? [
+                        {
+                          key: "wellogic",
+                          label: `Export Wellogic Excel — ${documentTypeLabel(
+                            gisExportSlug,
+                          )} (Wells + Lithology)`,
+                          icon: <DownloadOutlined />,
+                          onClick: handleWellogicExport,
+                        },
                         {
                           key: "gis",
                           label: `Export for GIS — ${documentTypeLabel(
