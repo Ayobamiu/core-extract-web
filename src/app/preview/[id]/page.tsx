@@ -28,6 +28,7 @@ import {
 import { RecordView } from "@/components/record/RecordView";
 import { humanizeKey } from "@/components/record/recordSchema";
 import { PreviewRail, PreviewView, documentTypeLabel } from "./PreviewRail";
+import { ServicesDrawer } from "./ServicesDrawer";
 import { parsePreviewUrl, buildPreviewParams } from "./previewUrlState";
 import { ChevronLeftIcon } from "@heroicons/react/24/outline";
 import {
@@ -466,6 +467,7 @@ const PreviewPage: React.FC = () => {
   // data-driven fallback + slug-based hero handle the rest.
   const [recordDrawer, setRecordDrawer] = useState<any>(null);
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
+  const [servicesDrawerOpen, setServicesDrawerOpen] = useState(false);
 
   useEffect(() => {
     document.title = previewData?.preview.name ?? "Preview";
@@ -1293,6 +1295,13 @@ const PreviewPage: React.FC = () => {
             />
 
             <AntButton
+              title="Run processing services (geocoding, enrichment)"
+              onClick={() => setServicesDrawerOpen(true)}
+            >
+              Services
+            </AntButton>
+
+            <AntButton
               icon={<DownloadOutlined />}
               title="Download / export"
               onClick={() => setExportDrawerOpen(true)}
@@ -1361,6 +1370,14 @@ const PreviewPage: React.FC = () => {
                 />
               </div>
             </Drawer>
+
+            <ServicesDrawer
+              previewId={previewId}
+              slug={gisExportSlug}
+              open={servicesDrawerOpen}
+              onClose={() => setServicesDrawerOpen(false)}
+              onApplied={handleRefresh}
+            />
 
             <AntButton
               icon={<ReloadOutlined />}

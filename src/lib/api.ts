@@ -519,6 +519,18 @@ export interface PreviewDataTable {
     item_count?: number;
 }
 
+/** Result of POST /previews/:id/run-service (dry-run or apply). */
+export interface RunServiceResult {
+    apply: boolean;
+    filesScanned: number;
+    filesUpdated: number;
+    recordsMatched: number;
+    summary: Record<string, { applied: number; skipped: number; error: number }>;
+    sideEffects: number;
+    /** Present for the geocoder: count by precision tier. */
+    precisionTiers?: Record<string, number>;
+}
+
 export interface PreviewJobFile {
     /** Unique row id — the record's section_result_id (or a synthetic fallback). */
     id: string;
@@ -1461,6 +1473,26 @@ class ApiClient {
     getPreviewWellogicExportUrl(id: string, slug: string): string {
         const params = new URLSearchParams({ slug });
         return `${this.baseURL}/previews/${id}/export-wellogic?${params.toString()}`;
+    }
+
+    /** List the registered post-processing services (for the services panel). */
+    async getProcessingServices(): Promise<ApiResponse<{ services: { name: string; version: string }[] }>> {
+        return this.request('/previews/services');
+    }
+
+    /**
+     * Run a post-processing service over all records of a type in a preview.
+     * apply=false (default) is a dry-run: services execute and counts are
+     * returned, but nothing is persisted.
+     */
+    async runPreviewService(
+        id: string,
+        body: { name: string; slug: string; options?: Record<string, unknown>; apply?: boolean; force?: boolean },
+    ): Promise<ApiResponse<RunServiceResult>> {
+        return this.request(`/previews/${id}/run-service`, {
+            method: 'POST',
+            body: JSON.stringify(body),
+        });
     }
 
     async getPreviewStatistics(id: string): Promise<ApiResponse<{
