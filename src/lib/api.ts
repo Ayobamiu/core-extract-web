@@ -2119,6 +2119,25 @@ class ApiClient {
             body: JSON.stringify({ fileIds, priority, processingConfig }),
         });
     }
+
+    // Natural-language query over extracted data → table + interpreted filter.
+    async nlQuery(
+        question: string,
+        slug: string = 'mgs_well_log',
+        opts: { jobId?: string; orgId?: string } = {}
+    ): Promise<ApiResponse<{
+        interpreted: string;
+        spec: unknown;
+        columns: string[];
+        rows: Record<string, unknown>[];
+        rowCount: number;
+        csv: string;
+    }>> {
+        return this.request('/nlquery', {
+            method: 'POST',
+            body: JSON.stringify({ question, slug, ...opts }),
+        });
+    }
 }
 
 // Create singleton instance
