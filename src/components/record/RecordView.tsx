@@ -20,6 +20,7 @@ export function RecordView({
   fieldDescriptions,
   trust,
   hero,
+  identifierFields,
 }: {
   data: Record<string, unknown>;
   schema?: JsonSchemaNode;
@@ -28,6 +29,8 @@ export function RecordView({
   trust?: RecordTrust;
   /** Override the registry hero (e.g. for testing). */
   hero?: HeroComponent | null;
+  /** Per-type identifier dot-paths for the header title (preview ID config). */
+  identifierFields?: string[] | null;
 }) {
   const descMap = useMemo<Record<string, string>>(
     () => fieldDescriptions ?? (schema ? buildFieldDescriptionMap(schema) : {}),
@@ -47,7 +50,12 @@ export function RecordView({
 
   return (
     <div className="max-w-5xl mx-auto px-1 py-2">
-      <RecordTrustHeader data={data} slug={slug} trust={trust} />
+      <RecordTrustHeader
+        data={data}
+        slug={slug}
+        trust={trust}
+        identifierFields={identifierFields}
+      />
       {Hero && (
         <div className="mb-5">
           <Hero data={data} />

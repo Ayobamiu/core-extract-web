@@ -7,7 +7,12 @@ import {
   usePathname,
   useSearchParams,
 } from "next/navigation";
-import { apiClient, PreviewDataTable, PreviewJobFile } from "@/lib/api";
+import {
+  apiClient,
+  PreviewDataTable,
+  PreviewJobFile,
+  PreviewSlugCount,
+} from "@/lib/api";
 import {
   getCachedPreviewData,
   setCachedPreviewData,
@@ -177,9 +182,40 @@ function scalarField(obj: any, key: string): string | null {
   return null;
 }
 
-/** Resolve the identifier value used to label a record row, or null if none. */
-function recordIdentifier(record: any): string | null {
+/** Resolve a dot-path (e.g. "site_identification.boring_well_id") to a scalar. */
+function resolveDotPath(record: any, path: string): string | null {
+  const parts = path.split(".");
+  let cur = record;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (!cur || typeof cur !== "object") return null;
+    cur = cur[parts[i]];
+  }
+  return scalarField(cur, parts[parts.length - 1]);
+}
+
+/**
+ * Resolve the identifier value used to label a record row, or null if none.
+ *
+ * `configuredFields` is the record's document type's per-type dot-paths (from the
+ * backend, keyed by slug). When present they win — exact, vendor-specific, in
+ * priority order. With no config we fall back to the global heuristic (a field
+ * priority list crossed with common container objects).
+ */
+function recordIdentifier(
+  record: any,
+  configuredFields?: string[] | null,
+): string | null {
   if (!record || typeof record !== "object") return null;
+
+  // 1. Configured dot-paths for this record's type (preferred).
+  if (Array.isArray(configuredFields)) {
+    for (const path of configuredFields) {
+      const v = resolveDotPath(record, path);
+      if (v) return v;
+    }
+  }
+
+  // 2. Heuristic fallback for unconfigured types.
   for (const field of ID_FIELD_PRIORITY) {
     for (const container of ID_CONTAINERS) {
       const obj = container ? record[container] : record;
@@ -454,9 +490,7 @@ const PreviewPage: React.FC = () => {
 
   // Rail navigation: which lens is active.
   const [view, setView] = useState<PreviewView>(initialUrl.view);
-  const [slugs, setSlugs] = useState<
-    Array<{ slug: string | null; count: number }>
-  >([]);
+  const [slugs, setSlugs] = useState<PreviewSlugCount[]>([]);
   const [fileSummaries, setFileSummaries] = useState<any[]>([]);
   const [filesTotal, setFilesTotal] = useState<number>(0);
 
@@ -489,12 +523,25 @@ const PreviewPage: React.FC = () => {
   };
 
   // Create Ant Design table columns
+  // Per-type identifier dot-paths, keyed by slug, from the rail distribution.
+  // Lets a record row be labeled by the field its document type configures
+  // (borehole_log → site_identification.boring_well_id, mgs_well_log →
+  // well_number); unconfigured types fall back to the heuristic.
+  const idFieldsBySlug = useMemo(() => {
+    const map = new Map<string | null, string[] | null>();
+    for (const s of slugs) map.set(s.slug ?? null, s.identifier_fields ?? null);
+    return map;
+  }, [slugs]);
+
   const tableColumns: ColumnsType<any> = useMemo(() => {
     // When showing files, the first fixed column is the filename. When showing
     // records, it's the record's identifier (e.g. boring_well_id) instead — the
     // filename is repetitive there (one file can yield many records).
     const showingFiles = view.kind === "files";
-   
+
+    // Resolve a record's identifier using its type's configured dot-paths.
+    const idOf = (record: any): string | null =>
+      recordIdentifier(record, idFieldsBySlug.get(record._slug ?? null));
 
     const baseColumns: ColumnsType<any> = [
       {
@@ -504,22 +551,17 @@ const PreviewPage: React.FC = () => {
         fixed: "left",
         ellipsis: true,
         sorter: (a, b) => {
-          const aLabel = showingFiles
-            ? a._filename
-            : recordIdentifier(a) ?? a._filename ?? "";
-          const bLabel = showingFiles
-            ? b._filename
-            : recordIdentifier(b) ?? b._filename ?? "";
+          const aLabel = showingFiles ? a._filename : idOf(a) ?? a._filename ?? "";
+          const bLabel = showingFiles ? b._filename : idOf(b) ?? b._filename ?? "";
           return String(aLabel).localeCompare(String(bLabel));
         },
         render: (_: unknown, record: any) => {
           // Identifier shown in the cell — filename in files view, record id
           // otherwise. Fall back to filename when a record has no id value.
-          const id = showingFiles ? null : recordIdentifier(record);
+          const id = showingFiles ? null : idOf(record);
           const label = showingFiles
             ? record._filename
             : id ?? record._filename;
-           console.log({id,label, showingFiles})
           const isFallback = !showingFiles && !id;
 
           // Check if record has well data (formations, casing, etc.)
@@ -694,7 +736,7 @@ const PreviewPage: React.FC = () => {
     };
 
     return [...baseColumns, ...dynamicColumns, qaStatusColumn];
-  }, [columns, handleArrayClick, view.kind, previewId]);
+  }, [columns, handleArrayClick, view.kind, previewId, idFieldsBySlug]);
 
   // Process data (no client-side filtering since we use server-side search)
   const processedData = useMemo(() => {
@@ -1686,6 +1728,7 @@ const PreviewPage: React.FC = () => {
             data={recordDrawer._record ?? recordDrawer}
             schema={previewData?.preview?.schema as never}
             slug={recordDrawer._slug ?? undefined}
+            identifierFields={idFieldsBySlug.get(recordDrawer._slug ?? null)}
             trust={{
               verification:
                 recordDrawer._reviewStatus === "approved"

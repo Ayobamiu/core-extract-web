@@ -543,6 +543,17 @@ export interface PreviewDataTable {
     item_count?: number;
 }
 
+/**
+ * One entry in a preview's record-type distribution (the rail). `identifier_fields`
+ * is the document type's configured ordered dot-paths for labeling a record row in
+ * the ID column (null for untyped / unconfigured types → frontend heuristic fallback).
+ */
+export interface PreviewSlugCount {
+    slug: string | null;
+    count: number;
+    identifier_fields?: string[] | null;
+}
+
 export interface PreviewJobFile {
     /** Unique row id — the record's section_result_id (or a synthetic fallback). */
     id: string;
@@ -1435,7 +1446,7 @@ class ApiClient {
     ): Promise<ApiResponse<{
         preview: PreviewDataTable;
         jobFiles: PreviewJobFile[];
-        slugs?: Array<{ slug: string | null; count: number }>;
+        slugs?: PreviewSlugCount[];
         pagination: {
             total: number;
             page: number;

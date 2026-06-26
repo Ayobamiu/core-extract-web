@@ -59,8 +59,16 @@ function pick(obj: unknown, path: string[]): unknown {
   return cur;
 }
 
-function recordTitle(data: Record<string, unknown>): string | null {
+function recordTitle(
+  data: Record<string, unknown>,
+  identifierFields?: string[] | null,
+): string | null {
+  // Configured dot-paths for this record's type win (kept in sync with the
+  // preview ID column); the hardcoded list is the fallback for unconfigured types.
   const candidates: Array<unknown> = [
+    ...(Array.isArray(identifierFields)
+      ? identifierFields.map((path) => pick(data, path.split(".")))
+      : []),
     pick(data, ["site_identification", "boring_well_id"]),
     pick(data, ["site_identification", "boring_well_id_full"]),
     pick(data, ["test_setup", "well_number"]),
@@ -122,13 +130,16 @@ export function RecordTrustHeader({
   data,
   slug,
   trust,
+  identifierFields,
 }: {
   data: Record<string, unknown>;
   slug?: string;
   trust?: RecordTrust;
+  /** Per-type identifier dot-paths (kept in sync with the preview ID column). */
+  identifierFields?: string[] | null;
 }) {
   const docName = slug ? SLUG_NAMES[slug] ?? humanizeKey(slug) : "Record";
-  const title = recordTitle(data);
+  const title = recordTitle(data, identifierFields);
 
   const meta = (data["extraction_metadata"] ?? {}) as Record<string, unknown>;
   const rawSource =
