@@ -45,12 +45,18 @@ type PdfViewerProps = {
   url: string;
   /** Resets internal state (page/zoom/rotation) when the file changes. */
   fileKey: string;
+  /**
+   * 1-based page to auto-scroll to once the document loads (and again whenever
+   * this value changes — e.g. selecting a different record). Only auto-navigates
+   * on change, so it never yanks the user back after they scroll away manually.
+   */
+  targetPage?: number | null;
 };
 
 const clamp = (n: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, n));
 
-export default function PdfViewer({ url, fileKey }: PdfViewerProps) {
+export default function PdfViewer({ url, fileKey, targetPage }: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1); // 1 = fit container width
@@ -71,6 +77,10 @@ export default function PdfViewer({ url, fileKey }: PdfViewerProps) {
   const pageEls = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const programmaticScroll = useRef(false);
+  // The (page, numPages) we last auto-navigated to, so the targetPage effect
+  // fires only when the target or the loaded doc actually changes — not on
+  // every resize/zoom re-render.
+  const appliedTarget = useRef<{ page: number; n: number } | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -91,6 +101,7 @@ export default function PdfViewer({ url, fileKey }: PdfViewerProps) {
     setNumPages(0);
     setRenderSet(new Set());
     pageHeights.current.clear();
+    appliedTarget.current = null;
   }, [fileKey]);
 
   // Page geometry changed → previous placeholder heights are stale.
@@ -204,6 +215,26 @@ export default function PdfViewer({ url, fileKey }: PdfViewerProps) {
     },
     [numPages, viewMode, scrollToPage],
   );
+
+  // Parent-driven auto-navigation: scroll to targetPage once the doc is loaded
+  // and laid out, and again whenever the target (or loaded doc) changes. We
+  // scroll twice — immediately and after a short delay — because the continuous
+  // virtualizer sizes off-screen pages from an estimate until the first page
+  // measures; the second pass lands accurately once real heights are known.
+  useEffect(() => {
+    if (targetPage == null || numPages <= 0 || baseWidth <= 0) return;
+    const target = clamp(targetPage, 1, numPages);
+    const last = appliedTarget.current;
+    if (last && last.page === target && last.n === numPages) return;
+    appliedTarget.current = { page: target, n: numPages };
+    setPageNumber(target);
+    const t1 = setTimeout(() => scrollToPage(target), 0);
+    const t2 = setTimeout(() => scrollToPage(target), 250);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [targetPage, numPages, baseWidth, scrollToPage]);
 
   // When switching to continuous, jump to the page the user was on.
   useEffect(() => {

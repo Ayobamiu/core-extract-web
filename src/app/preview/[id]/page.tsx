@@ -24,7 +24,9 @@ import {
   Tooltip,
   notification,
   Spin,
+  Splitter,
 } from "antd";
+import dynamic from "next/dynamic";
 import { RecordView } from "@/components/record/RecordView";
 import { humanizeKey } from "@/components/record/recordSchema";
 import { PreviewRail, PreviewView, documentTypeLabel } from "./PreviewRail";
@@ -38,10 +40,26 @@ import {
   InfoCircleOutlined,
   ExpandOutlined,
   ReloadOutlined,
+  SplitCellsOutlined,
+  ExclamationCircleOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { WellboreDiagramDrawer } from "@/components/well/WellboreDiagramModal";
 import { trackPreviewAnalytics } from "@/lib/previewAnalytics";
+
+// pdf.js (used by react-pdf) touches browser-only globals at import time, which
+// throws during SSR — load the side-by-side viewer client-side only.
+const PdfViewer = dynamic(
+  () => import("@/components/file/PdfViewer"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center">
+        <Spin />
+      </div>
+    ),
+  },
+);
 
 // Styles for truncation and proper spacing
 const tableStyles = `
@@ -467,6 +485,45 @@ const PreviewPage: React.FC = () => {
   const [recordDrawer, setRecordDrawer] = useState<any>(null);
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
 
+  // Side-by-side "Compare" mode in the record drawer: widens the drawer to full
+  // width and shows the source PDF (auto-scrolled to the record's page) next to
+  // the record. The signed PDF URL is fetched lazily, only when compare is on.
+  const [compareMode, setCompareMode] = useState(false);
+  const [comparePdfUrl, setComparePdfUrl] = useState<string | null>(null);
+  const [comparePdfLoading, setComparePdfLoading] = useState(false);
+
+  // Closing the drawer exits compare mode and drops the loaded PDF.
+  useEffect(() => {
+    if (!recordDrawer) {
+      setCompareMode(false);
+      setComparePdfUrl(null);
+    }
+  }, [recordDrawer]);
+
+  // Load the source PDF when compare turns on (or the selected record's file
+  // changes while comparing). Preview-scoped endpoint → works without auth.
+  const compareFileId = recordDrawer?._fileId as string | undefined;
+  useEffect(() => {
+    if (!compareMode || !compareFileId || !previewId) return;
+    let cancelled = false;
+    setComparePdfLoading(true);
+    setComparePdfUrl(null);
+    apiClient
+      .getPreviewFilePdfUrl(previewId, compareFileId)
+      .then((url) => {
+        if (!cancelled) setComparePdfUrl(url);
+      })
+      .catch((err) => {
+        if (!cancelled) console.error("Failed to load PDF for compare:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setComparePdfLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [compareMode, compareFileId, previewId]);
+
   useEffect(() => {
     document.title = previewData?.preview.name ?? "Preview";
   }, [previewData?.preview.name]);
@@ -709,6 +766,7 @@ const PreviewPage: React.FC = () => {
       _fileId: file.file_id ?? file.id,
       _slug: file.slug ?? null,
       _sectionId: file.section_result_id ?? null,
+      _sourcePage: file.source_page ?? null,
       _jobName: file.job_name,
       _createdAt: file.created_at,
       _adminVerified: file.admin_verified || false,
@@ -1672,31 +1730,89 @@ const PreviewPage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Record detail drawer — the schema-driven RecordView (engine + hero) */}
+      {/* Record detail drawer — the schema-driven RecordView (engine + hero).
+          "Compare" widens the drawer to full width and shows the source PDF
+          (auto-scrolled to the record's page) side-by-side with the record. */}
       <Drawer
         open={!!recordDrawer}
         onClose={() => setRecordDrawer(null)}
-        width={920}
+        width={compareMode ? "100%" : 920}
         title={recordDrawer?._filename}
-        styles={{ body: { background: "#f9fafb" } }}
+        styles={{
+          body: { background: "#f9fafb", padding: compareMode ? 0 : undefined },
+        }}
+        extra={
+          recordDrawer ? (
+            <Tooltip
+              title={
+                compareMode
+                  ? "Hide the source PDF"
+                  : "Show the source PDF next to this record"
+              }
+            >
+              <AntButton
+                type={compareMode ? "primary" : "default"}
+                icon={<SplitCellsOutlined />}
+                onClick={() => setCompareMode((v) => !v)}
+              >
+                {compareMode ? "Exit compare" : "Compare"}
+              </AntButton>
+            </Tooltip>
+          ) : null
+        }
         destroyOnClose
       >
-        {recordDrawer && (
-          <RecordView
-            data={recordDrawer._record ?? recordDrawer}
-            schema={previewData?.preview?.schema as never}
-            slug={recordDrawer._slug ?? undefined}
-            trust={{
-              verification:
-                recordDrawer._reviewStatus === "approved"
-                  ? "approved"
-                  : recordDrawer._reviewStatus === "rejected"
-                    ? "rejected"
-                    : "pending",
-              qa: null,
-            }}
-          />
-        )}
+        {recordDrawer &&
+          (() => {
+            const recordView = (
+              <RecordView
+                data={recordDrawer._record ?? recordDrawer}
+                schema={previewData?.preview?.schema as never}
+                slug={recordDrawer._slug ?? undefined}
+                trust={{
+                  verification:
+                    recordDrawer._reviewStatus === "approved"
+                      ? "approved"
+                      : recordDrawer._reviewStatus === "rejected"
+                        ? "rejected"
+                        : "pending",
+                  qa: null,
+                }}
+              />
+            );
+
+            if (!compareMode) return recordView;
+
+            return (
+              <Splitter className="h-full">
+                <Splitter.Panel defaultSize="50%" min={320}>
+                  <div className="flex h-full min-w-0 flex-col overflow-hidden bg-gray-100">
+                    {comparePdfLoading ? (
+                      <div className="flex h-full items-center justify-center">
+                        <Spin />
+                      </div>
+                    ) : comparePdfUrl ? (
+                      <PdfViewer
+                        url={comparePdfUrl}
+                        fileKey={recordDrawer._fileId}
+                        targetPage={recordDrawer._sourcePage ?? 1}
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-gray-400">
+                        <ExclamationCircleOutlined className="mr-2" />
+                        Unable to load the source PDF for this record.
+                      </div>
+                    )}
+                  </div>
+                </Splitter.Panel>
+                <Splitter.Panel min={360}>
+                  <div className="h-full overflow-auto bg-[#f9fafb] px-4 py-2">
+                    {recordView}
+                  </div>
+                </Splitter.Panel>
+              </Splitter>
+            );
+          })()}
       </Drawer>
 
       {/* Wellbore Diagram Drawer */}
