@@ -259,6 +259,7 @@ export interface RegistryDocumentTypeDetail {
     status: string;
     classifier_hints?: Record<string, unknown> | null;
     post_processing_defaults?: PostProcessingOverride[] | null;
+    identifier_fields?: string[] | null;
     created_at?: string;
     updated_at?: string;
     current_schema_version_id?: string | null;
@@ -1014,6 +1015,17 @@ class ApiClient {
         return this.request(`/registry/document-types/${encodeURIComponent(slug)}/classifier-hints`, {
             method: 'PUT',
             body: JSON.stringify({ hints }),
+        });
+    }
+
+    /** Replace a document type's identifier dot-paths (preview ID column label). [] clears. */
+    async registryPutIdentifierFields(
+        slug: string,
+        fields: string[]
+    ): Promise<ApiResponse<{ identifier_fields: string[]; updated_at: string }>> {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}/identifier-fields`, {
+            method: 'PUT',
+            body: JSON.stringify({ fields }),
         });
     }
 

@@ -69,6 +69,9 @@ export default function SchemaRegistryAdmin() {
   const [ppServices, setPpServices] = useState<{ name: string; version: string }[]>([]);
   const [ppEnabled, setPpEnabled] = useState<Record<string, boolean>>({});
   const [ppSaving, setPpSaving] = useState(false);
+  // Per-type record identifier dot-paths (preview ID column), one per line.
+  const [idFieldsText, setIdFieldsText] = useState("");
+  const [idSaving, setIdSaving] = useState(false);
   const [newSchemaText, setNewSchemaText] = useState("");
   const [newSchemaOpen, setNewSchemaOpen] = useState(false);
   const [schemaView, setSchemaView] = useState<{
@@ -130,6 +133,7 @@ export default function SchemaRegistryAdmin() {
         if (d && typeof d.name === "string") seeded[d.name] = d.enabled !== false;
       }
       setPpEnabled(seeded);
+      setIdFieldsText((res.documentType.identifier_fields ?? []).join("\n"));
     } finally {
       setDetailLoading(false);
     }
@@ -218,6 +222,28 @@ export default function SchemaRegistryAdmin() {
       } else message.error(res.message || "Save failed");
     } catch {
       message.error("Invalid JSON in classifier hints");
+    }
+  };
+
+  const saveIdentifierFields = async () => {
+    if (!manageSlug) return;
+    // One dot-path per line; blank lines ignored. Empty list clears (→ heuristic).
+    const fields = idFieldsText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    setIdSaving(true);
+    try {
+      const res = await apiClient.registryPutIdentifierFields(manageSlug, fields);
+      if (res.success) {
+        message.success(
+          fields.length ? "Record ID field saved" : "Record ID field cleared",
+        );
+        openManage(manageSlug);
+        loadTypes();
+      } else message.error(res.message || "Save failed");
+    } finally {
+      setIdSaving(false);
     }
   };
 
@@ -689,6 +715,39 @@ export default function SchemaRegistryAdmin() {
                         onClick={savePostProcessing}
                       >
                         Save defaults
+                      </Button>
+                    </Space>
+                  </div>
+                ),
+              },
+              {
+                key: "identifier",
+                label: "Record ID field",
+                children: (
+                  <div className="space-y-3 pt-2">
+                    <Paragraph type="secondary" className="!text-xs">
+                      Which field labels a record in the preview&apos;s ID column
+                      (and the record drawer header). Enter one dot-path per line,
+                      tried in order — the first with a value wins. Example:{" "}
+                      <span className="font-mono">
+                        site_identification.boring_well_id
+                      </span>
+                      . Leave empty to fall back to the automatic heuristic.
+                    </Paragraph>
+                    <TextArea
+                      value={idFieldsText}
+                      onChange={(e) => setIdFieldsText(e.target.value)}
+                      placeholder={"site_identification.boring_well_id\nboring_well_id"}
+                      autoSize={{ minRows: 4, maxRows: 10 }}
+                      className="font-mono !text-xs"
+                    />
+                    <Space>
+                      <Button
+                        type="primary"
+                        loading={idSaving}
+                        onClick={saveIdentifierFields}
+                      >
+                        Save ID field
                       </Button>
                     </Space>
                   </div>
