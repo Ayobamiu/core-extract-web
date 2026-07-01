@@ -570,6 +570,12 @@ export interface PreviewJobFile {
     /** V2: the record's document type. */
     slug?: string | null;
     section_result_id?: string | null;
+    /**
+     * 1-based PDF page this record was extracted from (V2 per-section records),
+     * resolved from the file's detected_sections. null for V1 whole-doc records
+     * — the side-by-side viewer opens page 1 in that case.
+     */
+    source_page?: number | null;
 }
 
 export interface PreviewAnalyticsReport {
@@ -1447,6 +1453,24 @@ class ApiClient {
 
     async getPreviewData(id: string): Promise<ApiResponse<{ preview: PreviewDataTable; jobFiles: PreviewJobFile[] }>> {
         return this.request(`/previews/${id}/data`);
+    }
+
+    /**
+     * Preview-scoped signed PDF URL — works on the PUBLIC preview page (no auth
+     * token). Backed by GET /previews/:id/files/:fileId/download, which
+     * authorizes by preview membership instead of a user token. Used by the
+     * side-by-side compare viewer in the record drawer.
+     */
+    async getPreviewFilePdfUrl(previewId: string, fileId: string): Promise<string> {
+        const res = await fetch(
+            `${this.baseURL}/previews/${previewId}/files/${fileId}/download?format=json`,
+            { headers: { Accept: 'application/json' } },
+        );
+        if (!res.ok) {
+            throw new Error(`Failed to load PDF URL: ${res.status} ${res.statusText}`);
+        }
+        const data = await res.json();
+        return data.url as string;
     }
 
     async getPreviewDataPaginated(
