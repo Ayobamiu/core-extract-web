@@ -259,6 +259,7 @@ export interface RegistryDocumentTypeDetail {
     status: string;
     classifier_hints?: Record<string, unknown> | null;
     post_processing_defaults?: PostProcessingOverride[] | null;
+    identifier_fields?: string[] | null;
     created_at?: string;
     updated_at?: string;
     current_schema_version_id?: string | null;
@@ -541,6 +542,17 @@ export interface PreviewDataTable {
     created_at: string;
     updated_at: string;
     item_count?: number;
+}
+
+/**
+ * One entry in a preview's record-type distribution (the rail). `identifier_fields`
+ * is the document type's configured ordered dot-paths for labeling a record row in
+ * the ID column (null for untyped / unconfigured types → frontend heuristic fallback).
+ */
+export interface PreviewSlugCount {
+    slug: string | null;
+    count: number;
+    identifier_fields?: string[] | null;
 }
 
 export interface PreviewJobFile {
@@ -1012,6 +1024,17 @@ class ApiClient {
         });
     }
 
+    /** Replace a document type's identifier dot-paths (preview ID column label). [] clears. */
+    async registryPutIdentifierFields(
+        slug: string,
+        fields: string[]
+    ): Promise<ApiResponse<{ identifier_fields: string[]; updated_at: string }>> {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}/identifier-fields`, {
+            method: 'PUT',
+            body: JSON.stringify({ fields }),
+        });
+    }
+
     /** List registered post-processing services (for the document-type defaults tab). */
     async registryGetServices(): Promise<ApiResponse<{ services: { name: string; version: string }[] }>> {
         return this.request('/registry/services');
@@ -1459,7 +1482,7 @@ class ApiClient {
     ): Promise<ApiResponse<{
         preview: PreviewDataTable;
         jobFiles: PreviewJobFile[];
-        slugs?: Array<{ slug: string | null; count: number }>;
+        slugs?: PreviewSlugCount[];
         pagination: {
             total: number;
             page: number;
