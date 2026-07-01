@@ -623,6 +623,59 @@ export interface PreviewAnalyticsReport {
     }>;
 }
 
+// ── NL-query conversational chat ──────────────────────────────────────────
+/** Structural scope a chat is bound to (mirrors the backend's resolveScope input). */
+export interface NlChatScope {
+    slug?: string;
+    fileId?: string;
+    jobId?: string;
+    previewId?: string;
+    recordId?: string;
+    sectionKey?: string;
+}
+
+export interface NlChatResultSummary {
+    mode: "list" | "aggregate";
+    rowCount?: number;
+    summaryRows?: Record<string, unknown>[];
+    sample: Record<string, unknown>[];
+}
+
+/** The detail table the agent renders when the user asks to see/export the list. */
+export interface NlChatView {
+    interpreted: string;
+    columns: string[];
+    rows: Record<string, unknown>[];
+    rowCount: number;
+    csv: string;
+}
+
+export interface NlChatMessage {
+    id: string;
+    role: "user" | "assistant";
+    content: string | null;
+    resultSummary: NlChatResultSummary | null;
+    renderedView: boolean;
+    createdAt: string;
+}
+
+export interface NlChatHistory {
+    conversationId: string | null;
+    slug: string;
+    scopeLabel: string;
+    recordCount: number;
+    starters: string[];
+    messages: NlChatMessage[];
+}
+
+export interface NlChatTurn {
+    conversationId: string;
+    reply: string;
+    resultSummary: NlChatResultSummary | null;
+    renderView: boolean;
+    view: NlChatView | null;
+}
+
 class ApiClient {
     private baseURL: string;
     private accessToken: string | null = null;
@@ -2136,6 +2189,25 @@ class ApiClient {
         return this.request('/nlquery', {
             method: 'POST',
             body: JSON.stringify({ question, slug, ...opts }),
+        });
+    }
+
+    // Load the chat for a scope (history + scope-aware starter questions) without
+    // creating a conversation. Drives the chat panel's first render.
+    async nlChatHistory(scope: NlChatScope): Promise<ApiResponse<NlChatHistory>> {
+        const params = new URLSearchParams();
+        Object.entries(scope).forEach(([k, v]) => {
+            if (v) params.set(k, String(v));
+        });
+        return this.request(`/nlquery/chat?${params.toString()}`, { method: 'GET' });
+    }
+
+    // One conversational turn over the records in scope.
+    async nlChat(question: string, scope: NlChatScope): Promise<ApiResponse<NlChatTurn>> {
+        const { slug, ...rest } = scope;
+        return this.request('/nlquery/chat', {
+            method: 'POST',
+            body: JSON.stringify({ question, slug, scope: rest }),
         });
     }
 }
