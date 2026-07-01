@@ -12,7 +12,11 @@ import {
   PreviewDataTable,
   PreviewJobFile,
   PreviewSlugCount,
+  type NlChatScope,
 } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import AiChatPanel from "@/components/nlquery/AiChatPanel";
+import { Sparkles } from "lucide-react";
 import {
   getCachedPreviewData,
   setCachedPreviewData,
@@ -54,17 +58,14 @@ import { trackPreviewAnalytics } from "@/lib/previewAnalytics";
 
 // pdf.js (used by react-pdf) touches browser-only globals at import time, which
 // throws during SSR — load the side-by-side viewer client-side only.
-const PdfViewer = dynamic(
-  () => import("@/components/file/PdfViewer"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full items-center justify-center">
-        <Spin />
-      </div>
-    ),
-  },
-);
+const PdfViewer = dynamic(() => import("@/components/file/PdfViewer"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center">
+      <Spin />
+    </div>
+  ),
+});
 
 // Styles for truncation and proper spacing
 const tableStyles = `
@@ -526,11 +527,20 @@ const PreviewPage: React.FC = () => {
   const [comparePdfUrl, setComparePdfUrl] = useState<string | null>(null);
   const [comparePdfLoading, setComparePdfLoading] = useState(false);
 
+  // The conversational AI chat panel. It's authed + org-scoped (the preview page
+  // itself is public), so the entry points only appear for signed-in operators.
+  const { isAuthenticated } = useAuth();
+  // Preview-page panel (scope follows the left-rail `view`).
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  // Record-drawer panel (scope = the one open record). Squeezes alongside Compare.
+  const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
+
   // Closing the drawer exits compare mode and drops the loaded PDF.
   useEffect(() => {
     if (!recordDrawer) {
       setCompareMode(false);
       setComparePdfUrl(null);
+      setAiDrawerOpen(false);
     }
   }, [recordDrawer]);
 
@@ -608,8 +618,12 @@ const PreviewPage: React.FC = () => {
         fixed: "left",
         ellipsis: true,
         sorter: (a, b) => {
-          const aLabel = showingFiles ? a._filename : idOf(a) ?? a._filename ?? "";
-          const bLabel = showingFiles ? b._filename : idOf(b) ?? b._filename ?? "";
+          const aLabel = showingFiles
+            ? a._filename
+            : (idOf(a) ?? a._filename ?? "");
+          const bLabel = showingFiles
+            ? b._filename
+            : (idOf(b) ?? b._filename ?? "");
           return String(aLabel).localeCompare(String(bLabel));
         },
         render: (_: unknown, record: any) => {
@@ -618,7 +632,7 @@ const PreviewPage: React.FC = () => {
           const id = showingFiles ? null : idOf(record);
           const label = showingFiles
             ? record._filename
-            : id ?? record._filename;
+            : (id ?? record._filename);
           const isFallback = !showingFiles && !id;
 
           // Check if record has well data (formations, casing, etc.)
@@ -1143,7 +1157,9 @@ const PreviewPage: React.FC = () => {
   // Wellogic-format multi-tab Excel (Wells + linked Lithology) for the type.
   const handleWellogicExport = () => {
     if (!gisExportSlug) return;
-    triggerDownload(apiClient.getPreviewWellogicExportUrl(previewId, gisExportSlug));
+    triggerDownload(
+      apiClient.getPreviewWellogicExportUrl(previewId, gisExportSlug),
+    );
   };
 
   const handleExport = (format: "csv" | "json") => {
@@ -1271,6 +1287,25 @@ const PreviewPage: React.FC = () => {
     return null; // This shouldn't happen, but satisfies TypeScript
   }
 
+  // AI chat scope + button copy for the preview-page panel, derived from the
+  // left-rail `view` (the 4 contexts the handoff spec'd).
+  const truncateName = (s: string) =>
+    s.length > 28 ? `${s.slice(0, 27)}…` : s;
+  const previewAiScope: NlChatScope =
+    view.kind === "file"
+      ? { fileId: view.fileId }
+      : view.kind === "records" && view.slug
+        ? { previewId, slug: view.slug }
+        : { previewId }; // records (all) or files (all)
+  const previewAiTitle =
+    view.kind === "file"
+      ? `Ask about ${truncateName(view.filename)}`
+      : view.kind === "records" && view.slug
+        ? `Ask about ${documentTypeLabel(view.slug)}`
+        : view.kind === "files"
+          ? "Ask about all files"
+          : "Ask about all records";
+
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
       <style dangerouslySetInnerHTML={{ __html: tableStyles }} />
@@ -1300,7 +1335,7 @@ const PreviewPage: React.FC = () => {
                   />
                 )}
               </div>
-              <span className="text-lg font-semibold text-gray-900">
+              <span className="text-lg font-semibold text-gray-900 truncate max-w-[100px]">
                 {previewData.preview.name}
               </span>
             </div>
@@ -1410,9 +1445,9 @@ const PreviewPage: React.FC = () => {
               <div className="flex flex-col gap-3">
                 {!gisExportSlug && (
                   <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                    Select a document type in the left rail to enable the Wellogic
-                    and GIS exports — they export <strong>all</strong> records of
-                    one type, not just this page.
+                    Select a document type in the left rail to enable the
+                    Wellogic and GIS exports — they export <strong>all</strong>{" "}
+                    records of one type, not just this page.
                   </div>
                 )}
                 {gisExportSlug && (
@@ -1481,135 +1516,152 @@ const PreviewPage: React.FC = () => {
           view={view}
           onSelect={setView}
         />
-        <div className="flex-1 overflow-hidden flex flex-col">
-          {view.kind === "file" && (
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 text-sm bg-white">
-              <button
-                type="button"
-                className="text-blue-600 hover:underline bg-transparent border-0 p-0 cursor-pointer"
-                onClick={() => setView({ kind: "files" })}
-              >
-                ← Files
-              </button>
-              <span className="text-gray-400">/</span>
-              <span className="text-gray-700 truncate">{view.filename}</span>
-            </div>
-          )}
+        <Splitter className="flex-1 overflow-hidden">
+          <Splitter.Panel min="45%">
+            <div className="h-full w-full overflow-hidden flex flex-col">
+              {view.kind === "file" && (
+                <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 text-sm bg-white">
+                  <button
+                    type="button"
+                    className="text-blue-600 hover:underline bg-transparent border-0 p-0 cursor-pointer"
+                    onClick={() => setView({ kind: "files" })}
+                  >
+                    ← Files
+                  </button>
+                  <span className="text-gray-400">/</span>
+                  <span className="text-gray-700 truncate">
+                    {view.filename}
+                  </span>
+                </div>
+              )}
 
-          {view.kind === "files" ? (
-            <Table
-              columns={[
-                {
-                  title: "File",
-                  dataIndex: "filename",
-                  key: "filename",
-                  ellipsis: true,
-                  render: (text: string, f: any) => (
-                    <button
-                      type="button"
-                      className="text-blue-600 hover:text-blue-800 hover:underline text-left bg-transparent border-0 p-0 cursor-pointer truncate block"
-                      title={`Open ${text}`}
-                      onClick={() =>
-                        setView({
-                          kind: "file",
-                          fileId: f.id,
-                          filename: f.filename,
-                        })
-                      }
-                    >
-                      {text}
-                    </button>
-                  ),
-                },
-                {
-                  title: "Contents",
-                  key: "contents",
-                  render: (_: unknown, f: any) =>
-                    f.by_type && f.by_type.length
-                      ? f.by_type
-                          .map(
-                            (t: { slug: string | null; count: number }) =>
-                              `${t.count} ${documentTypeLabel(t.slug)}`,
-                          )
-                          .join(" · ")
-                      : `${f.total_records} records`,
-                },
-                {
-                  title: "Records",
-                  dataIndex: "total_records",
-                  key: "total_records",
-                  width: 90,
-                  align: "right" as const,
-                },
-                {
-                  title: "Status",
-                  dataIndex: "review_status",
-                  key: "review_status",
-                  width: 120,
-                  render: (s: string) => <Tag>{s || "pending"}</Tag>,
-                },
-              ]}
-              dataSource={fileSummaries}
-              rowKey="id"
-              loading={loading}
-              scroll={{ y: "calc(100vh - 200px)" }}
-              pagination={
-                filesTotal > pageSize
-                  ? {
-                      current: currentPage,
-                      total: filesTotal,
-                      pageSize,
-                      onChange: (p) => setCurrentPage(p),
-                      size: "small",
-                      position: ["bottomCenter"],
-                    }
-                  : false
-              }
-              size="small"
-              className="ant-table-custom"
-            />
-          ) : (
-            <Table
-              columns={tableColumns}
-              bordered
-              dataSource={processedData}
-              rowKey={(record) =>
-                record._rowId ?? `${record._fileId}-${record._filename}`
-              }
-              scroll={{ x: "max-content", y: "calc(100vh - 200px)" }}
-              loading={loading}
-              pagination={
-                totalItems > 0 && !loading && processedData.length <= pageSize
-                  ? {
-                      current: currentPage,
-                      total: totalItems,
-                      pageSize: pageSize,
-                      showSizeChanger: true,
-                      showQuickJumper: false,
-                      showTotal: (total, range) =>
-                        `${range[0]}-${range[1]} of ${total} items`,
-                      onChange: (page, size) => {
-                        setCurrentPage(page);
-                        if (size !== pageSize) {
-                          setPageSize(size);
+              {view.kind === "files" ? (
+                <Table
+                  columns={[
+                    {
+                      title: "File",
+                      dataIndex: "filename",
+                      key: "filename",
+                      ellipsis: true,
+                      render: (text: string, f: any) => (
+                        <button
+                          type="button"
+                          className="text-blue-600 hover:text-blue-800 hover:underline text-left bg-transparent border-0 p-0 cursor-pointer truncate block"
+                          title={`Open ${text}`}
+                          onClick={() =>
+                            setView({
+                              kind: "file",
+                              fileId: f.id,
+                              filename: f.filename,
+                            })
+                          }
+                        >
+                          {text}
+                        </button>
+                      ),
+                    },
+                    {
+                      title: "Contents",
+                      key: "contents",
+                      render: (_: unknown, f: any) =>
+                        f.by_type && f.by_type.length
+                          ? f.by_type
+                              .map(
+                                (t: { slug: string | null; count: number }) =>
+                                  `${t.count} ${documentTypeLabel(t.slug)}`,
+                              )
+                              .join(" · ")
+                          : `${f.total_records} records`,
+                    },
+                    {
+                      title: "Records",
+                      dataIndex: "total_records",
+                      key: "total_records",
+                      width: 90,
+                      align: "right" as const,
+                    },
+                    {
+                      title: "Status",
+                      dataIndex: "review_status",
+                      key: "review_status",
+                      width: 120,
+                      render: (s: string) => <Tag>{s || "pending"}</Tag>,
+                    },
+                  ]}
+                  dataSource={fileSummaries}
+                  rowKey="id"
+                  loading={loading}
+                  scroll={{ y: "calc(100vh - 200px)" }}
+                  pagination={
+                    filesTotal > pageSize
+                      ? {
+                          current: currentPage,
+                          total: filesTotal,
+                          pageSize,
+                          onChange: (p) => setCurrentPage(p),
+                          size: "small",
+                          position: ["bottomCenter"],
                         }
-                      },
-                      onShowSizeChange: (current, size) => {
-                        setCurrentPage(1);
-                        setPageSize(size);
-                      },
-                      size: "small",
-                      hideOnSinglePage: totalPages <= 1,
-                      position: ["bottomCenter"],
-                      pageSizeOptions: ["10", "20", "50", "100"],
-                    }
-                  : false
-              }
-              size="small"
-              className="ant-table-custom h-full"
-            />
+                      : false
+                  }
+                  size="small"
+                  className="ant-table-custom"
+                />
+              ) : (
+                <Table
+                  columns={tableColumns}
+                  bordered
+                  dataSource={processedData}
+                  rowKey={(record) =>
+                    record._rowId ?? `${record._fileId}-${record._filename}`
+                  }
+                  scroll={{ x: "max-content", y: "calc(100vh - 200px)" }}
+                  loading={loading}
+                  pagination={
+                    totalItems > 0 &&
+                    !loading &&
+                    processedData.length <= pageSize
+                      ? {
+                          current: currentPage,
+                          total: totalItems,
+                          pageSize: pageSize,
+                          showSizeChanger: true,
+                          showQuickJumper: false,
+                          showTotal: (total, range) =>
+                            `${range[0]}-${range[1]} of ${total} items`,
+                          onChange: (page, size) => {
+                            setCurrentPage(page);
+                            if (size !== pageSize) {
+                              setPageSize(size);
+                            }
+                          },
+                          onShowSizeChange: (current, size) => {
+                            setCurrentPage(1);
+                            setPageSize(size);
+                          },
+                          size: "small",
+                          hideOnSinglePage: totalPages <= 1,
+                          position: ["bottomCenter"],
+                          pageSizeOptions: ["10", "20", "50", "100"],
+                        }
+                      : false
+                  }
+                  size="small"
+                  className="ant-table-custom h-full"
+                />
+              )}
+            </div>
+          </Splitter.Panel>
+          {aiPanelOpen && isAuthenticated && (
+            <Splitter.Panel defaultSize={440} min={320} collapsible>
+              <AiChatPanel
+                scope={previewAiScope}
+                title={previewAiTitle}
+                onClose={() => setAiPanelOpen(false)}
+              />
+            </Splitter.Panel>
           )}
-        </div>
+        </Splitter>
       </div>
 
       {/* Quality Score Info Modal */}
@@ -1778,28 +1830,45 @@ const PreviewPage: React.FC = () => {
       <Drawer
         open={!!recordDrawer}
         onClose={() => setRecordDrawer(null)}
-        width={compareMode ? "100%" : 920}
+        width={compareMode || aiDrawerOpen ? "100%" : 920}
         title={recordDrawer?._filename}
         styles={{
-          body: { background: "#f9fafb", padding: compareMode ? 0 : undefined },
+          body: {
+            background: "#f9fafb",
+            padding: compareMode || aiDrawerOpen ? 0 : undefined,
+          },
         }}
         extra={
           recordDrawer ? (
-            <Tooltip
-              title={
-                compareMode
-                  ? "Hide the source PDF"
-                  : "Show the source PDF next to this record"
-              }
-            >
-              <AntButton
-                type={compareMode ? "primary" : "default"}
-                icon={<SplitCellsOutlined />}
-                onClick={() => setCompareMode((v) => !v)}
+            <div className="flex items-center gap-2">
+              {/* AI chat about this single record — authed operators only. */}
+              {isAuthenticated && (
+                <Tooltip title="Ask AI about this record">
+                  <AntButton
+                    type={aiDrawerOpen ? "primary" : "default"}
+                    icon={<Sparkles size={15} />}
+                    onClick={() => setAiDrawerOpen((v) => !v)}
+                  >
+                    {aiDrawerOpen ? "Close AI" : "Ask AI"}
+                  </AntButton>
+                </Tooltip>
+              )}
+              <Tooltip
+                title={
+                  compareMode
+                    ? "Hide the source PDF"
+                    : "Show the source PDF next to this record"
+                }
               >
-                {compareMode ? "Exit compare" : "Compare"}
-              </AntButton>
-            </Tooltip>
+                <AntButton
+                  type={compareMode ? "primary" : "default"}
+                  icon={<SplitCellsOutlined />}
+                  onClick={() => setCompareMode((v) => !v)}
+                >
+                  {compareMode ? "Exit compare" : "Compare"}
+                </AntButton>
+              </Tooltip>
+            </div>
           ) : null
         }
         destroyOnClose
@@ -1826,35 +1895,59 @@ const PreviewPage: React.FC = () => {
               />
             );
 
-            if (!compareMode) return recordView;
+            // Neither Compare nor AI open → just the record (drawer at 920px).
+            if (!compareMode && !aiDrawerOpen) return recordView;
+
+            // Otherwise squeeze whichever panels are active into one Splitter:
+            // [PDF (compare)] · [record] · [AI chat]. 2-way or 3-way, same code.
+            const pdfPanel = compareMode ? (
+              <Splitter.Panel key="pdf" defaultSize="40%" min={300}>
+                <div className="flex h-full min-w-0 flex-col overflow-hidden bg-gray-100">
+                  {comparePdfLoading ? (
+                    <div className="flex h-full items-center justify-center">
+                      <Spin />
+                    </div>
+                  ) : comparePdfUrl ? (
+                    <PdfViewer
+                      url={comparePdfUrl}
+                      fileKey={recordDrawer._fileId}
+                      targetPage={recordDrawer._sourcePage ?? 1}
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center px-4 text-center text-sm text-gray-400">
+                      <ExclamationCircleOutlined className="mr-2" />
+                      Unable to load the source PDF for this record.
+                    </div>
+                  )}
+                </div>
+              </Splitter.Panel>
+            ) : null;
+
+            const recordPanel = (
+              <Splitter.Panel key="record" min={340}>
+                <div className="h-full overflow-auto bg-[#f9fafb] px-4 py-2">
+                  {recordView}
+                </div>
+              </Splitter.Panel>
+            );
+
+            const aiPanel = aiDrawerOpen ? (
+              <Splitter.Panel key="ai" defaultSize={420} min={320}>
+                <AiChatPanel
+                  scope={{
+                    // record_uid = section_result_id (V2) or file_id (V1).
+                    recordId: recordDrawer._sectionId ?? recordDrawer._fileId,
+                    slug: recordDrawer._slug ?? undefined,
+                  }}
+                  title="Ask about this record"
+                  onClose={() => setAiDrawerOpen(false)}
+                />
+              </Splitter.Panel>
+            ) : null;
 
             return (
               <Splitter className="h-full">
-                <Splitter.Panel defaultSize="50%" min={320}>
-                  <div className="flex h-full min-w-0 flex-col overflow-hidden bg-gray-100">
-                    {comparePdfLoading ? (
-                      <div className="flex h-full items-center justify-center">
-                        <Spin />
-                      </div>
-                    ) : comparePdfUrl ? (
-                      <PdfViewer
-                        url={comparePdfUrl}
-                        fileKey={recordDrawer._fileId}
-                        targetPage={recordDrawer._sourcePage ?? 1}
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center px-4 text-center text-sm text-gray-400">
-                        <ExclamationCircleOutlined className="mr-2" />
-                        Unable to load the source PDF for this record.
-                      </div>
-                    )}
-                  </div>
-                </Splitter.Panel>
-                <Splitter.Panel min={360}>
-                  <div className="h-full overflow-auto bg-[#f9fafb] px-4 py-2">
-                    {recordView}
-                  </div>
-                </Splitter.Panel>
+                {[pdfPanel, recordPanel, aiPanel].filter(Boolean)}
               </Splitter>
             );
           })()}
@@ -1875,20 +1968,35 @@ const PreviewPage: React.FC = () => {
 
       {/* Core Extract Footer Signature */}
       <div className="border-t border-gray-100 px-6 py-3 flex-shrink-0">
-        <div className="flex items-center justify-center space-x-2 text-gray-400">
-          <span className="text-sm">
-            Powered by{" "}
-            <a
-              href="#"
-              className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
-              onClick={(e) => {
-                e.preventDefault();
-                window.open("https://coreextract.app", "_blank");
-              }}
-            >
-              Core Extract
-            </a>
-          </span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="w-48" />
+          <div className="flex flex-1 items-center justify-center space-x-2 text-gray-400">
+            <span className="text-sm">
+              Powered by{" "}
+              <a
+                href="#"
+                className="text-blue-600 hover:text-blue-800 transition-colors duration-200"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.open("https://coreextract.app", "_blank");
+                }}
+              >
+                Core Extract
+              </a>
+            </span>
+          </div>
+          <div className="flex w-48 justify-end">
+            {/* AI chat entry point — authed operators only (the panel is org-scoped). */}
+            {isAuthenticated && (
+              <AntButton
+                type={aiPanelOpen ? "primary" : "default"}
+                icon={<Sparkles size={15} />}
+                onClick={() => setAiPanelOpen((v) => !v)}
+              >
+                {aiPanelOpen ? "Close AI" : previewAiTitle}
+              </AntButton>
+            )}
+          </div>
         </div>
       </div>
     </div>
