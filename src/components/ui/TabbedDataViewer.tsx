@@ -11,6 +11,8 @@ import {
   getByPath,
   setByPath,
   coerceExpected,
+  insertAtPath,
+  removeAtPath,
   APPLYABLE_ISSUE_TYPES,
 } from "@/lib/jsonPath";
 import {
@@ -323,9 +325,22 @@ function QAFindingsPanel({
     }
   };
 
+  const ROW_ISSUE_TYPES = new Set(["add_row", "update_row", "delete_row"]);
+
   const renderFinding = (f: import("@/lib/api").QAFinding) => {
     const cfg = SEVERITY_CONFIG[f.severity] ?? SEVERITY_CONFIG.info;
     const isResolved = f.status !== "open";
+    const isRowOp = ROW_ISSUE_TYPES.has(f.issue_type);
+    const rowOpLabel =
+      f.issue_type === "delete_row"
+        ? `Delete row ${f.row_index ?? "?"}`
+        : f.issue_type === "add_row"
+          ? f.row_index != null
+            ? `Insert row at ${f.row_index}`
+            : "Insert row"
+          : f.issue_type === "update_row"
+            ? `Replace row ${f.row_index ?? "?"}`
+            : "Apply";
     return (
       <div
         key={f.id}
@@ -342,18 +357,48 @@ function QAFindingsPanel({
                 {f.issue_type.replace(/_/g, " ")}
               </span>
             </div>
-            {(f.expected || f.actual) && (
+            {(f.expected || f.actual || f.corrected_value !== undefined) && (
               <div className="mt-1 text-xs text-gray-600 space-y-0.5">
                 {f.expected && (
                   <div>
                     <span className="font-medium">Expected:</span> {f.expected}
                   </div>
                 )}
-                {f.actual && (
+                {f.actual && !isRowOp && (
                   <div>
                     <span className="font-medium">Actual:</span> {f.actual}
                   </div>
                 )}
+                {f.corrected_value !== undefined && f.corrected_value !== null && (
+                  <div>
+                    <span className="font-medium">Correction:</span>{" "}
+                    {JSON.stringify(f.corrected_value)}
+                  </div>
+                )}
+              </div>
+            )}
+            {isRowOp && f.actual && (
+              <div className="mt-1">
+                <span className="text-xs font-medium text-gray-600">
+                  {f.issue_type === "delete_row" ? "Row to remove:" : "Current row:"}
+                </span>
+                <pre className="mt-0.5 text-xs bg-white/60 border border-gray-200 rounded px-2 py-1 overflow-x-auto max-w-full">
+                  {(() => {
+                    try {
+                      return JSON.stringify(JSON.parse(f.actual), null, 2);
+                    } catch {
+                      return f.actual;
+                    }
+                  })()}
+                </pre>
+              </div>
+            )}
+            {isRowOp && f.row_value && (
+              <div className="mt-1">
+                <span className="text-xs font-medium text-gray-600">Proposed row:</span>
+                <pre className="mt-0.5 text-xs bg-white/60 border border-gray-200 rounded px-2 py-1 overflow-x-auto max-w-full">
+                  {JSON.stringify(f.row_value, null, 2)}
+                </pre>
               </div>
             )}
             <p className="mt-1 text-xs text-gray-500 italic">{f.explanation}</p>
@@ -362,13 +407,33 @@ function QAFindingsPanel({
             <div className="flex gap-1 flex-shrink-0">
               {canApply && APPLYABLE_ISSUE_TYPES.has(f.issue_type) && (
                 <>
-                  <button
-                    onClick={() => onApply(f)}
-                    className="text-xs text-blue-700 font-medium hover:underline"
-                    title={`Set ${f.field_path} = ${f.issue_type === "extra_value" ? "null" : (f.expected ?? "null")}`}
-                  >
-                    Apply
-                  </button>
+                  {isRowOp ? (
+                    <Popconfirm
+                      title={rowOpLabel}
+                      description={`This changes ${f.field_path}'s row count/order — review the result in the JSON tree before Saving.`}
+                      okText={rowOpLabel}
+                      cancelText="Cancel"
+                      onConfirm={() => onApply(f)}
+                    >
+                      <button className="text-xs text-blue-700 font-medium hover:underline">
+                        {rowOpLabel}
+                      </button>
+                    </Popconfirm>
+                  ) : (
+                    <button
+                      onClick={() => onApply(f)}
+                      className="text-xs text-blue-700 font-medium hover:underline"
+                      title={`Set ${f.field_path} = ${
+                        f.issue_type === "extra_value"
+                          ? "null"
+                          : f.corrected_value !== undefined
+                            ? JSON.stringify(f.corrected_value)
+                            : (f.expected ?? "null")
+                      }`}
+                    >
+                      Apply
+                    </button>
+                  )}
                   <span className="text-gray-300">|</span>
                 </>
               )}
@@ -1161,18 +1226,80 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     ? currentSectionMarkdown?.pages ?? []
     : pages;
 
-  // Inject a finding's "right answer" (expected) into the editable JSON at its
-  // field_path. The user reviews the change in the tree and Saves to persist
-  // (via the existing per-record PATCH). extra_value (hallucination) → set null.
+  // Inject a finding's correct answer into the editable JSON. The user
+  // reviews the change in the tree and Saves to persist (via the existing
+  // per-record PATCH) — this never writes directly to the server.
+  // Row-level ops (add_row/update_row/delete_row) mutate the array at
+  // field_path using row_index/row_value; everything else writes a single
+  // scalar at field_path. extra_value (hallucination) → set null. Prefer the
+  // typed `corrected_value` when present for scalars — it's the model's
+  // actual typed answer (e.g. a real boolean true/false), not a string quote
+  // of page evidence that may not coerce cleanly (coerceExpected is a
+  // best-effort fallback for findings saved before corrected_value existed).
   const handleApplyFinding = useCallback(
     (finding: import("@/lib/api").QAFinding) => {
       try {
         const parsed = JSON.parse(editableJson);
+
+        if (finding.issue_type === "delete_row") {
+          if (finding.row_index == null) {
+            throw new Error("missing row_index for delete_row");
+          }
+          const updated = removeAtPath(
+            parsed,
+            finding.field_path,
+            finding.row_index,
+          );
+          setEditableJson(JSON.stringify(updated, null, 2));
+          setJsonError(null);
+          message.success(
+            `Removed ${finding.field_path}[${finding.row_index}] — review and Save to persist`,
+          );
+          return;
+        }
+
+        if (finding.issue_type === "add_row" || finding.issue_type === "update_row") {
+          if (!finding.row_value) {
+            throw new Error("missing row_value");
+          }
+          const updated =
+            finding.issue_type === "add_row"
+              ? insertAtPath(
+                  parsed,
+                  finding.field_path,
+                  finding.row_index,
+                  finding.row_value,
+                )
+              : setByPath(
+                  parsed,
+                  `${finding.field_path}[${finding.row_index}]`,
+                  finding.row_value,
+                );
+          setEditableJson(JSON.stringify(updated, null, 2));
+          setJsonError(null);
+          message.success(
+            `${finding.issue_type === "add_row" ? "Inserted" : "Replaced"} a row in ${finding.field_path} — review and Save to persist`,
+          );
+          return;
+        }
+
         const current = getByPath(parsed, finding.field_path);
+        // A SQL NULL always comes back as JS `null` (never `undefined`) once
+        // it's crossed the DB/API boundary — so `null` here doesn't mean "the
+        // model answered null", it means "no usable corrected_value" (an
+        // older finding saved before this column existed, or the model
+        // genuinely didn't provide one). Only trust corrected_value when it's
+        // a real, non-null value; otherwise fall back to the text-based
+        // coercion exactly like before this field existed. Mirrors the same
+        // `!== null` check already used server-side in verifyFindingAgainstRecord.
+        const hasCorrectedValue =
+          finding.corrected_value !== undefined && finding.corrected_value !== null;
         const newValue =
           finding.issue_type === "extra_value"
             ? null
-            : coerceExpected(finding.expected, current);
+            : hasCorrectedValue
+              ? finding.corrected_value
+              : coerceExpected(finding.expected, current);
         const updated = setByPath(parsed, finding.field_path, newValue);
         setEditableJson(JSON.stringify(updated, null, 2));
         setJsonError(null);

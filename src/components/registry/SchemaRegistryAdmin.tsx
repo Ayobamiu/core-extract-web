@@ -50,6 +50,21 @@ const CLASSIFIER_HINTS_PLACEHOLDER = `{
   ]
 }`;
 
+/** Shown when the QA hints editor is empty; keyed by top-level schema field-group name. */
+const QA_HINTS_PLACEHOLDER = `{
+  "lithology_intervals": {
+    "priority": "critical",
+    "notes": "Verify every depth_from_ft/depth_to_ft and primary_material against the log column — this is what reviewers care about most."
+  },
+  "document_metadata": {
+    "priority": "low",
+    "ignore": ["total_pages", "page_number"]
+  },
+  "extraction_metadata": {
+    "skip": true
+  }
+}`;
+
 export default function SchemaRegistryAdmin() {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(true);
@@ -64,6 +79,7 @@ export default function SchemaRegistryAdmin() {
   const [versions, setVersions] = useState<RegistrySchemaVersionSummary[]>([]);
   const [editForm] = Form.useForm();
   const [hintsText, setHintsText] = useState("");
+  const [qaHintsText, setQaHintsText] = useState("");
   // Post-processing defaults for the managed slug: registered services + the
   // per-service enabled map (name → enabled) seeded from the document type.
   const [ppServices, setPpServices] = useState<{ name: string; version: string }[]>([]);
@@ -125,6 +141,12 @@ export default function SchemaRegistryAdmin() {
       setHintsText(
         res.documentType.classifier_hints
           ? JSON.stringify(res.documentType.classifier_hints, null, 2)
+          : "",
+      );
+      setQaHintsText(
+        res.documentType.qa_hints &&
+          Object.keys(res.documentType.qa_hints).length > 0
+          ? JSON.stringify(res.documentType.qa_hints, null, 2)
           : "",
       );
       // Seed post-processing defaults (name → enabled) from the document type.
@@ -222,6 +244,39 @@ export default function SchemaRegistryAdmin() {
       } else message.error(res.message || "Save failed");
     } catch {
       message.error("Invalid JSON in classifier hints");
+    }
+  };
+
+  const saveQAHints = async () => {
+    if (!manageSlug) return;
+    const trimmed = qaHintsText.trim();
+    if (!trimmed) {
+      const res = await apiClient.registryPutQAHints(manageSlug, null);
+      if (res.success) {
+        message.success("QA hints cleared");
+        openManage(manageSlug);
+        loadTypes();
+      } else message.error(res.message || "Clear failed");
+      return;
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        message.error("Hints must be a JSON object");
+        return;
+      }
+      const res = await apiClient.registryPutQAHints(manageSlug, parsed);
+      if (res.success) {
+        message.success("QA hints saved");
+        openManage(manageSlug);
+        loadTypes();
+      } else message.error(res.message || "Save failed");
+    } catch {
+      message.error("Invalid JSON in QA hints");
     }
   };
 
@@ -362,9 +417,14 @@ export default function SchemaRegistryAdmin() {
       ),
     },
     {
-      title: "Hints",
+      title: "Classifier hints",
       key: "hints",
       render: (_, r) => <Tag>{r.has_classifier_hints ? "Yes" : "No"}</Tag>,
+    },
+    {
+      title: "QA hints",
+      key: "qa_hints",
+      render: (_, r) => <Tag>{r.has_qa_hints ? "Yes" : "No"}</Tag>,
     },
     {
       title: "",
@@ -664,6 +724,42 @@ export default function SchemaRegistryAdmin() {
                     />
                     <Space>
                       <Button type="primary" onClick={saveHints}>
+                        Save hints
+                      </Button>
+                    </Space>
+                  </div>
+                ),
+              },
+              {
+                key: "qa_hints",
+                label: "QA hints",
+                children: (
+                  <div className="space-y-3 pt-2">
+                    <Paragraph type="secondary" className="!text-xs">
+                      Per-field-group review priority for post-extraction QA,
+                      keyed by top-level schema property name (e.g.
+                      lithology_intervals, document_metadata). Set
+                      priority (critical/high/normal/low), fields to never
+                      flag, and free-text notes. Leave empty and save to clear.
+                    </Paragraph>
+                    <JsonViewer
+                      text={qaHintsText}
+                      onChange={({ text: t }) => setQaHintsText(t)}
+                      placeholder={QA_HINTS_PLACEHOLDER}
+                      defaultMode="code"
+                      mode="code"
+                      height={360}
+                      toolbar={[
+                        "mode",
+                        "format",
+                        "minify",
+                        "search",
+                        "copy",
+                        "upload",
+                      ]}
+                    />
+                    <Space>
+                      <Button type="primary" onClick={saveQAHints}>
                         Save hints
                       </Button>
                     </Space>

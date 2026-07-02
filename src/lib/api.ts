@@ -247,6 +247,7 @@ export interface DocumentTypeInfo {
     routing_confidence_threshold?: number | null;
     status: 'active' | 'deprecated' | string;
     has_classifier_hints: boolean;
+    has_qa_hints: boolean;
 }
 
 // Admin schema registry (GET /registry/...)
@@ -258,6 +259,7 @@ export interface RegistryDocumentTypeDetail {
     routing_confidence_threshold: number;
     status: string;
     classifier_hints?: Record<string, unknown> | null;
+    qa_hints?: Record<string, unknown> | null;
     post_processing_defaults?: PostProcessingOverride[] | null;
     identifier_fields?: string[] | null;
     created_at?: string;
@@ -346,7 +348,7 @@ export interface DetectedSections {
 
 // ── Section QA findings ──────────────────────────────────────────────
 
-export type QAIssueType = 'wrong_value' | 'missing_value' | 'extra_value' | 'missing_rows' | 'extra_rows' | 'wrong_count' | 'formatting';
+export type QAIssueType = 'wrong_value' | 'missing_value' | 'extra_value' | 'missing_rows' | 'extra_rows' | 'wrong_count' | 'formatting' | 'add_row' | 'update_row' | 'delete_row';
 export type QASeverity = 'error' | 'warning' | 'info';
 export type QAFindingStatus = 'open' | 'accepted' | 'dismissed';
 export type QAOverallQuality = 'perfect' | 'good' | 'acceptable' | 'poor';
@@ -360,6 +362,27 @@ export interface QAFinding {
     severity: QASeverity;
     expected: string | null;
     actual: string | null;
+    /**
+     * Typed replacement value for `actual` (string/number/boolean/null),
+     * distinct from `expected` which is a verbatim evidence quote and may not
+     * be directly injectable (e.g. a boolean field's evidence is often a
+     * marker/note, not the literal word "true"/"false"). Absent (undefined)
+     * on findings saved before this field existed — fall back to
+     * coerceExpected(expected, ...) in that case.
+     */
+    corrected_value?: string | number | boolean | null;
+    /**
+     * 0-indexed position within the target array (which must itself be
+     * `field_path`). Required for delete_row/update_row; optional insertion
+     * position for add_row (null/undefined = append). Null/undefined for
+     * every other issue_type.
+     */
+    row_index?: number | null;
+    /**
+     * Full row object for add_row/update_row, matching the target array's
+     * item shape. Null/undefined for delete_row and every other issue_type.
+     */
+    row_value?: Record<string, unknown> | null;
     explanation: string;
     status: QAFindingStatus;
     overall_quality: QAOverallQuality | null;
@@ -1019,6 +1042,17 @@ class ApiClient {
         hints: Record<string, unknown> | null
     ): Promise<ApiResponse<{ classifier_hints: unknown; updated_at: string }>> {
         return this.request(`/registry/document-types/${encodeURIComponent(slug)}/classifier-hints`, {
+            method: 'PUT',
+            body: JSON.stringify({ hints }),
+        });
+    }
+
+    /** Per-field-group QA review priority/ignore guidance, keyed by top-level schema property name. null clears. */
+    async registryPutQAHints(
+        slug: string,
+        hints: Record<string, unknown> | null
+    ): Promise<ApiResponse<{ qa_hints: unknown; updated_at: string }>> {
+        return this.request(`/registry/document-types/${encodeURIComponent(slug)}/qa-hints`, {
             method: 'PUT',
             body: JSON.stringify({ hints }),
         });
