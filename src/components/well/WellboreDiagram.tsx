@@ -81,13 +81,20 @@ interface WellboreDiagramProps {
   data: MGSWellData;
   size?: "small" | "medium" | "large";
   className?: string;
+  /** wide = print-style 3-column grid; embedded = stacked for narrow panels */
+  layout?: "wide" | "embedded";
+  /** Completion / formation-top summary tables (off in record-view heroes). */
+  showSummary?: boolean;
 }
 
 export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
   data,
   size = "medium",
   className = "",
+  layout = "wide",
+  showSummary = layout === "wide",
 }) => {
+  const isEmbedded = layout === "embedded";
   // Calculate max depth
   const maxDepth = useMemo(() => {
     const depths = [
@@ -253,7 +260,7 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
       return true;
     });
   }, [sortedFormations]);
-  console.log({ sortedFormations, uniqueFormations, data });
+
   // Sort casing by depth
   const sortedCasing = useMemo(() => {
     return [...(data.casing || [])].sort(
@@ -348,39 +355,52 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
 
   return (
     <div className={`wellbore-diagram ${className} flex flex-col gap-4`}>
-      {/* Three Column Layout: Diagram (3) | Legend (2) | Summary Tables (3) */}
       <div
         className="border border-gray-300 rounded-lg bg-white shadow-sm"
         style={{ overflow: "visible" }}
       >
-        {/* Header Row - Aligned across all columns */}
-        <div className="grid grid-cols-8 border-b-2 border-gray-400 bg-gray-50">
-          <div className="col-span-3 px-4 py-3 border-r border-gray-300 flex items-center">
+        {isEmbedded ? (
+          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
             <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide">
               Wellbore Diagram
             </h2>
           </div>
-          <div className="col-span-2 px-4 py-3 border-r border-gray-300 flex items-center">
-            <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide">
-              Legend
-            </h2>
+        ) : (
+          <div className="grid grid-cols-8 border-b-2 border-gray-400 bg-gray-50">
+            <div className="col-span-3 px-4 py-3 border-r border-gray-300 flex items-center">
+              <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide">
+                Wellbore Diagram
+              </h2>
+            </div>
+            <div className="col-span-2 px-4 py-3 border-r border-gray-300 flex items-center">
+              <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide">
+                Legend
+              </h2>
+            </div>
+            <div className="col-span-3 px-4 py-3 flex items-center">
+              <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide">
+                Current Completion
+              </h2>
+            </div>
           </div>
-          <div className="col-span-3 px-4 py-3 flex items-center">
-            <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wide">
-              Current Completion
-            </h2>
-          </div>
-        </div>
+        )}
 
-        {/* Content Row - Equal height columns */}
         <div
-          className="grid grid-cols-8 items-start"
+          className={
+            isEmbedded
+              ? "flex flex-col items-stretch"
+              : "grid grid-cols-8 items-start"
+          }
           style={{ overflow: "visible" }}
         >
-          {/* Column 1: Diagram (span 3) */}
+          {/* Diagram */}
           <div
-            className="col-span-3 flex-shrink-0 border-r border-gray-300 p-3 bg-white"
-            style={{ overflow: "visible" }}
+            className={
+              isEmbedded
+                ? "flex-shrink-0 p-3 bg-white flex justify-center overflow-x-auto"
+                : "col-span-3 flex-shrink-0 border-r border-gray-300 p-3 bg-white"
+            }
+            style={isEmbedded ? undefined : { overflow: "visible" }}
           >
             <div
               style={{
@@ -1239,10 +1259,14 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
             </div>
           </div>
 
-          {/* Column 2: Legend (span 2) */}
+          {/* Legend */}
           <div
-            className="col-span-2 flex flex-col gap-2 border-r border-gray-300 p-3 bg-white"
-            style={{ minHeight: `${height}px` }}
+            className={
+              isEmbedded
+                ? "flex flex-wrap gap-3 p-3 bg-gray-50 border-t border-gray-100"
+                : "col-span-2 flex flex-col gap-2 border-r border-gray-300 p-3 bg-white"
+            }
+            style={isEmbedded ? undefined : { minHeight: `${height}px` }}
           >
             {/* Formation Legend */}
             {(uniqueFormations.length > 0 ||
@@ -1352,27 +1376,35 @@ export const WellboreDiagram: React.FC<WellboreDiagramProps> = ({
             )}
           </div>
 
-          {/* Column 3: Well Information, Tubular, Casing Cement, and Perforation Summary (span 3) */}
-          <div className="col-span-3 p-3 bg-white min-h-full">
-            <WellboreSummaryTables
-              data={data}
-              size={size}
-              showFormationTops={false}
-            />
-          </div>
+          {showSummary && (
+            <div
+              className={
+                isEmbedded
+                  ? "p-3 bg-white border-t border-gray-200"
+                  : "col-span-3 p-3 bg-white min-h-full"
+              }
+            >
+              <WellboreSummaryTables
+                data={data}
+                size={size}
+                showFormationTops={false}
+              />
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Formation Tops Summary - Separate on next page */}
-      <div className="w-full mt-4">
-        <div className="bg-white border border-gray-300 rounded p-2">
-          <WellboreSummaryTables
-            data={data}
-            size={size}
-            showFormationTopsOnly={true}
-          />
+      {showSummary && !isEmbedded && (
+        <div className="w-full mt-4">
+          <div className="bg-white border border-gray-300 rounded p-2">
+            <WellboreSummaryTables
+              data={data}
+              size={size}
+              showFormationTopsOnly={true}
+            />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
