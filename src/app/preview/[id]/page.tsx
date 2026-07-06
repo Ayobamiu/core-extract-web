@@ -1778,7 +1778,13 @@ const PreviewPage: React.FC = () => {
       <Drawer
         open={!!recordDrawer}
         onClose={() => setRecordDrawer(null)}
-        width={compareMode ? "100%" : 920}
+        width={
+          compareMode
+            ? "100%"
+            : recordDrawer?._slug === "mgs_well_log"
+              ? 1100
+              : 920
+        }
         title={recordDrawer?._filename}
         styles={{
           body: { background: "#f9fafb", padding: compareMode ? 0 : undefined },
@@ -1806,6 +1812,9 @@ const PreviewPage: React.FC = () => {
       >
         {recordDrawer &&
           (() => {
+            const hideWellHero =
+              compareMode && recordDrawer._slug === "mgs_well_log";
+
             const recordView = (
               <RecordView
                 data={recordDrawer._record ?? recordDrawer}
@@ -1814,6 +1823,7 @@ const PreviewPage: React.FC = () => {
                 identifierFields={idFieldsBySlug.get(
                   recordDrawer._slug ?? null,
                 )}
+                hero={hideWellHero ? null : undefined}
                 trust={{
                   verification:
                     recordDrawer._reviewStatus === "approved"

@@ -4,9 +4,8 @@ import React from "react";
 import { WellboreDiagram, MGSWellData } from "@/components/well/WellboreDiagram";
 
 /**
- * mgs_well_log hero — the existing wellbore construction diagram. The record IS
- * the MGSWellData shape the diagram consumes. The generic body still renders the
- * formations/casing/pluggings tables below (complementary data view).
+ * mgs_well_log hero — compact wellbore diagram for the record drawer. Tabular
+ * data (formations, casing, pluggings, …) stays in the generic RecordBody below.
  */
 export function MgsWellLogHero({ data }: { data: Record<string, unknown> }) {
   const well = data as unknown as MGSWellData;
@@ -17,13 +16,13 @@ export function MgsWellLogHero({ data }: { data: Record<string, unknown> }) {
   if (!hasGeometry) return null;
 
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4 overflow-x-auto">
-      <h3 className="text-[13px] font-semibold tracking-wide text-gray-700 uppercase mb-3">
-        Wellbore Diagram
-      </h3>
-      <div className="flex justify-center">
-        <WellboreDiagram data={well} size="large" />
-      </div>
+    <section className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <WellboreDiagram
+        data={well}
+        size="medium"
+        layout="embedded"
+        showSummary={false}
+      />
     </section>
   );
 }
