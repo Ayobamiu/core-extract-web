@@ -37,6 +37,7 @@ interface FileViewerRightPaneProps {
   onViewerSectionChange?: (sectionResultId: string | null) => void;
   viewerResultTab?: ViewerResultTab | null;
   onViewerResultTabChange?: (tab: ViewerResultTab) => void;
+  onNavigateToPdfPage?: (pageNumber: number) => void;
 }
 
 function PaneTab({
@@ -97,6 +98,7 @@ export default function FileViewerRightPane({
   onViewerSectionChange,
   viewerResultTab = null,
   onViewerResultTabChange,
+  onNavigateToPdfPage,
 }: FileViewerRightPaneProps) {
   const hasRouting = Boolean(file.detected_sections);
   const sectionCount = file.detected_sections?.sections?.length ?? 0;
@@ -245,6 +247,7 @@ export default function FileViewerRightPane({
                 file.extraction_metadata?.visual_page_classifier ?? null
               }
               onSectionsUpdated={onSectionsUpdated}
+              onNavigateToPdfPage={onNavigateToPdfPage}
             />
           </div>
         )}

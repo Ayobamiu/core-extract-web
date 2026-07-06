@@ -51,12 +51,19 @@ type PdfViewerProps = {
    * on change, so it never yanks the user back after they scroll away manually.
    */
   targetPage?: number | null;
+  /** Bumps on each navigation request so re-clicking the same page still scrolls. */
+  targetPageNonce?: number;
 };
 
 const clamp = (n: number, lo: number, hi: number) =>
   Math.min(hi, Math.max(lo, n));
 
-export default function PdfViewer({ url, fileKey, targetPage }: PdfViewerProps) {
+export default function PdfViewer({
+  url,
+  fileKey,
+  targetPage,
+  targetPageNonce = 0,
+}: PdfViewerProps) {
   const [numPages, setNumPages] = useState(0);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1); // 1 = fit container width
@@ -80,7 +87,9 @@ export default function PdfViewer({ url, fileKey, targetPage }: PdfViewerProps) 
   // The (page, numPages) we last auto-navigated to, so the targetPage effect
   // fires only when the target or the loaded doc actually changes — not on
   // every resize/zoom re-render.
-  const appliedTarget = useRef<{ page: number; n: number } | null>(null);
+  const appliedTarget = useRef<{ page: number; n: number; nonce: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -225,8 +234,15 @@ export default function PdfViewer({ url, fileKey, targetPage }: PdfViewerProps) 
     if (targetPage == null || numPages <= 0 || baseWidth <= 0) return;
     const target = clamp(targetPage, 1, numPages);
     const last = appliedTarget.current;
-    if (last && last.page === target && last.n === numPages) return;
-    appliedTarget.current = { page: target, n: numPages };
+    if (
+      last &&
+      last.page === target &&
+      last.n === numPages &&
+      last.nonce === targetPageNonce
+    ) {
+      return;
+    }
+    appliedTarget.current = { page: target, n: numPages, nonce: targetPageNonce };
     setPageNumber(target);
     const t1 = setTimeout(() => scrollToPage(target), 0);
     const t2 = setTimeout(() => scrollToPage(target), 250);
@@ -234,7 +250,7 @@ export default function PdfViewer({ url, fileKey, targetPage }: PdfViewerProps) 
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [targetPage, numPages, baseWidth, scrollToPage]);
+  }, [targetPage, targetPageNonce, numPages, baseWidth, scrollToPage]);
 
   // When switching to continuous, jump to the page the user was on.
   useEffect(() => {

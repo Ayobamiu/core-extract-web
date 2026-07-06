@@ -60,6 +60,8 @@ interface Props {
   // of truth for `file.detected_sections` so the panel reflects the new
   // state without a full file re-fetch.
   onSectionsUpdated?: (next: DetectedSections) => void;
+  /** Scroll the left-hand PDF pane to this page (1-based). */
+  onNavigateToPdfPage?: (pageNumber: number) => void;
 }
 
 type ActionKind =
@@ -83,12 +85,14 @@ function PageThumbnail({
   fileId,
   pageNumber,
   width = 160,
+  onClick,
 }: {
   fileId: string;
   pageNumber: number;
   width?: number;
+  onClick?: () => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLButtonElement>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -139,28 +143,36 @@ function PageThumbnail({
   }, [shouldLoad, fileId, pageNumber, width]);
 
   return (
-    <div
-      ref={containerRef}
-      className="relative bg-gray-100 border border-gray-200 rounded shrink-0 flex items-center justify-center overflow-hidden"
-      style={{ width, height: width * 1.3, minWidth: width }}
-    >
-      {src ? (
-        <img
-          src={src}
-          alt={`Page ${pageNumber}`}
-          className="w-full h-full object-contain"
-        />
-      ) : error ? (
-        <div className="text-xs text-red-500 px-2 text-center">
-          Thumbnail failed
+    <Tooltip title="View page in PDF">
+      <button
+        type="button"
+        ref={containerRef}
+        onClick={onClick}
+        className={`relative bg-gray-100 border border-gray-200 rounded shrink-0 flex items-center justify-center overflow-hidden p-0 ${
+          onClick
+            ? "cursor-pointer hover:border-blue-400 hover:ring-2 hover:ring-blue-200 transition-shadow"
+            : ""
+        }`}
+        style={{ width, height: width * 1.3, minWidth: width }}
+      >
+        {src ? (
+          <img
+            src={src}
+            alt={`Page ${pageNumber}`}
+            className="w-full h-full object-contain pointer-events-none"
+          />
+        ) : error ? (
+          <div className="text-xs text-red-500 px-2 text-center">
+            Thumbnail failed
+          </div>
+        ) : (
+          <Loader className="w-5 h-5 animate-spin text-gray-400" />
+        )}
+        <div className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded pointer-events-none">
+          p.{pageNumber}
         </div>
-      ) : (
-        <Loader className="w-5 h-5 animate-spin text-gray-400" />
-      )}
-      <div className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
-        p.{pageNumber}
-      </div>
-    </div>
+      </button>
+    </Tooltip>
   );
 }
 
@@ -275,6 +287,7 @@ export default function DocumentRoutingPanel({
   detectedSections,
   visualClassifierMeta,
   onSectionsUpdated,
+  onNavigateToPdfPage,
 }: Props) {
   const { message } = App.useApp();
 
@@ -736,7 +749,12 @@ export default function DocumentRoutingPanel({
               children: (
                 <div className="flex flex-col gap-2">
                   {decisions.map((d) => (
-                    <PageRow key={d.page.page_number} fileId={fileId} d={d} />
+                    <PageRow
+                      key={d.page.page_number}
+                      fileId={fileId}
+                      d={d}
+                      onNavigateToPdfPage={onNavigateToPdfPage}
+                    />
                   ))}
                 </div>
               ),
@@ -781,6 +799,7 @@ export default function DocumentRoutingPanel({
                         key={p.page_number}
                         fileId={fileId}
                         d={{ page: p, decision: "outside" }}
+                        onNavigateToPdfPage={onNavigateToPdfPage}
                         actions={
                           <div className="flex flex-col gap-1 items-stretch min-w-[190px]">
                             <span className="text-xs font-medium text-gray-500">
@@ -1200,15 +1219,26 @@ function PageRow({
   fileId,
   d,
   actions,
+  onNavigateToPdfPage,
 }: {
   fileId: string;
   d: PageDecision;
   actions?: React.ReactNode;
+  onNavigateToPdfPage?: (pageNumber: number) => void;
 }) {
   const { page, decision, reason, duplicate_of } = d;
   return (
     <div className="flex items-start gap-3 p-2 bg-white border border-gray-200 rounded hover:bg-gray-50">
-      <PageThumbnail fileId={fileId} pageNumber={page.page_number} width={120} />
+      <PageThumbnail
+        fileId={fileId}
+        pageNumber={page.page_number}
+        width={120}
+        onClick={
+          onNavigateToPdfPage
+            ? () => onNavigateToPdfPage(page.page_number)
+            : undefined
+        }
+      />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <span className="font-medium text-sm">Page {page.page_number}</span>
