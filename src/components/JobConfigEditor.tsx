@@ -76,6 +76,9 @@ export default function JobConfigEditor({
           currentConfig.processing_config?.usePerSectionExtraction === true,
         document_type_slugs:
           currentConfig.processing_config?.documentTypeSlugs ?? [],
+        depth_geometry_recovery:
+          currentConfig.processing_config?.extraction?.options
+            ?.depthGeometryRecovery === true,
       });
     }
   }, [open, currentConfig, form]);
@@ -204,7 +207,10 @@ export default function JobConfigEditor({
             values.extraction_method ||
             currentConfig.processing_config?.extraction?.method ||
             "paddleocr",
-          options: currentConfig.processing_config?.extraction?.options || {},
+          options: {
+            ...(currentConfig.processing_config?.extraction?.options || {}),
+            depthGeometryRecovery: values.depth_geometry_recovery === true,
+          },
         },
         processing: {
           method: values.processing_method || PROCESSING_METHODS.OPENAI,
@@ -257,6 +263,9 @@ export default function JobConfigEditor({
         currentConfig.processing_config?.useVisualClassifier === true;
       const currentUsePerSectionExtraction =
         currentConfig.processing_config?.usePerSectionExtraction === true;
+      const currentDepthGeometryRecovery =
+        currentConfig.processing_config?.extraction?.options
+          ?.depthGeometryRecovery === true;
       const currentSlugs = (
         currentConfig.processing_config?.documentTypeSlugs ?? []
       )
@@ -284,6 +293,7 @@ export default function JobConfigEditor({
         values.use_page_detection !== currentUsePageDetection ||
         values.use_visual_classifier !== currentUseVisualClassifier ||
         values.use_per_section_extraction !== currentUsePerSectionExtraction ||
+        values.depth_geometry_recovery !== currentDepthGeometryRecovery ||
         currentSlugs !== newSlugs ||
         currentPP !== newPP
       ) {
@@ -376,6 +386,40 @@ export default function JobConfigEditor({
               <Option value="paddleocr">PaddleOCR</Option>
               <Option value="extendai">Extend AI</Option>
             </Select>
+          </Form.Item>
+
+          {/* Depth-geometry recovery (Extend AI only: needs word-level OCR geometry) */}
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, curr) =>
+              prev.extraction_method !== curr.extraction_method
+            }
+          >
+            {({ getFieldValue }) =>
+              getFieldValue("extraction_method") === "extendai" ? (
+                <>
+                  <Form.Item
+                    label={
+                      <span className="flex items-center gap-2">
+                        Depth-geometry recovery
+                        <Tag color="blue" style={{ marginInlineEnd: 0 }}>BETA</Tag>
+                      </span>
+                    }
+                    name="depth_geometry_recovery"
+                    tooltip="For borehole-style logs where depth is a graphical ruler: recovers true sample depths and lithology contact depths from the document's word geometry instead of the 5-ft gridline labels. No effect on documents without a depth ruler."
+                    valuePropName="checked"
+                    initialValue={false}
+                  >
+                    <Switch />
+                  </Form.Item>
+                  <div className="text-xs text-gray-500 mt-1 mb-4">
+                    Fixes rounded depths on borehole logs (samples exact,
+                    layer contacts within ~0.2 ft). Validated on gINT-style
+                    logs; enable per job and spot-check the first results.
+                  </div>
+                </>
+              ) : null
+            }
           </Form.Item>
 
           {/* Processing Method */}
