@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Splitter, Typography } from "antd";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import type { JobFile } from "@/lib/api";
@@ -73,6 +73,22 @@ export default function FileViewerLayout({
   onViewerResultTabChange,
   ...headerProps
 }: FileViewerLayoutProps) {
+  const [pdfNavRequest, setPdfNavRequest] = useState<{
+    page: number;
+    nonce: number;
+  } | null>(null);
+
+  useEffect(() => {
+    setPdfNavRequest(null);
+  }, [file.id]);
+
+  const handleNavigateToPdfPage = useCallback((page: number) => {
+    setPdfNavRequest((prev) => ({
+      page,
+      nonce: (prev?.nonce ?? 0) + 1,
+    }));
+  }, []);
+
   return (
     <div className={`flex flex-col overflow-hidden bg-gray-50 ${className}`}>
       <FileViewerHeader file={file} {...headerProps} />
@@ -95,7 +111,12 @@ export default function FileViewerLayout({
                     <Loader className="w-6 h-6 animate-spin text-gray-400" />
                   </div>
                 ) : pdfUrl ? (
-                  <PdfViewer url={pdfUrl} fileKey={file.id} />
+                  <PdfViewer
+                    url={pdfUrl}
+                    fileKey={file.id}
+                    targetPage={pdfNavRequest?.page ?? null}
+                    targetPageNonce={pdfNavRequest?.nonce}
+                  />
                 ) : (
                   <div className="flex items-center justify-center h-full">
                     <Text type="secondary" className="text-sm">
@@ -124,6 +145,7 @@ export default function FileViewerLayout({
                 onViewerSectionChange={onViewerSectionChange}
                 viewerResultTab={viewerResultTab}
                 onViewerResultTabChange={onViewerResultTabChange}
+                onNavigateToPdfPage={handleNavigateToPdfPage}
               />
             </div>
           </Splitter.Panel>
