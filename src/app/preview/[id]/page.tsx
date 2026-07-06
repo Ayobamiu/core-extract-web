@@ -36,6 +36,7 @@ import { RecordView } from "@/components/record/RecordView";
 import { humanizeKey } from "@/components/record/recordSchema";
 import { PreviewRail, PreviewView, documentTypeLabel } from "./PreviewRail";
 import { parsePreviewUrl, buildPreviewParams } from "./previewUrlState";
+import Link from "next/link";
 import { ChevronLeftIcon } from "@heroicons/react/24/outline";
 import {
   SearchOutlined,
@@ -47,6 +48,7 @@ import {
   ReloadOutlined,
   SplitCellsOutlined,
   ExclamationCircleOutlined,
+  PrinterOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { WellboreDiagramDrawer } from "@/components/well/WellboreDiagramModal";
@@ -1790,23 +1792,61 @@ const PreviewPage: React.FC = () => {
           body: { background: "#f9fafb", padding: compareMode ? 0 : undefined },
         }}
         extra={
-          recordDrawer ? (
-            <Tooltip
-              title={
-                compareMode
-                  ? "Hide the source PDF"
-                  : "Show the source PDF next to this record"
-              }
-            >
-              <AntButton
-                type={compareMode ? "primary" : "default"}
-                icon={<SplitCellsOutlined />}
-                onClick={() => setCompareMode((v) => !v)}
-              >
-                {compareMode ? "Exit compare" : "Compare"}
-              </AntButton>
-            </Tooltip>
-          ) : null
+          recordDrawer
+            ? (() => {
+                const well = recordDrawer._record ?? recordDrawer;
+                const showPrint =
+                  recordDrawer._slug === "mgs_well_log" &&
+                  (well.formations ||
+                    well.casing ||
+                    well.perforation_intervals ||
+                    well.pluggings ||
+                    well.shows_depths ||
+                    well.true_depth ||
+                    well.measured_depth);
+
+                return (
+                  <div className="flex items-center gap-2">
+                    {showPrint && (
+                      <Link
+                        href={`/wellbore/${previewId}/print?filename=${encodeURIComponent(
+                          recordDrawer._filename || "",
+                        )}`}
+                        target="_blank"
+                        onClick={() =>
+                          trackPreviewAnalytics(previewId, [
+                            {
+                              type: "wellbore_print",
+                              jobFileId: recordDrawer._fileId,
+                              wellLabel: recordDrawer._filename,
+                            },
+                          ])
+                        }
+                      >
+                        <AntButton icon={<PrinterOutlined />}>
+                          Print View
+                        </AntButton>
+                      </Link>
+                    )}
+                    <Tooltip
+                      title={
+                        compareMode
+                          ? "Hide the source PDF"
+                          : "Show the source PDF next to this record"
+                      }
+                    >
+                      <AntButton
+                        type={compareMode ? "primary" : "default"}
+                        icon={<SplitCellsOutlined />}
+                        onClick={() => setCompareMode((v) => !v)}
+                      >
+                        {compareMode ? "Exit compare" : "Compare"}
+                      </AntButton>
+                    </Tooltip>
+                  </div>
+                );
+              })()
+            : null
         }
         destroyOnClose
       >
