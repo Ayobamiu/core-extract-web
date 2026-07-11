@@ -9,6 +9,7 @@ import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { linter, lintGutter } from "@codemirror/lint";
 import { search, openSearchPanel } from "@codemirror/search";
 import { foldGutter } from "@codemirror/language";
+import { githubLight, githubDark } from "@uiw/codemirror-theme-github";
 
 export interface JsonCodeEditorProps {
   value: string;
@@ -103,7 +104,7 @@ const JsonCodeEditor: React.FC<JsonCodeEditorProps> = ({
           dropCursor: true,
         }}
         placeholder={placeholder}
-        theme={theme}
+        theme={theme === "dark" ? githubDark : githubLight}
         autoFocus={autoFocus}
         style={{ height: "100%" }}
       />
