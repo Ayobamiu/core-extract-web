@@ -1674,6 +1674,37 @@ const FileTable: React.FC<FileTableProps> = ({
           approved: "Approved",
           rejected: "Rejected",
         };
+
+        // Per-section progress: "2 ✓ · 3 ? · 1 ✕". Sections never verified
+        // have no section_verifications row, so pending is derived from the
+        // section total (record_count); in_review counts as still-pending.
+        const counts = record.section_review_counts;
+        const totalSections = record.record_count ?? 0;
+        if (counts && totalSections > 0) {
+          const approved = counts.approved ?? 0;
+          const rejected = counts.rejected ?? 0;
+          const pending = Math.max(totalSections - approved - rejected, 0);
+          const tooltipLines = [
+            `${approved} approved · ${pending} pending · ${rejected} rejected (of ${totalSections} sections)`,
+            counts.in_review ? `${counts.in_review} in review` : null,
+            `File: ${statusLabels[status]}`,
+            record.reviewed_at
+              ? `Reviewed at: ${moment(record.reviewed_at).format("YYYY-MM-DD HH:mm")}`
+              : null,
+          ].filter(Boolean);
+          return (
+            <Tooltip title={tooltipLines.join(" — ")}>
+              <Space size={6} style={{ whiteSpace: "nowrap" }}>
+                <Text style={{ color: "#52c41a" }}>{approved} ✓</Text>
+                <Text type="secondary">{pending} ?</Text>
+                <Text type={rejected > 0 ? "danger" : "secondary"}>
+                  {rejected} ✕
+                </Text>
+              </Space>
+            </Tooltip>
+          );
+        }
+
         return (
           <Tooltip
             title={
