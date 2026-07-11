@@ -315,6 +315,88 @@ export function createSectionFromPage(
 }
 
 /**
+ * Delete a section outright (wrongly assigned / shouldn't exist).
+ * Its pages become unassigned — they reappear under "pages outside any
+ * section", from where a new section can be created if the delete was a
+ * mistake. On Save, the server drops the section's record from the result
+ * envelope and removes its verification/QA rows.
+ */
+export function deleteSection(
+  detectedSections: DetectedSections,
+  index: number
+): DetectedSections {
+  const blob = cloneBlob(detectedSections);
+  const section = requireSection(blob, index);
+
+  // Reflect the removal on the pages so the per-page view reads "none".
+  const [start, end] = section.page_range;
+  for (const p of blob.pages ?? []) {
+    if (
+      typeof p.page_number === "number" &&
+      p.page_number >= start &&
+      p.page_number <= end
+    ) {
+      p.document_type_slug = "none";
+    }
+  }
+
+  blob.sections.splice(index, 1);
+  blob.status = deriveFileStatus(blob.sections);
+  return blob;
+}
+
+/**
+ * Re-assign a contiguous page range inside a section to a different document
+ * type: carves the range out (splitting at both boundaries as needed) and
+ * re-routes the carved-out part to `slug`. One-shot version of
+ * split → split → change slug. All affected sections are marked for
+ * re-extraction (the remnants' previous results covered the moved pages).
+ */
+export function reassignPages(
+  detectedSections: DetectedSections,
+  index: number,
+  fromPage: number,
+  toPage: number,
+  slug: string
+): DetectedSections {
+  if (!slug) {
+    throw new Error("A document type slug is required");
+  }
+  if (
+    !Number.isInteger(fromPage) ||
+    !Number.isInteger(toPage) ||
+    fromPage > toPage
+  ) {
+    throw new Error(`Invalid page range ${fromPage}–${toPage}`);
+  }
+
+  const section = requireSection(cloneBlob(detectedSections), index);
+  const [start, end] = section.page_range;
+  if (fromPage < start || toPage > end) {
+    throw new Error(
+      `Page range ${fromPage}–${toPage} is outside the section (${start}–${end})`
+    );
+  }
+
+  // Whole section → plain slug change.
+  if (fromPage === start && toPage === end) {
+    return changeSectionSlug(detectedSections, index, slug);
+  }
+
+  let blob = detectedSections;
+  let middleIndex = index;
+  // Carve off the tail first so `index` stays valid for the second split.
+  if (toPage < end) {
+    blob = splitSection(blob, index, toPage + 1); // [start..toPage] + [toPage+1..end]
+  }
+  if (fromPage > start) {
+    blob = splitSection(blob, middleIndex, fromPage); // [start..fromPage-1] + [fromPage..toPage]
+    middleIndex = index + 1;
+  }
+  return changeSectionSlug(blob, middleIndex, slug);
+}
+
+/**
  * Check if a DetectedSections blob has unsaved changes compared to another.
  * Compares section count, page ranges, slugs, and section_result_ids.
  */
