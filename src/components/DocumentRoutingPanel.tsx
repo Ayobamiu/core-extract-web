@@ -35,6 +35,8 @@ import {
   changeSectionSlug,
   addPageToSection,
   createSectionFromPage,
+  deleteSection,
+  reassignPages,
   hasUnsavedChanges,
   getSectionsNeedingExtraction,
 } from "@/lib/routingEdits";
@@ -69,7 +71,8 @@ type ActionKind =
   | "split"
   | "merge"
   | "new_section"
-  | "include_skipped";
+  | "include_skipped"
+  | "reassign_pages";
 interface ActionState {
   kind: ActionKind;
   sectionIndex: number;
@@ -317,6 +320,8 @@ export default function DocumentRoutingPanel({
   const [pickedSlug, setPickedSlug] = useState<string | null>(null);
   const [pickedSplitPage, setPickedSplitPage] = useState<number | null>(null);
   const [pickedSkippedPages, setPickedSkippedPages] = useState<number[]>([]);
+  const [pickedFromPage, setPickedFromPage] = useState<number | null>(null);
+  const [pickedToPage, setPickedToPage] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -343,6 +348,8 @@ export default function DocumentRoutingPanel({
     setPickedSlug(null);
     setPickedSplitPage(null);
     setPickedSkippedPages([]);
+    setPickedFromPage(null);
+    setPickedToPage(null);
   }, []);
 
   // ── Client-side edit handlers (no server calls) ───────────────────
@@ -463,6 +470,49 @@ export default function DocumentRoutingPanel({
       message.error(err instanceof Error ? err.message : "Create failed");
     }
   }, [activeAction, pickedSlug, activeSections, closeAction]);
+
+  const handleDelete = useCallback(
+    (sectionIndex: number) => {
+      if (!activeSections) return;
+      try {
+        const updated = deleteSection(activeSections, sectionIndex);
+        setDraft(updated);
+        message.success("Section deleted (unsaved)");
+      } catch (err: unknown) {
+        message.error(err instanceof Error ? err.message : "Delete failed");
+      }
+    },
+    [activeSections],
+  );
+
+  const handleReassignPages = useCallback(() => {
+    if (!activeAction || activeAction.kind !== "reassign_pages") return;
+    if (!activeSections || !pickedSlug) return;
+    if (pickedFromPage == null || pickedToPage == null) return;
+    try {
+      const updated = reassignPages(
+        activeSections,
+        activeAction.sectionIndex,
+        pickedFromPage,
+        pickedToPage,
+        pickedSlug,
+      );
+      setDraft(updated);
+      message.success(
+        `Pages ${pickedFromPage}–${pickedToPage} re-assigned to ${pickedSlug} (unsaved)`,
+      );
+      closeAction();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Re-assign failed");
+    }
+  }, [
+    activeAction,
+    activeSections,
+    pickedSlug,
+    pickedFromPage,
+    pickedToPage,
+    closeAction,
+  ]);
 
   const handleDiscard = useCallback(() => {
     setDraft(null);
@@ -744,6 +794,13 @@ export default function DocumentRoutingPanel({
                     setPickedSkippedPages([]);
                     setActiveAction({ kind: "include_skipped", sectionIndex: i });
                   }}
+                  onReassignPages={() => {
+                    setPickedSlug(null);
+                    setPickedFromPage(null);
+                    setPickedToPage(null);
+                    setActiveAction({ kind: "reassign_pages", sectionIndex: i });
+                  }}
+                  onDelete={() => handleDelete(i)}
                 />
               ),
               children: (
@@ -987,6 +1044,88 @@ export default function DocumentRoutingPanel({
         </div>
       </Modal>
 
+      {/* Reassign-pages modal */}
+      <Modal
+        title={
+          activeAction?.kind === "reassign_pages" &&
+          sections[activeAction.sectionIndex]
+            ? `Reassign pages to a different type (section range ${sections[activeAction.sectionIndex].page_range[0]}–${sections[activeAction.sectionIndex].page_range[1]})`
+            : "Reassign pages"
+        }
+        open={activeAction?.kind === "reassign_pages"}
+        onCancel={closeAction}
+        onOk={handleReassignPages}
+        okText="Reassign & approve"
+        okButtonProps={{
+          disabled:
+            !pickedSlug ||
+            pickedFromPage == null ||
+            pickedToPage == null ||
+            pickedFromPage > pickedToPage,
+        }}
+        destroyOnHidden
+      >
+        <div className="space-y-3">
+          <div className="text-xs text-gray-500">
+            The chosen pages are carved out into their own section and
+            re-routed to the picked document type. The remaining pages stay
+            under the current type. All affected sections are re-extracted on
+            Save.
+          </div>
+          {(() => {
+            if (activeAction?.kind !== "reassign_pages") return null;
+            const section = sections[activeAction.sectionIndex];
+            if (!section) return null;
+            const [start, end] = section.page_range;
+            const candidates: number[] = [];
+            for (let p = start; p <= end; p++) candidates.push(p);
+            return (
+              <div className="flex gap-2">
+                <Select
+                  value={pickedFromPage ?? undefined}
+                  onChange={(v) => {
+                    setPickedFromPage(v);
+                    if (pickedToPage != null && pickedToPage < v) {
+                      setPickedToPage(v);
+                    }
+                  }}
+                  placeholder="First page"
+                  className="w-full"
+                  options={candidates.map((p) => ({
+                    value: p,
+                    label: `From page ${p}`,
+                  }))}
+                />
+                <Select
+                  value={pickedToPage ?? undefined}
+                  onChange={(v) => setPickedToPage(v)}
+                  placeholder="Last page"
+                  className="w-full"
+                  options={candidates
+                    .filter((p) => pickedFromPage == null || p >= pickedFromPage)
+                    .map((p) => ({
+                      value: p,
+                      label: `To page ${p}`,
+                    }))}
+                />
+              </div>
+            );
+          })()}
+          <Select
+            showSearch
+            value={pickedSlug ?? undefined}
+            onChange={(v) => setPickedSlug(v)}
+            placeholder={slugsLoaded ? "Pick the new document type" : "Loading types…"}
+            optionFilterProp="label"
+            className="w-full"
+            options={availableSlugs.map((d) => ({
+              value: d.slug,
+              label: `${d.display_name}  ·  ${d.slug}${d.status !== "active" ? " (deprecated)" : ""}`,
+            }))}
+          />
+        </div>
+      </Modal>
+
       {/* New-section-from-orphan-page modal */}
       <Modal
         title={
@@ -1095,6 +1234,8 @@ function SectionActions({
   onSplit,
   onMerge,
   onIncludeSkipped,
+  onReassignPages,
+  onDelete,
 }: {
   section: DetectedSection;
   loading: boolean;
@@ -1104,6 +1245,8 @@ function SectionActions({
   onSplit: () => void;
   onMerge: () => void;
   onIncludeSkipped: () => void;
+  onReassignPages: () => void;
+  onDelete: () => void;
 }) {
   const [start, end] = section.page_range;
   const canSplit = end > start;
@@ -1165,6 +1308,30 @@ function SectionActions({
           </Button>
         </Tooltip>
       )}
+      {canSplit && (
+        <Tooltip title="Move some of this section's pages to a different document type">
+          <Button size="small" onClick={onReassignPages} disabled={loading}>
+            Reassign pages
+          </Button>
+        </Tooltip>
+      )}
+      <Popconfirm
+        title="Delete this section?"
+        description={
+          <div style={{ maxWidth: 280 }}>
+            Its pages become unassigned, and on Save its extracted data, review
+            status and QA findings are removed. Undo before Save with Discard.
+          </div>
+        }
+        okText="Delete"
+        okButtonProps={{ danger: true }}
+        cancelText="Cancel"
+        onConfirm={onDelete}
+      >
+        <Button size="small" danger disabled={loading}>
+          Delete
+        </Button>
+      </Popconfirm>
     </Space>
   );
 }
