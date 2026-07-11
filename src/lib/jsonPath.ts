@@ -77,4 +77,51 @@ export const APPLYABLE_ISSUE_TYPES = new Set([
   "missing_value",
   "extra_value",
   "formatting",
+  "add_row",
+  "update_row",
+  "delete_row",
 ]);
+
+/**
+ * Immutably insert `value` into the array at `arrayPath`, at `index` (or
+ * appended at the end when `index` is null/undefined/out of range). Used for
+ * add_row findings — distinct from setByPath, which overwrites a single slot
+ * rather than shifting subsequent items.
+ */
+export function insertAtPath<T>(
+  obj: T,
+  arrayPath: string,
+  index: number | null | undefined,
+  value: unknown,
+): T {
+  const clone: any = structuredClone(obj);
+  const segs = parsePath(arrayPath);
+  let cur: any = clone;
+  for (let i = 0; i < segs.length - 1; i++) {
+    const seg = segs[i];
+    if (cur[seg] == null || typeof cur[seg] !== "object") cur[seg] = [];
+    cur = cur[seg];
+  }
+  const lastSeg = segs[segs.length - 1];
+  if (!Array.isArray(cur[lastSeg])) cur[lastSeg] = [];
+  const arr = cur[lastSeg] as unknown[];
+  const insertAt =
+    index == null || index < 0 || index > arr.length ? arr.length : index;
+  arr.splice(insertAt, 0, value);
+  return clone;
+}
+
+/**
+ * Immutably remove the item at `index` from the array at `arrayPath`. Used
+ * for delete_row findings. No-op (returns an unmodified clone) if the target
+ * isn't an array or the index is out of range — callers should already have
+ * verified the index server-side, but this stays defensive against a stale
+ * client-side tree.
+ */
+export function removeAtPath<T>(obj: T, arrayPath: string, index: number): T {
+  const clone: any = structuredClone(obj);
+  const arr = getByPath(clone, arrayPath);
+  if (!Array.isArray(arr) || index < 0 || index >= arr.length) return clone;
+  arr.splice(index, 1);
+  return clone;
+}
