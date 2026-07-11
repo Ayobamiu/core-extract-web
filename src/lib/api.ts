@@ -256,6 +256,9 @@ export interface DocumentTypeInfo {
     status: 'active' | 'deprecated' | string;
     has_classifier_hints: boolean;
     has_qa_hints: boolean;
+    /** Ordered identifier dot-paths for this type (e.g.
+     *  ["site_identification.boring_well_id"]); empty → heuristic fallback. */
+    identifier_fields?: string[] | null;
 }
 
 // Admin schema registry (GET /registry/...)
@@ -334,6 +337,11 @@ export interface DetectedSection {
     /** Stable link to the extraction record in the V2 envelope. Null when the
      *  section needs (re-)extraction (set by split/merge/slug-change). */
     section_result_id?: string | null;
+    /** section_result_id of the canonical duplicate (e.g. the updated version
+     *  of the same well). A superseded section keeps its entry here for
+     *  provenance, but its record leaves the result envelope on Save and it
+     *  is excluded from extraction, review counts and QA. */
+    superseded_by?: string | null;
 }
 
 export interface DetectedSections {

@@ -5,6 +5,7 @@ import {
   App,
   Button,
   Checkbox,
+  Dropdown,
   Empty,
   Collapse,
   Modal,
@@ -14,10 +15,12 @@ import {
   Tag,
   Tooltip,
 } from "antd";
+import type { MenuProps } from "antd";
 import {
   CheckCircleFilled,
   CloseCircleFilled,
   CopyOutlined,
+  MoreOutlined,
   WarningFilled,
   EyeOutlined,
 } from "@ant-design/icons";
@@ -37,13 +40,20 @@ import {
   createSectionFromPage,
   deleteSection,
   reassignPages,
+  markSectionSuperseded,
+  unsupersedeSection,
   hasUnsavedChanges,
   getSectionsNeedingExtraction,
 } from "@/lib/routingEdits";
+import { recordIdentifier } from "@/lib/recordIdentifier";
 
 interface Props {
   fileId: string;
   detectedSections: DetectedSections | null | undefined;
+  /** The file's V2 result envelope ({ slug: record[] }). Used to resolve each
+   *  section's extracted record for duplicate detection and the mark-duplicate
+   *  compare view. Optional — without it those features are hidden. */
+  result?: Record<string, unknown> | null;
   // extraction_metadata.visual_page_classifier — the worker's record of
   // what actually ran (may differ from detected_sections if the classifier
   // ran but extraction fell back to the full doc).
@@ -72,7 +82,8 @@ type ActionKind =
   | "merge"
   | "new_section"
   | "include_skipped"
-  | "reassign_pages";
+  | "reassign_pages"
+  | "mark_duplicate";
 interface ActionState {
   kind: ActionKind;
   sectionIndex: number;
@@ -288,6 +299,7 @@ function adjacentSectionIndices(
 export default function DocumentRoutingPanel({
   fileId,
   detectedSections,
+  result,
   visualClassifierMeta,
   onSectionsUpdated,
   onNavigateToPdfPage,
@@ -322,6 +334,7 @@ export default function DocumentRoutingPanel({
   const [pickedSkippedPages, setPickedSkippedPages] = useState<number[]>([]);
   const [pickedFromPage, setPickedFromPage] = useState<number | null>(null);
   const [pickedToPage, setPickedToPage] = useState<number | null>(null);
+  const [pickedCanonical, setPickedCanonical] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -350,7 +363,80 @@ export default function DocumentRoutingPanel({
     setPickedSkippedPages([]);
     setPickedFromPage(null);
     setPickedToPage(null);
+    setPickedCanonical(null);
   }, []);
+
+  // ── Duplicate detection (same slug + same record identifier) ──────
+  // Extraction records keyed by section_result_id, from the server-state
+  // V2 envelope. Empty when the parent doesn't pass `result`.
+  const recordsById = useMemo(() => {
+    const map = new Map<string, Record<string, unknown>>();
+    if (result && typeof result === "object") {
+      for (const arr of Object.values(result)) {
+        if (!Array.isArray(arr)) continue;
+        for (const rec of arr) {
+          const id = (rec as Record<string, unknown>)?.section_result_id;
+          if (typeof id === "string") {
+            map.set(id, rec as Record<string, unknown>);
+          }
+        }
+      }
+    }
+    return map;
+  }, [result]);
+
+  const idFieldsBySlug = useMemo(() => {
+    const map = new Map<string, string[] | null>();
+    for (const d of availableSlugs) map.set(d.slug, d.identifier_fields ?? null);
+    return map;
+  }, [availableSlugs]);
+
+  // Per-section record identifier (e.g. "W-01"), null when unresolvable.
+  const sectionIdentifiers = useMemo(() => {
+    return sections.map((s) => {
+      if (!s.section_result_id) return null;
+      const rec = recordsById.get(s.section_result_id);
+      if (!rec) return null;
+      return recordIdentifier(rec, idFieldsBySlug.get(s.document_type_slug));
+    });
+  }, [sections, recordsById, idFieldsBySlug]);
+
+  // index → other live sections with the same slug AND the same identifier
+  // (duplicate candidates, e.g. the same well extracted from two pages).
+  const duplicateCandidates = useMemo(() => {
+    const map = new Map<number, number[]>();
+    for (let i = 0; i < sections.length; i++) {
+      if (sections[i].superseded_by || !sectionIdentifiers[i]) continue;
+      const matches: number[] = [];
+      for (let j = 0; j < sections.length; j++) {
+        if (j === i || sections[j].superseded_by) continue;
+        if (
+          sections[j].document_type_slug === sections[i].document_type_slug &&
+          sectionIdentifiers[j] === sectionIdentifiers[i]
+        ) {
+          matches.push(j);
+        }
+      }
+      if (matches.length > 0) map.set(i, matches);
+    }
+    return map;
+  }, [sections, sectionIdentifiers]);
+
+  // index → sections that could serve as its canonical in "mark duplicate"
+  // (same slug, live, with an extraction record to point at).
+  const canonicalTargets = useCallback(
+    (index: number): number[] => {
+      const out: number[] = [];
+      for (let j = 0; j < sections.length; j++) {
+        if (j === index || sections[j].superseded_by) continue;
+        if (sections[j].document_type_slug !== sections[index].document_type_slug) continue;
+        const id = sections[j].section_result_id;
+        if (id && recordsById.has(id)) out.push(j);
+      }
+      return out;
+    },
+    [sections, recordsById],
+  );
 
   // ── Client-side edit handlers (no server calls) ───────────────────
 
@@ -513,6 +599,49 @@ export default function DocumentRoutingPanel({
     pickedToPage,
     closeAction,
   ]);
+
+  const handleMarkDuplicate = useCallback(() => {
+    if (!activeAction || activeAction.kind !== "mark_duplicate") return;
+    if (!activeSections || pickedCanonical == null) return;
+    try {
+      const updated = markSectionSuperseded(
+        activeSections,
+        activeAction.sectionIndex,
+        pickedCanonical,
+      );
+      setDraft(updated);
+      message.success("Section marked as superseded (unsaved)");
+      closeAction();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Mark failed");
+    }
+  }, [activeAction, activeSections, pickedCanonical, closeAction]);
+
+  const handleRestoreSuperseded = useCallback(
+    (sectionIndex: number) => {
+      if (!activeSections) return;
+      const section = activeSections.sections[sectionIndex];
+      // If the mark was already saved, the record left the envelope — the
+      // section must re-extract. An unsaved in-draft mark undoes for free.
+      const recordStillExists = !!(
+        section?.section_result_id && recordsById.has(section.section_result_id)
+      );
+      try {
+        const updated = unsupersedeSection(activeSections, sectionIndex, {
+          forceReextract: !recordStillExists,
+        });
+        setDraft(updated);
+        message.success(
+          recordStillExists
+            ? "Supersede undone (unsaved)"
+            : "Restored — will re-extract on Save (unsaved)",
+        );
+      } catch (err: unknown) {
+        message.error(err instanceof Error ? err.message : "Restore failed");
+      }
+    },
+    [activeSections, recordsById],
+  );
 
   const handleDiscard = useCallback(() => {
     setDraft(null);
@@ -772,14 +901,35 @@ export default function DocumentRoutingPanel({
           defaultActiveKey={sections.map((_, i) => `s${i}`)}
           items={sections.map((section, i) => {
             const decisions = decisionsForSection(section, pages);
+            const dupOf = duplicateCandidates.get(i) ?? [];
+            const duplicateHint =
+              dupOf.length > 0
+                ? `Same identifier "${sectionIdentifiers[i]}" as ` +
+                  dupOf
+                    .map((j) => `pages ${sections[j].page_range[0]}–${sections[j].page_range[1]}`)
+                    .join(", ")
+                : null;
+            const canonical = section.superseded_by
+              ? sections.find(
+                  (s2) => s2.section_result_id === section.superseded_by,
+                ) ?? null
+              : null;
             return {
               key: `s${i}`,
-              label: <SectionHeader section={section} />,
+              label: (
+                <SectionHeader
+                  section={section}
+                  identifier={sectionIdentifiers[i]}
+                  duplicateHint={duplicateHint}
+                  canonical={canonical}
+                />
+              ),
               extra: (
                 <SectionActions
                   section={section}
                   loading={actionLoadingFor === i}
                   isLastSection={i === sections.length - 1}
+                  canMarkDuplicate={canonicalTargets(i).length > 0}
                   onApprove={() => handleApprove(i)}
                   onChangeSlug={() => {
                     setPickedSlug(section.document_type_slug);
@@ -800,6 +950,21 @@ export default function DocumentRoutingPanel({
                     setPickedToPage(null);
                     setActiveAction({ kind: "reassign_pages", sectionIndex: i });
                   }}
+                  onMarkDuplicate={() => {
+                    // Pre-pick the detected duplicate when there is one;
+                    // otherwise pre-pick only when a single target exists.
+                    const suggested = duplicateCandidates.get(i) ?? [];
+                    const targets = canonicalTargets(i);
+                    setPickedCanonical(
+                      suggested.length > 0
+                        ? suggested[0]
+                        : targets.length === 1
+                          ? targets[0]
+                          : null,
+                    );
+                    setActiveAction({ kind: "mark_duplicate", sectionIndex: i });
+                  }}
+                  onRestore={() => handleRestoreSuperseded(i)}
                   onDelete={() => handleDelete(i)}
                 />
               ),
@@ -1126,6 +1291,109 @@ export default function DocumentRoutingPanel({
         </div>
       </Modal>
 
+      {/* Mark-duplicate (supersede) modal */}
+      <Modal
+        title={
+          activeAction?.kind === "mark_duplicate" &&
+          sections[activeAction.sectionIndex]
+            ? `Mark as duplicate: pages ${sections[activeAction.sectionIndex].page_range[0]}–${sections[activeAction.sectionIndex].page_range[1]}`
+            : "Mark as duplicate"
+        }
+        open={activeAction?.kind === "mark_duplicate"}
+        onCancel={closeAction}
+        onOk={handleMarkDuplicate}
+        okText="Mark as superseded"
+        okButtonProps={{ disabled: pickedCanonical == null }}
+        width="96vw"
+        style={{ top: 16, maxWidth: "96vw", paddingBottom: 0 }}
+        destroyOnHidden
+      >
+        {(() => {
+          if (activeAction?.kind !== "mark_duplicate") return null;
+          const idx = activeAction.sectionIndex;
+          const section = sections[idx];
+          if (!section) return null;
+          // Detected duplicates (same slug + identifier) come first, labeled.
+          const suggested = duplicateCandidates.get(idx) ?? [];
+          const suggestedSet = new Set(suggested);
+          const targets = canonicalTargets(idx);
+          const orderedTargets = [
+            ...suggested.filter((j) => targets.includes(j)),
+            ...targets.filter((j) => !suggestedSet.has(j)),
+          ];
+          const thisRecord = section.section_result_id
+            ? recordsById.get(section.section_result_id)
+            : null;
+          const canonicalSection =
+            pickedCanonical != null ? sections[pickedCanonical] : null;
+          const canonicalRecord = canonicalSection?.section_result_id
+            ? recordsById.get(canonicalSection.section_result_id)
+            : null;
+          return (
+            <div className="space-y-3">
+              <div className="text-xs text-gray-500">
+                This section is an outdated/duplicate version; the canonical
+                section&apos;s data is kept. On Save the superseded
+                section&apos;s record leaves the results (and its review/QA
+                state is removed) — the section itself stays here, marked, and
+                can be restored.
+              </div>
+              <Select
+                value={pickedCanonical ?? undefined}
+                onChange={(v) => setPickedCanonical(v)}
+                placeholder="Pick the canonical (kept) section"
+                className="w-full"
+                options={orderedTargets.map((j) => ({
+                  value: j,
+                  label: (
+                    <span>
+                      {`pages ${sections[j].page_range[0]}–${sections[j].page_range[1]}`}
+                      {sectionIdentifiers[j] ? ` · ${sectionIdentifiers[j]}` : ""}
+                      {suggestedSet.has(j) && (
+                        <Tag color="warning" style={{ marginLeft: 8 }}>
+                          suggested duplicate
+                        </Tag>
+                      )}
+                    </span>
+                  ),
+                }))}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-xs font-medium text-red-700 mb-1">
+                    This section (pages {section.page_range[0]}–
+                    {section.page_range[1]}) — superseded
+                  </div>
+                  <pre
+                    className="text-xs bg-gray-50 border rounded p-2 overflow-auto"
+                    style={{ maxHeight: "calc(100vh - 330px)", minHeight: 240 }}
+                  >
+                    {thisRecord
+                      ? JSON.stringify(thisRecord, null, 2)
+                      : "(no extracted record)"}
+                  </pre>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-green-700 mb-1">
+                    {canonicalSection
+                      ? `Canonical (pages ${canonicalSection.page_range[0]}–${canonicalSection.page_range[1]}) — kept`
+                      : "Canonical — pick a section above"}
+                  </div>
+                  <pre
+                    className="text-xs bg-gray-50 border rounded p-2 overflow-auto"
+                    style={{ maxHeight: "calc(100vh - 330px)", minHeight: 240 }}
+                  >
+                    {canonicalRecord
+                      ? JSON.stringify(canonicalRecord, null, 2)
+                      : "…"}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
       {/* New-section-from-orphan-page modal */}
       <Modal
         title={
@@ -1229,25 +1497,32 @@ function SectionActions({
   section,
   loading,
   isLastSection,
+  canMarkDuplicate,
   onApprove,
   onChangeSlug,
   onSplit,
   onMerge,
   onIncludeSkipped,
   onReassignPages,
+  onMarkDuplicate,
+  onRestore,
   onDelete,
 }: {
   section: DetectedSection;
   loading: boolean;
   isLastSection: boolean;
+  canMarkDuplicate: boolean;
   onApprove: () => void;
   onChangeSlug: () => void;
   onSplit: () => void;
   onMerge: () => void;
   onIncludeSkipped: () => void;
   onReassignPages: () => void;
+  onMarkDuplicate: () => void;
+  onRestore: () => void;
   onDelete: () => void;
 }) {
+  const { modal } = App.useApp();
   const [start, end] = section.page_range;
   const canSplit = end > start;
   const canMerge = !isLastSection; // can merge with next section (unless this is the last one)
@@ -1256,6 +1531,87 @@ function SectionActions({
 
   // stopPropagation so clicks don't toggle the Collapse panel.
   const stop = (e: React.MouseEvent) => e.stopPropagation();
+
+  const confirmDelete = () => {
+    modal.confirm({
+      title: "Delete this section?",
+      content:
+        "Its pages become unassigned, and on Save its extracted data, review " +
+        "status and QA findings are removed. Undo before Save with Discard.",
+      okText: "Delete",
+      okButtonProps: { danger: true },
+      cancelText: "Cancel",
+      onOk: onDelete,
+    });
+  };
+
+  // A superseded section is dormant: its only actions are Restore or Delete.
+  if (section.superseded_by) {
+    return (
+      <Space size="small" onClick={stop}>
+        <Tooltip title="Un-mark as duplicate. If the mark was already saved, the section re-extracts on Save.">
+          <Button size="small" onClick={onRestore} disabled={loading}>
+            Restore
+          </Button>
+        </Tooltip>
+        <Button size="small" danger disabled={loading} onClick={confirmDelete}>
+          Delete
+        </Button>
+      </Space>
+    );
+  }
+
+  // Everything except Approve lives in one compact menu so the header row
+  // never overflows the card.
+  const menuItems: MenuProps["items"] = [
+    { key: "change_slug", label: "Change slug…" },
+    {
+      key: "split",
+      label: "Split…",
+      disabled: !canSplit,
+      title: canSplit ? undefined : "Section is only one page",
+    },
+    {
+      key: "merge",
+      label: "Merge with next",
+      disabled: !canMerge,
+      title: canMerge ? undefined : "No next section to merge with",
+    },
+    ...(skippedCount > 0
+      ? [{ key: "include_skipped", label: `Include skipped pages (${skippedCount})…` }]
+      : []),
+    ...(canSplit ? [{ key: "reassign", label: "Reassign pages…" }] : []),
+    ...(canMarkDuplicate ? [{ key: "duplicate", label: "Duplicate of…" }] : []),
+    { type: "divider" as const },
+    { key: "delete", label: "Delete section", danger: true },
+  ];
+
+  const onMenuClick: MenuProps["onClick"] = ({ key, domEvent }) => {
+    domEvent.stopPropagation();
+    switch (key) {
+      case "change_slug":
+        onChangeSlug();
+        break;
+      case "split":
+        onSplit();
+        break;
+      case "merge":
+        onMerge();
+        break;
+      case "include_skipped":
+        onIncludeSkipped();
+        break;
+      case "reassign":
+        onReassignPages();
+        break;
+      case "duplicate":
+        onMarkDuplicate();
+        break;
+      case "delete":
+        confirmDelete();
+        break;
+    }
+  };
 
   return (
     <Space size="small" onClick={stop}>
@@ -1272,81 +1628,75 @@ function SectionActions({
           </Button>
         </Popconfirm>
       ) : null}
-      <Button size="small" onClick={onChangeSlug} disabled={loading}>
-        Change slug
-      </Button>
-      <Tooltip
-        title={canSplit ? "Split this section into two" : "Section is only one page"}
+      <Dropdown
+        menu={{ items: menuItems, onClick: onMenuClick }}
+        trigger={["click"]}
       >
         <Button
           size="small"
-          onClick={onSplit}
-          disabled={!canSplit || loading}
-        >
-          Split
-        </Button>
-      </Tooltip>
-      <Tooltip
-        title={
-          canMerge
-            ? "Merge this section with the next one"
-            : "No next section to merge with"
-        }
-      >
-        <Button
-          size="small"
-          onClick={onMerge}
-          disabled={!canMerge || loading}
-        >
-          Merge
-        </Button>
-      </Tooltip>
-      {skippedCount > 0 && (
-        <Tooltip title="Re-include pages the classifier skipped in this section">
-          <Button size="small" onClick={onIncludeSkipped} disabled={loading}>
-            Include pages ({skippedCount})
-          </Button>
-        </Tooltip>
-      )}
-      {canSplit && (
-        <Tooltip title="Move some of this section's pages to a different document type">
-          <Button size="small" onClick={onReassignPages} disabled={loading}>
-            Reassign pages
-          </Button>
-        </Tooltip>
-      )}
-      <Popconfirm
-        title="Delete this section?"
-        description={
-          <div style={{ maxWidth: 280 }}>
-            Its pages become unassigned, and on Save its extracted data, review
-            status and QA findings are removed. Undo before Save with Discard.
-          </div>
-        }
-        okText="Delete"
-        okButtonProps={{ danger: true }}
-        cancelText="Cancel"
-        onConfirm={onDelete}
-      >
-        <Button size="small" danger disabled={loading}>
-          Delete
-        </Button>
-      </Popconfirm>
+          icon={<MoreOutlined />}
+          disabled={loading}
+          aria-label="Section actions"
+        />
+      </Dropdown>
     </Space>
   );
 }
 
-function SectionHeader({ section }: { section: DetectedSection }) {
+function SectionHeader({
+  section,
+  identifier,
+  duplicateHint,
+  canonical,
+}: {
+  section: DetectedSection;
+  /** Record identifier (e.g. "W-01"), when resolvable from the envelope. */
+  identifier?: string | null;
+  /** Set when another live section shares this one's slug + identifier. */
+  duplicateHint?: string | null;
+  /** The canonical section this one is superseded by, when marked. */
+  canonical?: DetectedSection | null;
+}) {
   const [start, end] = section.page_range;
-  const needsExtraction = section.section_result_id == null;
+  const isSuperseded = !!section.superseded_by;
+  const needsExtraction = section.section_result_id == null && !isSuperseded;
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    <div
+      className="flex items-center gap-2 flex-wrap"
+      style={isSuperseded ? { opacity: 0.55 } : undefined}
+    >
       <span className="font-mono text-sm font-medium">
         {section.document_type_slug}
       </span>
+      {identifier && (
+        <span className="font-mono text-xs text-gray-600">{identifier}</span>
+      )}
       <span className="text-sm text-gray-500">
         pages {start}–{end} ({section.page_count})
       </span>
+      {isSuperseded && (
+        <Tooltip
+          title={
+            canonical
+              ? `Duplicate — superseded by the section on pages ${canonical.page_range[0]}–${canonical.page_range[1]}. Its record leaves the results on Save.`
+              : "Duplicate — superseded. Its record leaves the results on Save."
+          }
+        >
+          <Tag color="default" style={{ marginInlineEnd: 0 }}>
+            superseded
+            {canonical
+              ? ` → pages ${canonical.page_range[0]}–${canonical.page_range[1]}`
+              : ""}
+          </Tag>
+        </Tooltip>
+      )}
+      {!isSuperseded && duplicateHint && (
+        <Tooltip title={`${duplicateHint}. If one is an outdated version, use "Duplicate of…" to resolve.`}>
+          <Tag color="warning" style={{ marginInlineEnd: 0 }}>
+            possible duplicate
+          </Tag>
+        </Tooltip>
+      )}
       {needsExtraction && (
         <Tag color="warning" style={{ marginInlineEnd: 0 }}>
           needs extraction

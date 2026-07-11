@@ -243,6 +243,7 @@ export default function FileViewerRightPane({
             <DocumentRoutingPanel
               fileId={file.id}
               detectedSections={file.detected_sections}
+              result={file.result ?? null}
               visualClassifierMeta={
                 file.extraction_metadata?.visual_page_classifier ?? null
               }

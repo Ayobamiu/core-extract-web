@@ -397,6 +397,62 @@ export function reassignPages(
 }
 
 /**
+ * Mark a section as a duplicate superseded by another section (the canonical,
+ * e.g. the updated version of the same well). The superseded section keeps
+ * its entry (provenance, undo) but on Save its record leaves the result
+ * envelope and its verification/QA rows are removed; it is excluded from
+ * extraction, review counts and QA from then on.
+ */
+export function markSectionSuperseded(
+  detectedSections: DetectedSections,
+  index: number,
+  canonicalIndex: number
+): DetectedSections {
+  if (index === canonicalIndex) {
+    throw new Error("A section cannot supersede itself");
+  }
+  const blob = cloneBlob(detectedSections);
+  const section = requireSection(blob, index);
+  const canonical = requireSection(blob, canonicalIndex);
+
+  if (!canonical.section_result_id) {
+    throw new Error(
+      "The canonical section has no extraction result yet — extract it first"
+    );
+  }
+  if (canonical.superseded_by) {
+    throw new Error("The canonical section is itself superseded");
+  }
+
+  section.superseded_by = canonical.section_result_id;
+  blob.status = deriveFileStatus(blob.sections);
+  return blob;
+}
+
+/**
+ * Undo a supersede. If the mark was already saved, the section's record is
+ * gone from the envelope, so the section is flagged for re-extraction
+ * (`forceReextract: true` — the caller knows whether the server state had
+ * the mark). An unsaved in-draft mark keeps its record and just clears.
+ */
+export function unsupersedeSection(
+  detectedSections: DetectedSections,
+  index: number,
+  { forceReextract = false }: { forceReextract?: boolean } = {}
+): DetectedSections {
+  const blob = cloneBlob(detectedSections);
+  const section = requireSection(blob, index);
+
+  section.superseded_by = null;
+  if (forceReextract) {
+    section.section_result_id = null;
+    section.status = "approved";
+  }
+  blob.status = deriveFileStatus(blob.sections);
+  return blob;
+}
+
+/**
  * Check if a DetectedSections blob has unsaved changes compared to another.
  * Compares section count, page ranges, slugs, and section_result_ids.
  */
@@ -412,18 +468,20 @@ export function hasUnsavedChanges(
     if (c.document_type_slug !== s.document_type_slug) return true;
     if (c.page_range[0] !== s.page_range[0] || c.page_range[1] !== s.page_range[1]) return true;
     if (c.section_result_id !== s.section_result_id) return true;
+    if ((c.superseded_by ?? null) !== (s.superseded_by ?? null)) return true;
   }
   return false;
 }
 
 /**
  * Get indices of sections that need extraction (section_result_id is null).
+ * Superseded sections never extract — their canonical twin carries the data.
  */
 export function getSectionsNeedingExtraction(
   detectedSections: DetectedSections | null | undefined
 ): number[] {
   if (!detectedSections?.sections) return [];
   return detectedSections.sections
-    .map((s, i) => (s.section_result_id == null ? i : -1))
+    .map((s, i) => (s.section_result_id == null && !s.superseded_by ? i : -1))
     .filter((i) => i >= 0);
 }

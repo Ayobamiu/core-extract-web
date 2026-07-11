@@ -34,6 +34,9 @@ import {
 import dynamic from "next/dynamic";
 import { RecordView } from "@/components/record/RecordView";
 import { humanizeKey } from "@/components/record/recordSchema";
+// Record-identifier resolution (configured per-type dot-paths + heuristic
+// fallback) — shared with the routing panel's duplicate detection.
+import { recordIdentifier } from "@/lib/recordIdentifier";
 import { PreviewRail, PreviewView, documentTypeLabel } from "./PreviewRail";
 import { parsePreviewUrl, buildPreviewParams } from "./previewUrlState";
 import Link from "next/link";
@@ -154,97 +157,6 @@ const tableStyles = `
   }
 `;
 
-// When showing records (rather than files), the first fixed column shows the
-// record's identifier instead of the filename — e.g. a borehole_log record is
-// identified by its boring_well_id. Identifier fields vary by vendor and are
-// often nested under a metadata container, so we search a prioritized list of
-// field names across the record root and the common container objects. Higher
-// priority = more specific identifier (a boring/well id beats a sample/location
-// id), so a record with several id-ish fields gets labeled by the best one.
-const ID_FIELD_PRIORITY = [
-  "boring_well_id",
-  "boring_well_id_full",
-  "boring_well_no",
-  "boring_id",
-  "borehole_no",
-  "boring_no",
-  "well_number",
-  "well_no",
-  "well_id",
-  "monitoring_well_id",
-  "well_name",
-  "api_number",
-  "location_id",
-  "station_id",
-  "site_id",
-  "sample_id",
-];
-
-// Objects (besides the record root) that commonly hold the identifier.
-const ID_CONTAINERS: Array<string | null> = [
-  null, // the record root itself (flat records)
-  "document_metadata",
-  "site_identification",
-  "site_and_location",
-  "boring_identification",
-  "test_setup",
-  "sample_collection",
-  "well_information",
-  "project_information",
-  "general_information",
-];
-
-function scalarField(obj: any, key: string): string | null {
-  if (!obj || typeof obj !== "object") return null;
-  const v = obj[key];
-  if (typeof v === "string" && v.trim()) return v.trim();
-  if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  return null;
-}
-
-/** Resolve a dot-path (e.g. "site_identification.boring_well_id") to a scalar. */
-function resolveDotPath(record: any, path: string): string | null {
-  const parts = path.split(".");
-  let cur = record;
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (!cur || typeof cur !== "object") return null;
-    cur = cur[parts[i]];
-  }
-  return scalarField(cur, parts[parts.length - 1]);
-}
-
-/**
- * Resolve the identifier value used to label a record row, or null if none.
- *
- * `configuredFields` is the record's document type's per-type dot-paths (from the
- * backend, keyed by slug). When present they win — exact, vendor-specific, in
- * priority order. With no config we fall back to the global heuristic (a field
- * priority list crossed with common container objects).
- */
-function recordIdentifier(
-  record: any,
-  configuredFields?: string[] | null,
-): string | null {
-  if (!record || typeof record !== "object") return null;
-
-  // 1. Configured dot-paths for this record's type (preferred).
-  if (Array.isArray(configuredFields)) {
-    for (const path of configuredFields) {
-      const v = resolveDotPath(record, path);
-      if (v) return v;
-    }
-  }
-
-  // 2. Heuristic fallback for unconfigured types.
-  for (const field of ID_FIELD_PRIORITY) {
-    for (const container of ID_CONTAINERS) {
-      const obj = container ? record[container] : record;
-      const v = scalarField(obj, field);
-      if (v) return v;
-    }
-  }
-  return null;
-}
 
 interface PreviewData {
   preview: PreviewDataTable;
