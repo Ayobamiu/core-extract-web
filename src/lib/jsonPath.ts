@@ -125,3 +125,70 @@ export function removeAtPath<T>(obj: T, arrayPath: string, index: number): T {
   arr.splice(index, 1);
   return clone;
 }
+
+/**
+ * Order-independent deep equality over JSON values (objects compared by
+ * key set, arrays by position). Used to match a QA finding's row anchor
+ * against the live array — key order can differ between the QA-time
+ * stringification and the client-side JSON round trip.
+ */
+export function deepJsonEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => deepJsonEqual(v, b[i]));
+  }
+  if (typeof a === "object") {
+    const ka = Object.keys(a as object);
+    const kb = Object.keys(b as object);
+    if (ka.length !== kb.length) return false;
+    return ka.every((k) => deepJsonEqual((a as any)[k], (b as any)[k]));
+  }
+  return false;
+}
+
+/**
+ * Resolve where a row-op finding should apply in the CURRENT array, using the
+ * row snapshot the server froze into `finding.actual` at QA time (verifier's
+ * `toActualString`: JSON.stringify for objects, String() otherwise).
+ *
+ * Row indices go stale the moment any earlier structural op (delete/insert)
+ * is applied — that's how "delete row 6 then update row 7" corrupted the
+ * original row 8 in production. The anchor makes each op order-independent:
+ *
+ *  - 'match'      row at the stored index still has the QA-time content
+ *  - 'relocated'  content found at exactly one OTHER index → apply there
+ *  - 'not_found'  content is gone (already applied, edited, or deleted)
+ *  - 'ambiguous'  content appears at several indices — do not guess
+ *  - 'no_anchor'  finding predates anchors (no `actual`) — caller decides
+ */
+export function resolveRowAnchor(
+  arr: unknown[],
+  rowIndex: number,
+  anchor: string | null | undefined,
+):
+  | { status: "match" | "no_anchor"; index: number }
+  | { status: "relocated"; index: number }
+  | { status: "not_found" | "ambiguous"; index: null } {
+  if (anchor == null || anchor === "") return { status: "no_anchor", index: rowIndex };
+
+  let anchorVal: unknown = anchor;
+  try {
+    anchorVal = JSON.parse(anchor);
+  } catch {
+    // primitive rows are stored via String(); compare as-is below
+  }
+  const matches = (row: unknown) =>
+    deepJsonEqual(row, anchorVal) ||
+    (typeof row !== "object" && String(row) === anchor);
+
+  if (rowIndex >= 0 && rowIndex < arr.length && matches(arr[rowIndex])) {
+    return { status: "match", index: rowIndex };
+  }
+  const hits: number[] = [];
+  for (let i = 0; i < arr.length; i++) if (matches(arr[i])) hits.push(i);
+  if (hits.length === 1) return { status: "relocated", index: hits[0] };
+  return { status: hits.length === 0 ? "not_found" : "ambiguous", index: null };
+}

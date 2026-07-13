@@ -13,6 +13,7 @@ import {
   coerceExpected,
   insertAtPath,
   removeAtPath,
+  resolveRowAnchor,
   APPLYABLE_ISSUE_TYPES,
 } from "@/lib/jsonPath";
 import {
@@ -1241,44 +1242,130 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       try {
         const parsed = JSON.parse(editableJson);
 
-        if (finding.issue_type === "delete_row") {
-          if (finding.row_index == null) {
-            throw new Error("missing row_index for delete_row");
-          }
-          const updated = removeAtPath(
-            parsed,
-            finding.field_path,
-            finding.row_index,
+        // Re-point still-open findings on the same array after a structural
+        // apply (delete shifts later rows down, insert shifts them up):
+        //  - row ops (same bare field_path): shift row_index
+        //  - scalar findings addressed INTO the array ("path[4].moisture"):
+        //    rewrite the bracket index — these carry no row anchor, so this
+        //    re-index is their only protection against landing on the wrong row
+        // Without this, applying "delete row 6" then "update row 7" hits the
+        // original row 8. Local state only; nothing persists until Save.
+        const shiftSiblingRowIndices = (fromIndex: number, delta: number) => {
+          const sid = selectedSection?.sectionResultId;
+          if (!sid) return;
+          const bracketRe = new RegExp(
+            `^${finding.field_path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\[(\\d+)\\]`,
           );
+          setQaFindings((prev) => {
+            const list = prev[sid];
+            if (!list) return prev;
+            return {
+              ...prev,
+              [sid]: list.map((f) => {
+                if (f.id === finding.id || f.status !== "open") return f;
+                const isRowOp =
+                  f.issue_type === "delete_row" ||
+                  f.issue_type === "update_row" ||
+                  f.issue_type === "add_row";
+                if (
+                  isRowOp &&
+                  f.field_path === finding.field_path &&
+                  f.row_index != null &&
+                  f.row_index >= fromIndex
+                ) {
+                  return { ...f, row_index: f.row_index + delta };
+                }
+                if (!isRowOp) {
+                  const m = f.field_path.match(bracketRe);
+                  if (m && Number(m[1]) >= fromIndex) {
+                    return {
+                      ...f,
+                      field_path: f.field_path.replace(
+                        bracketRe,
+                        `${finding.field_path}[${Number(m[1]) + delta}]`,
+                      ),
+                    };
+                  }
+                }
+                return f;
+              }),
+            };
+          });
+        };
+
+        if (finding.issue_type === "delete_row" || finding.issue_type === "update_row") {
+          if (finding.row_index == null) {
+            throw new Error(`missing row_index for ${finding.issue_type}`);
+          }
+          if (finding.issue_type === "update_row" && !finding.row_value) {
+            throw new Error("missing row_value");
+          }
+          const arr = getByPath(parsed, finding.field_path);
+          if (!Array.isArray(arr)) {
+            throw new Error(`${finding.field_path} is not an array`);
+          }
+
+          // Anchor to the row CONTENT the verifier froze at QA time, not the
+          // index: earlier applies (or manual edits) shift positions.
+          const resolved = resolveRowAnchor(arr, finding.row_index, finding.actual);
+          if (resolved.index == null) {
+            message.error(
+              resolved.status === "not_found"
+                ? `The row this finding targets is no longer in ${finding.field_path} — it may have been edited, deleted, or this fix was already applied. Re-run QA to refresh.`
+                : `Several rows in ${finding.field_path} match this finding's original content — not applying a guess. Re-run QA to refresh.`,
+            );
+            return;
+          }
+          const idx = resolved.index;
+          if (idx < 0 || idx >= arr.length) {
+            // no_anchor finding (pre-anchor era) whose stored index went stale
+            throw new Error(`row ${idx} is out of range for ${finding.field_path}`);
+          }
+
+          const updated =
+            finding.issue_type === "delete_row"
+              ? removeAtPath(parsed, finding.field_path, idx)
+              : setByPath(parsed, `${finding.field_path}[${idx}]`, finding.row_value);
           setEditableJson(JSON.stringify(updated, null, 2));
           setJsonError(null);
+          if (finding.issue_type === "delete_row") {
+            shiftSiblingRowIndices(idx + 1, -1);
+          }
+          const moved =
+            resolved.status === "relocated"
+              ? ` (row had moved from ${finding.row_index} to ${idx})`
+              : "";
           message.success(
-            `Removed ${finding.field_path}[${finding.row_index}] — review and Save to persist`,
+            `${finding.issue_type === "delete_row" ? "Removed" : "Replaced"} ${finding.field_path}[${idx}]${moved} — review and Save to persist`,
           );
           return;
         }
 
-        if (finding.issue_type === "add_row" || finding.issue_type === "update_row") {
+        if (finding.issue_type === "add_row") {
           if (!finding.row_value) {
             throw new Error("missing row_value");
           }
-          const updated =
-            finding.issue_type === "add_row"
-              ? insertAtPath(
-                  parsed,
-                  finding.field_path,
-                  finding.row_index,
-                  finding.row_value,
-                )
-              : setByPath(
-                  parsed,
-                  `${finding.field_path}[${finding.row_index}]`,
-                  finding.row_value,
-                );
+          const arr = getByPath(parsed, finding.field_path);
+          const arrLen = Array.isArray(arr) ? arr.length : 0;
+          // Mirror insertAtPath's clamping so the sibling shift uses the real
+          // insertion point.
+          const insertAt =
+            finding.row_index == null ||
+            finding.row_index < 0 ||
+            finding.row_index > arrLen
+              ? arrLen
+              : finding.row_index;
+          const updated = insertAtPath(
+            parsed,
+            finding.field_path,
+            finding.row_index,
+            finding.row_value,
+          );
           setEditableJson(JSON.stringify(updated, null, 2));
           setJsonError(null);
+          shiftSiblingRowIndices(insertAt, +1);
           message.success(
-            `${finding.issue_type === "add_row" ? "Inserted" : "Replaced"} a row in ${finding.field_path} — review and Save to persist`,
+            `Inserted a row in ${finding.field_path} — review and Save to persist`,
           );
           return;
         }
@@ -1312,7 +1399,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         );
       }
     },
-    [editableJson, message],
+    [editableJson, message, selectedSection?.sectionResultId],
   );
 
   const handleUpdateFinding = useCallback(
