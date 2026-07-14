@@ -89,6 +89,16 @@ export default function FileViewerLayout({
     }));
   }, []);
 
+  // ── QA side column (3-segment review: PDF | content | QA) ───────────────
+  // TabbedDataViewer (deep inside the right pane) owns all QA state and
+  // portals its findings/review panel into this slot. We only decide whether
+  // the third pane exists (qaActive) and hand over the mounted element.
+  const [qaActive, setQaActive] = useState(false);
+  const [qaContainer, setQaContainer] = useState<HTMLDivElement | null>(null);
+  const qaContainerRef = useCallback((node: HTMLDivElement | null) => {
+    setQaContainer(node);
+  }, []);
+
   return (
     <div className={`flex flex-col overflow-hidden bg-gray-50 ${className}`}>
       <FileViewerHeader file={file} {...headerProps} />
@@ -103,7 +113,7 @@ export default function FileViewerLayout({
         )}
 
         <Splitter className="flex-1 min-h-0">
-          <Splitter.Panel defaultSize="50%" min={200}>
+          <Splitter.Panel defaultSize="38%" min={200}>
             <div className="flex flex-col h-full min-w-0 overflow-hidden border-r border-gray-200 bg-gray-100">
               <div className="flex-1 overflow-hidden min-h-0">
                 {pdfUrlLoading ? (
@@ -146,9 +156,24 @@ export default function FileViewerLayout({
                 viewerResultTab={viewerResultTab}
                 onViewerResultTabChange={onViewerResultTabChange}
                 onNavigateToPdfPage={handleNavigateToPdfPage}
+                qaPanelContainer={qaContainer}
+                onQaPanelActiveChange={setQaActive}
               />
             </div>
           </Splitter.Panel>
+
+          {/* Third segment: QA findings / "Review & apply all" — appears only
+              when the section has findings and the results tab is active.
+              TabbedDataViewer portals its panel in here, so PDF + result +
+              QA sit side by side, every divider draggable. */}
+          {qaActive && (
+            <Splitter.Panel defaultSize="24%" min={240} max="45%">
+              <div
+                ref={qaContainerRef}
+                className="h-full min-h-0 overflow-hidden bg-white border-l border-gray-200"
+              />
+            </Splitter.Panel>
+          )}
         </Splitter>
       </div>
     </div>

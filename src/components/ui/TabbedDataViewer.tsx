@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -112,6 +113,15 @@ interface TabbedDataViewerProps {
   onSelectedSectionResultIdChange?: (sectionResultId: string | null) => void;
   activeResultTab?: ViewerResultTab | null;
   onActiveResultTabChange?: (tab: ViewerResultTab) => void;
+  // ── QA side-column (3-segment layout) ──────────────────────────────────
+  // When the host layout provides a container element, the QA findings /
+  // review panel is PORTALED into it (a full-height third column beside the
+  // PDF and the result) instead of being stacked under the JSON. All QA
+  // state stays here — the host only supplies the slot.
+  qaPanelContainer?: HTMLElement | null;
+  // Tells the host whether the QA column has content to show (findings exist
+  // and the results tab is active) so it can mount/unmount the third pane.
+  onQaPanelActiveChange?: (active: boolean) => void;
 }
 
 // One discoverable "row" in the section picker. We derive these from the
@@ -295,12 +305,27 @@ const SEVERITY_CONFIG = {
   },
 } as const;
 
+/** State for the in-panel bulk-review mode. Lives in TabbedDataViewer (which
+ *  owns editableJson); QAFindingsPanel only renders it. */
+type BulkReviewState = {
+  findings: import("@/lib/api").QAFinding[];
+  outcomes: BulkOutcome[];
+  excluded: Set<string>;
+  autoAccept: boolean;
+  busy: boolean;
+};
+
 function QAFindingsPanel({
   findings,
   onUpdate,
   onApply,
   canApply,
-  onBulkApply,
+  bulkReview,
+  onOpenBulkReview,
+  onToggleExclude,
+  onToggleAutoAccept,
+  onConfirmBulkApply,
+  onCancelBulkReview,
 }: {
   findings: import("@/lib/api").QAFinding[];
   onUpdate: (
@@ -311,13 +336,126 @@ function QAFindingsPanel({
   onApply: (finding: import("@/lib/api").QAFinding) => void;
   /** Only show "Apply" when the JSON is editable (otherwise it can't be saved). */
   canApply: boolean;
-  /** Open the review-all-changes modal (bulk apply). */
-  onBulkApply?: () => void;
+  /** Non-null → the panel flips to review mode (pending changes) in place. */
+  bulkReview?: BulkReviewState | null;
+  onOpenBulkReview?: () => void;
+  onToggleExclude?: (findingId: string) => void;
+  onToggleAutoAccept?: () => void;
+  onConfirmBulkApply?: () => void;
+  onCancelBulkReview?: () => void;
 }) {
   const [updating, setUpdating] = useState<string | null>(null);
   const open = findings.filter((f) => f.status === "open");
   const resolved = findings.filter((f) => f.status !== "open");
   const [showResolved, setShowResolved] = useState(false);
+
+  // ── Review mode: same panel, flipped to show the pending changes ─────────
+  // (one component for both QA list and "Review & apply all" — the PDF and
+  // the result stay visible beside it while the reviewer works through it).
+  if (bulkReview) {
+    const fmt = (v: unknown) =>
+      v === undefined
+        ? ""
+        : typeof v === "object"
+          ? JSON.stringify(v)
+          : String(v);
+    const includedCount = bulkReview.findings.length - bulkReview.excluded.size;
+    return (
+      <div className="h-full bg-white flex flex-col">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 shrink-0">
+          <button
+            onClick={onCancelBulkReview}
+            className="text-gray-400 hover:text-gray-700"
+            aria-label="Back to findings"
+            title="Back to findings"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+            Review changes
+          </span>
+          <span className="text-xs text-gray-400">
+            {includedCount}/{bulkReview.findings.length} selected
+          </span>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1.5">
+          <p className="text-xs text-gray-500">
+            Check each change against the PDF. Untick anything you disagree
+            with — nothing is saved until you Save the record.
+          </p>
+          {bulkReview.outcomes.map((o) => {
+            const skipped = o.status === "skipped";
+            const checked = !bulkReview.excluded.has(o.findingId);
+            return (
+              <div
+                key={o.findingId}
+                className={`flex items-start gap-2 rounded border px-2 py-1.5 text-xs ${skipped ? "border-gray-200 bg-gray-50 opacity-70" : checked ? "border-blue-200 bg-blue-50/40" : "border-gray-200 bg-white"}`}
+              >
+                <Checkbox
+                  className="mt-0.5"
+                  disabled={skipped}
+                  checked={!skipped && checked}
+                  onChange={() => onToggleExclude?.(o.findingId)}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <code className="font-mono font-semibold text-gray-800 break-all">
+                      {o.label}
+                    </code>
+                    <span className="capitalize text-gray-500">
+                      {o.issue_type.replace(/_/g, " ")}
+                    </span>
+                    {o.note && (
+                      <span className="text-amber-700">({o.note})</span>
+                    )}
+                  </div>
+                  {(o.before !== undefined || o.after !== undefined) && (
+                    <div className="mt-0.5 font-mono break-all text-gray-600 space-y-0.5">
+                      {o.before !== undefined && (
+                        <div className="line-through decoration-red-400">
+                          {fmt(o.before)}
+                        </div>
+                      )}
+                      {o.after !== undefined && (
+                        <div className="text-green-700">{fmt(o.after)}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="border-t border-gray-100 px-3 py-2 space-y-2 shrink-0">
+          <Checkbox
+            checked={bulkReview.autoAccept}
+            onChange={() => onToggleAutoAccept?.()}
+          >
+            <span className="text-xs">Mark applied findings as accepted</span>
+          </Checkbox>
+          <div className="flex gap-2">
+            <button
+              onClick={onCancelBulkReview}
+              className="flex-1 text-xs rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 px-2 py-1.5"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirmBulkApply}
+              disabled={includedCount === 0 || bulkReview.busy}
+              className="flex-1 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 px-2 py-1.5"
+            >
+              {bulkReview.busy
+                ? "Applying…"
+                : `Apply ${includedCount} change(s)`}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleAction = async (
     findingId: string,
@@ -498,11 +636,11 @@ function QAFindingsPanel({
         </p>
       )}
       {canApply &&
-        onBulkApply &&
+        onOpenBulkReview &&
         open.filter((f) => APPLYABLE_ISSUE_TYPES.has(f.issue_type)).length >=
           2 && (
           <button
-            onClick={onBulkApply}
+            onClick={onOpenBulkReview}
             className="w-full text-xs font-medium rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1.5"
           >
             Review &amp; apply all (
@@ -656,6 +794,8 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   onSelectedSectionResultIdChange,
   activeResultTab = null,
   onActiveResultTabChange,
+  qaPanelContainer = null,
+  onQaPanelActiveChange,
 }) => {
   const { message, modal } = App.useApp();
   const [fallbackTab, setFallbackTab] = useState<TabType>("results");
@@ -1448,16 +1588,35 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
   // ── Bulk apply: one reviewed batch instead of N micro-approvals ─────────
   // openBulkReview snapshots the would-be changes (computeBulkApply is pure);
-  // the modal lets the reviewer untick individual findings; confirm recomputes
-  // from the ticked set, writes the editable JSON, and (optionally) marks the
-  // applied findings accepted. Nothing is saved until the user hits Save.
-  const [bulkReview, setBulkReview] = useState<{
-    findings: import("@/lib/api").QAFinding[];
-    outcomes: BulkOutcome[];
-    excluded: Set<string>;
-    autoAccept: boolean;
-    busy: boolean;
-  } | null>(null);
+  // the QA panel flips to review mode IN PLACE (no modal) so the PDF and the
+  // result stay visible while the reviewer unticks what they disagree with;
+  // confirm recomputes from the ticked set, writes the editable JSON, and
+  // (optionally) marks the applied findings accepted. Nothing is saved until
+  // the user hits Save.
+  const [bulkReview, setBulkReview] = useState<BulkReviewState | null>(null);
+
+  const toggleBulkExclude = useCallback((findingId: string) => {
+    setBulkReview((prev) => {
+      if (!prev) return prev;
+      const excluded = new Set(prev.excluded);
+      if (excluded.has(findingId)) excluded.delete(findingId);
+      else excluded.add(findingId);
+      return { ...prev, excluded };
+    });
+  }, []);
+
+  const toggleBulkAutoAccept = useCallback(() => {
+    setBulkReview((prev) =>
+      prev ? { ...prev, autoAccept: !prev.autoAccept } : prev,
+    );
+  }, []);
+
+  const cancelBulkReview = useCallback(() => setBulkReview(null), []);
+
+  // A pending review is meaningless once the section (and its record) change.
+  useEffect(() => {
+    setBulkReview(null);
+  }, [selectedSection?.sectionResultId]);
 
   const openBulkReview = useCallback(() => {
     try {
@@ -1720,6 +1879,39 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     isV2 &&
     !!selectedSection?.sectionResultId &&
     selectedSectionFindings.length > 0;
+
+  // Tell the host layout whether the QA side-column has content (it mounts/
+  // unmounts the third splitter pane off this). Signal false on unmount so a
+  // closed viewer never leaves a dead column behind.
+  const qaPanelActive = showFindings && activeTab === "results";
+  useEffect(() => {
+    onQaPanelActiveChange?.(qaPanelActive);
+  }, [qaPanelActive, onQaPanelActiveChange]);
+  useEffect(
+    () => () => {
+      onQaPanelActiveChange?.(false);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // One QA element for both homes: the host's side column (portal) or the
+  // stacked fallback. Same component renders the findings list AND the
+  // "Review & apply all" review mode — it flips in place via bulkReview.
+  const qaPanelEl = (
+    <QAFindingsPanel
+      findings={selectedSectionFindings}
+      onUpdate={handleUpdateFinding}
+      onApply={handleApplyFinding}
+      canApply={editable}
+      bulkReview={bulkReview}
+      onOpenBulkReview={openBulkReview}
+      onToggleExclude={toggleBulkExclude}
+      onToggleAutoAccept={toggleBulkAutoAccept}
+      onConfirmBulkApply={confirmBulkApply}
+      onCancelBulkReview={cancelBulkReview}
+    />
+  );
 
   const jsonViewerEl = (
     <JsonViewer
@@ -2012,9 +2204,11 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           className="flex-1 overflow-hidden flex flex-col min-h-0"
         >
           {activeTab === "results" &&
-            (showFindings ? (
-              // JSON result on top, QA findings below — the divider between them
-              // is draggable so the user can grow either pane.
+            (showFindings && !onQaPanelActiveChange ? (
+              // Host doesn't support a QA side column: fall back to JSON on
+              // top, QA findings below, draggable divider (standalone embeds).
+              // (Keying off the listener, not the container, avoids a flash
+              // of this stacked layout while the host's third pane mounts.)
               <Splitter layout="vertical" className="flex-1 min-h-0">
                 <Splitter.Panel min={120}>
                   <div className="h-full min-h-0 flex flex-col">
@@ -2022,18 +2216,18 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   </div>
                 </Splitter.Panel>
                 <Splitter.Panel defaultSize={220} min={80} max="70%">
-                  <QAFindingsPanel
-                    findings={selectedSectionFindings}
-                    onUpdate={handleUpdateFinding}
-                    onApply={handleApplyFinding}
-                    canApply={editable}
-                    onBulkApply={openBulkReview}
-                  />
+                  {qaPanelEl}
                 </Splitter.Panel>
               </Splitter>
             ) : (
               <div className="flex-1 min-h-0 flex flex-col">{jsonViewerEl}</div>
             ))}
+
+          {/* 3-segment layout: the QA / review panel renders into the host's
+              third column (beside PDF and result), keeping all QA state here. */}
+          {qaPanelActive &&
+            qaPanelContainer &&
+            createPortal(qaPanelEl, qaPanelContainer)}
 
           {activeTab === "markdown" && markdown && (
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
@@ -2595,101 +2789,6 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       </div>
 
       {/* Single-section reprocess modal (mirrors the file reprocess modal) */}
-      <Modal
-        title={`Review ${bulkReview?.findings.length ?? 0} QA change(s)`}
-        open={bulkReview != null}
-        onCancel={() => setBulkReview(null)}
-        onOk={confirmBulkApply}
-        okText={`Apply ${bulkReview ? bulkReview.findings.length - bulkReview.excluded.size : 0} change(s)`}
-        okButtonProps={{
-          disabled:
-            !bulkReview ||
-            bulkReview.findings.length - bulkReview.excluded.size === 0,
-          loading: bulkReview?.busy,
-        }}
-        width={720}
-      >
-        {bulkReview && (
-          <div className="space-y-2">
-            <p className="text-xs text-gray-500">
-              Untick anything you disagree with. Nothing is saved until you hit
-              Save on the record afterwards.
-            </p>
-            <div className="max-h-96 overflow-y-auto space-y-1.5">
-              {bulkReview.outcomes.map((o) => {
-                const skipped = o.status === "skipped";
-                const checked = !bulkReview.excluded.has(o.findingId);
-                const fmt = (v: unknown) =>
-                  v === undefined
-                    ? ""
-                    : typeof v === "object"
-                      ? JSON.stringify(v)
-                      : String(v);
-                return (
-                  <div
-                    key={o.findingId}
-                    className={`flex items-start gap-2 rounded border px-2 py-1.5 text-xs ${skipped ? "border-gray-200 bg-gray-50 opacity-70" : "border-blue-100 bg-blue-50/40"}`}
-                  >
-                    <Checkbox
-                      className="mt-0.5"
-                      disabled={skipped}
-                      checked={!skipped && checked}
-                      onChange={(e) =>
-                        setBulkReview((prev) => {
-                          if (!prev) return prev;
-                          const excluded = new Set(prev.excluded);
-                          if (e.target.checked) excluded.delete(o.findingId);
-                          else excluded.add(o.findingId);
-                          return { ...prev, excluded };
-                        })
-                      }
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <code className="font-mono font-semibold text-gray-800 break-all">
-                          {o.label}
-                        </code>
-                        <span className="capitalize text-gray-500">
-                          {o.issue_type.replace(/_/g, " ")}
-                        </span>
-                        {o.note && (
-                          <span className="text-amber-700">({o.note})</span>
-                        )}
-                      </div>
-                      {(o.before !== undefined || o.after !== undefined) && (
-                        <div className="mt-0.5 font-mono break-all text-gray-600">
-                          {o.before !== undefined && (
-                            <span className="line-through decoration-red-400 mr-1">
-                              {fmt(o.before)}
-                            </span>
-                          )}
-                          {o.after !== undefined && (
-                            <span className="text-green-700">{fmt(o.after)}</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <Checkbox
-              checked={bulkReview.autoAccept}
-              onChange={(e) =>
-                setBulkReview((prev) =>
-                  prev ? { ...prev, autoAccept: e.target.checked } : prev,
-                )
-              }
-            >
-              <span className="text-xs">
-                Mark applied findings as accepted (skips the per-finding
-                Accept clicks)
-              </span>
-            </Checkbox>
-          </div>
-        )}
-      </Modal>
-
       <Modal
         title="Reprocess section"
         open={reprocessOpen}
