@@ -15,6 +15,8 @@ import {
   removeAtPath,
   resolveRowAnchor,
   APPLYABLE_ISSUE_TYPES,
+  computeBulkApply,
+  type BulkOutcome,
 } from "@/lib/jsonPath";
 import {
   ChevronLeft,
@@ -298,6 +300,7 @@ function QAFindingsPanel({
   onUpdate,
   onApply,
   canApply,
+  onBulkApply,
 }: {
   findings: import("@/lib/api").QAFinding[];
   onUpdate: (
@@ -308,6 +311,8 @@ function QAFindingsPanel({
   onApply: (finding: import("@/lib/api").QAFinding) => void;
   /** Only show "Apply" when the JSON is editable (otherwise it can't be saved). */
   canApply: boolean;
+  /** Open the review-all-changes modal (bulk apply). */
+  onBulkApply?: () => void;
 }) {
   const [updating, setUpdating] = useState<string | null>(null);
   const open = findings.filter((f) => f.status === "open");
@@ -492,6 +497,19 @@ function QAFindingsPanel({
           No open issues — all clear ✅
         </p>
       )}
+      {canApply &&
+        onBulkApply &&
+        open.filter((f) => APPLYABLE_ISSUE_TYPES.has(f.issue_type)).length >=
+          2 && (
+          <button
+            onClick={onBulkApply}
+            className="w-full text-xs font-medium rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1.5"
+          >
+            Review &amp; apply all (
+            {open.filter((f) => APPLYABLE_ISSUE_TYPES.has(f.issue_type)).length}
+            )
+          </button>
+        )}
       <div className="space-y-1.5">
         {open.map(renderFinding)}
         {showResolved && resolved.map(renderFinding)}
@@ -1428,6 +1446,74 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     [fileId, selectedSection?.sectionResultId, message],
   );
 
+  // ── Bulk apply: one reviewed batch instead of N micro-approvals ─────────
+  // openBulkReview snapshots the would-be changes (computeBulkApply is pure);
+  // the modal lets the reviewer untick individual findings; confirm recomputes
+  // from the ticked set, writes the editable JSON, and (optionally) marks the
+  // applied findings accepted. Nothing is saved until the user hits Save.
+  const [bulkReview, setBulkReview] = useState<{
+    findings: import("@/lib/api").QAFinding[];
+    outcomes: BulkOutcome[];
+    excluded: Set<string>;
+    autoAccept: boolean;
+    busy: boolean;
+  } | null>(null);
+
+  const openBulkReview = useCallback(() => {
+    try {
+      const parsed = JSON.parse(editableJson);
+      const eligible = (
+        qaFindings[selectedSection?.sectionResultId ?? ""] ?? []
+      ).filter(
+        (f) => f.status === "open" && APPLYABLE_ISSUE_TYPES.has(f.issue_type),
+      );
+      if (eligible.length === 0) return;
+      const { outcomes } = computeBulkApply(parsed, eligible);
+      setBulkReview({
+        findings: eligible,
+        outcomes,
+        excluded: new Set(
+          outcomes.filter((o) => o.status === "skipped").map((o) => o.findingId),
+        ),
+        autoAccept: true,
+        busy: false,
+      });
+    } catch {
+      message.error("Fix the JSON first — it doesn't parse");
+    }
+  }, [editableJson, qaFindings, selectedSection?.sectionResultId, message]);
+
+  const confirmBulkApply = useCallback(async () => {
+    if (!bulkReview) return;
+    setBulkReview((prev) => (prev ? { ...prev, busy: true } : prev));
+    try {
+      const parsed = JSON.parse(editableJson);
+      const included = bulkReview.findings.filter(
+        (f) => !bulkReview.excluded.has(f.id),
+      );
+      const { result, outcomes } = computeBulkApply(parsed, included);
+      const applied = outcomes.filter((o) => o.status !== "skipped");
+      setEditableJson(JSON.stringify(result, null, 2));
+      setJsonError(null);
+      if (bulkReview.autoAccept && applied.length > 0) {
+        // Best-effort status flips; failures leave findings open (harmless).
+        await Promise.allSettled(
+          applied.map((o) => handleUpdateFinding(o.findingId, "accepted")),
+        );
+      }
+      const skipped = outcomes.length - applied.length;
+      message.success(
+        `Applied ${applied.length} change(s)${skipped ? `, ${skipped} skipped` : ""} — review the JSON and Save to persist`,
+      );
+      setBulkReview(null);
+    } catch (err) {
+      message.error(
+        `Bulk apply failed: ${err instanceof Error ? err.message : "invalid JSON"}`,
+      );
+      setBulkReview((prev) => (prev ? { ...prev, busy: false } : prev));
+    }
+  }, [bulkReview, editableJson, handleUpdateFinding, message]);
+
   // The data that the data-shaped tabs (Preview, JSON, CSV, Edit) operate on.
   // When v2 we scope to the selected section so the user sees one focused
   // result tree; when v1, we pass the original `data` through unchanged.
@@ -1941,6 +2027,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                     onUpdate={handleUpdateFinding}
                     onApply={handleApplyFinding}
                     canApply={editable}
+                    onBulkApply={openBulkReview}
                   />
                 </Splitter.Panel>
               </Splitter>
@@ -2508,6 +2595,101 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       </div>
 
       {/* Single-section reprocess modal (mirrors the file reprocess modal) */}
+      <Modal
+        title={`Review ${bulkReview?.findings.length ?? 0} QA change(s)`}
+        open={bulkReview != null}
+        onCancel={() => setBulkReview(null)}
+        onOk={confirmBulkApply}
+        okText={`Apply ${bulkReview ? bulkReview.findings.length - bulkReview.excluded.size : 0} change(s)`}
+        okButtonProps={{
+          disabled:
+            !bulkReview ||
+            bulkReview.findings.length - bulkReview.excluded.size === 0,
+          loading: bulkReview?.busy,
+        }}
+        width={720}
+      >
+        {bulkReview && (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500">
+              Untick anything you disagree with. Nothing is saved until you hit
+              Save on the record afterwards.
+            </p>
+            <div className="max-h-96 overflow-y-auto space-y-1.5">
+              {bulkReview.outcomes.map((o) => {
+                const skipped = o.status === "skipped";
+                const checked = !bulkReview.excluded.has(o.findingId);
+                const fmt = (v: unknown) =>
+                  v === undefined
+                    ? ""
+                    : typeof v === "object"
+                      ? JSON.stringify(v)
+                      : String(v);
+                return (
+                  <div
+                    key={o.findingId}
+                    className={`flex items-start gap-2 rounded border px-2 py-1.5 text-xs ${skipped ? "border-gray-200 bg-gray-50 opacity-70" : "border-blue-100 bg-blue-50/40"}`}
+                  >
+                    <Checkbox
+                      className="mt-0.5"
+                      disabled={skipped}
+                      checked={!skipped && checked}
+                      onChange={(e) =>
+                        setBulkReview((prev) => {
+                          if (!prev) return prev;
+                          const excluded = new Set(prev.excluded);
+                          if (e.target.checked) excluded.delete(o.findingId);
+                          else excluded.add(o.findingId);
+                          return { ...prev, excluded };
+                        })
+                      }
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <code className="font-mono font-semibold text-gray-800 break-all">
+                          {o.label}
+                        </code>
+                        <span className="capitalize text-gray-500">
+                          {o.issue_type.replace(/_/g, " ")}
+                        </span>
+                        {o.note && (
+                          <span className="text-amber-700">({o.note})</span>
+                        )}
+                      </div>
+                      {(o.before !== undefined || o.after !== undefined) && (
+                        <div className="mt-0.5 font-mono break-all text-gray-600">
+                          {o.before !== undefined && (
+                            <span className="line-through decoration-red-400 mr-1">
+                              {fmt(o.before)}
+                            </span>
+                          )}
+                          {o.after !== undefined && (
+                            <span className="text-green-700">{fmt(o.after)}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <Checkbox
+              checked={bulkReview.autoAccept}
+              onChange={(e) =>
+                setBulkReview((prev) =>
+                  prev ? { ...prev, autoAccept: e.target.checked } : prev,
+                )
+              }
+            >
+              <span className="text-xs">
+                Mark applied findings as accepted (skips the per-finding
+                Accept clicks)
+              </span>
+            </Checkbox>
+          </div>
+        )}
+      </Modal>
+
       <Modal
         title="Reprocess section"
         open={reprocessOpen}
