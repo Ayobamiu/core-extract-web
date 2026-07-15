@@ -1,11 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import type { QAProgressEvent } from '@/lib/api';
 
 interface SocketEventHandlers {
     onJobStatusUpdate?: (data: any) => void;
     onFileStatusUpdate?: (data: any) => void;
     onPreviewUpdated?: (data: any) => void;
     onFileProcessingEvent?: (data: any) => void;
+    onQAProgressEvent?: (data: QAProgressEvent) => void;
 }
 
 export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
@@ -61,17 +63,23 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
             handlersRef.current?.onFileProcessingEvent?.(data);
         };
 
+        const handleQAProgressEvent = (data: QAProgressEvent) => {
+            handlersRef.current?.onQAProgressEvent?.(data);
+        };
+
         // Remove old listeners first to avoid duplicates
         newSocket.off('job-status-update');
         newSocket.off('file-status-update');
         newSocket.off('preview-updated');
         newSocket.off('file-processing-event');
+        newSocket.off('qa-progress-event');
 
         // Register event handlers
         newSocket.on('job-status-update', handleJobStatusUpdate);
         newSocket.on('file-status-update', handleFileStatusUpdate);
         newSocket.on('preview-updated', handlePreviewUpdated);
         newSocket.on('file-processing-event', handleFileProcessingEvent);
+        newSocket.on('qa-progress-event', handleQAProgressEvent);
         
         console.log('📡 Registered all Socket.IO event handlers');
 
@@ -87,6 +95,7 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
             newSocket.off('file-status-update');
             newSocket.off('preview-updated');
             newSocket.off('file-processing-event');
+            newSocket.off('qa-progress-event');
             newSocket.disconnect();
         };
     }, [jobId]);

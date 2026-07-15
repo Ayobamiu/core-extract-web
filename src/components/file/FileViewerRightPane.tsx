@@ -38,6 +38,9 @@ interface FileViewerRightPaneProps {
   viewerResultTab?: ViewerResultTab | null;
   onViewerResultTabChange?: (tab: ViewerResultTab) => void;
   onNavigateToPdfPage?: (pageNumber: number) => void;
+  /** Slot + activity signal for the QA side column (3-segment layout). */
+  qaPanelContainer?: HTMLElement | null;
+  onQaPanelActiveChange?: (active: boolean) => void;
 }
 
 function PaneTab({
@@ -99,6 +102,8 @@ export default function FileViewerRightPane({
   viewerResultTab = null,
   onViewerResultTabChange,
   onNavigateToPdfPage,
+  qaPanelContainer,
+  onQaPanelActiveChange,
 }: FileViewerRightPaneProps) {
   const hasRouting = Boolean(file.detected_sections);
   const sectionCount = file.detected_sections?.sections?.length ?? 0;
@@ -222,6 +227,7 @@ export default function FileViewerRightPane({
                 comments={comments}
                 onAddComment={onAddComment}
                 fileId={file.id}
+                jobId={file.job_id}
                 resultEnvelope={file.extraction_metadata?.result_envelope}
                 sectionResults={file.extraction_metadata?.section_results}
                 detectedSections={file.detected_sections}
@@ -232,6 +238,8 @@ export default function FileViewerRightPane({
                 onSelectedSectionResultIdChange={onViewerSectionChange}
                 activeResultTab={viewerResultTab}
                 onActiveResultTabChange={onViewerResultTabChange}
+                qaPanelContainer={qaPanelContainer}
+                onQaPanelActiveChange={onQaPanelActiveChange}
                 className="h-full"
               />
             )}
