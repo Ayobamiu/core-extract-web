@@ -227,6 +227,7 @@ export default function FileViewerRightPane({
                 comments={comments}
                 onAddComment={onAddComment}
                 fileId={file.id}
+                jobId={file.job_id}
                 resultEnvelope={file.extraction_metadata?.result_envelope}
                 sectionResults={file.extraction_metadata?.section_results}
                 detectedSections={file.detected_sections}

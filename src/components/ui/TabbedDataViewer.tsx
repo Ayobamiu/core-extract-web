@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { motion } from "framer-motion";
+import { motion, useDragControls } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -20,10 +20,16 @@ import {
   type BulkOutcome,
 } from "@/lib/jsonPath";
 import {
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
+  GripVertical,
+  Loader2,
   MessageSquare,
   MoreHorizontal,
+  X,
+  XCircle,
 } from "lucide-react";
 import {
   App,
@@ -42,12 +48,15 @@ import { JsonViewer } from "@/components/json";
 import {
   apiClient,
   isV2ResultEnvelope,
+  type QAJobScope,
+  type QAProgressEvent,
   type SectionResult,
   type SectionVerification,
   type SectionVerificationStatus,
   type V2ResultEnvelope,
 } from "@/lib/api";
 import type { ViewerResultTab } from "@/lib/jobViewUrlState";
+import { useSocket } from "@/hooks/useSocket";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -82,6 +91,8 @@ interface TabbedDataViewerProps {
   }>;
   onAddComment?: (text: string) => Promise<void>;
   fileId?: string; // File ID for fetching comments if not provided
+  // Job ID — required for live QA progress (the socket room is per-job).
+  jobId?: string;
   // Per-section extraction (v2 envelope) metadata. When provided AND `data`
   // is a v2 envelope, the viewer renders a section picker above the existing
   // tab strip and scopes the data-shaped tabs (Preview/JSON/CSV/Edit) to the
@@ -305,6 +316,19 @@ const SEVERITY_CONFIG = {
   },
 } as const;
 
+/** Live state of one section inside a background QA run. */
+type QASectionRun = {
+  status: "queued" | "running" | "done" | "failed";
+  findingsCount?: number;
+  message?: string;
+};
+
+/** Live state of the background QA run(s) on this file, from qa-progress-event. */
+type QARunState = {
+  scope: QAJobScope | null;
+  sections: Record<string, QASectionRun>;
+};
+
 /** State for the in-panel bulk-review mode. Lives in TabbedDataViewer (which
  *  owns editableJson); QAFindingsPanel only renders it. */
 type BulkReviewState = {
@@ -314,6 +338,114 @@ type BulkReviewState = {
   autoAccept: boolean;
   busy: boolean;
 };
+
+/**
+ * Floating QA progress card (bottom-right, like the job page's processing
+ * toast). One row per section in the background run, each with its own
+ * status — queued, running (spinner), done (finding count), or failed.
+ *
+ * Draggable by the header (framer-motion drag controls — already in the
+ * bundle; antd has no drag primitive, its docs use react-draggable). Only
+ * the header initiates a drag so the section list keeps scrolling normally.
+ */
+function QAProgressFloat({
+  run,
+  labelById,
+  onDismiss,
+}: {
+  run: QARunState;
+  labelById: Map<string, string>;
+  onDismiss: () => void;
+}) {
+  const dragControls = useDragControls();
+  const entries = Object.entries(run.sections);
+  if (entries.length === 0) return null;
+  const finished = entries.filter(
+    ([, s]) => s.status === "done" || s.status === "failed",
+  ).length;
+  const total = entries.length;
+  const allTerminal = finished === total;
+  const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
+
+  return (
+    // z-[1100]: must float above antd's fullscreen Modal (z-index 1000).
+    <motion.div
+      drag
+      dragListener={false}
+      dragControls={dragControls}
+      dragMomentum={false}
+      dragElastic={0}
+      className="fixed bottom-6 right-6 z-[1100] w-80 max-w-[calc(100vw-3rem)] bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
+    >
+      <div
+        onPointerDown={(e) => dragControls.start(e)}
+        className="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-100 bg-gray-50 cursor-move select-none touch-none"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <GripVertical className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+          {!allTerminal && (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 flex-shrink-0" />
+          )}
+          <span className="text-xs font-medium text-gray-700 truncate">
+            {allTerminal
+              ? "QA finished"
+              : `Running QA — ${finished}/${total} section${total === 1 ? "" : "s"}`}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="p-0.5 text-gray-400 hover:text-gray-700 rounded transition-colors flex-shrink-0 cursor-pointer"
+          aria-label="Dismiss QA progress"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="h-1 bg-gray-100">
+        <div
+          className={`h-full transition-all duration-500 ${allTerminal ? "bg-green-500" : "bg-blue-500"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
+        {entries.map(([sid, s]) => (
+          <div key={sid} className="flex items-center gap-2 px-3 py-1.5">
+            <span className="flex-shrink-0">
+              {s.status === "queued" && (
+                <Clock className="w-3 h-3 text-gray-400" />
+              )}
+              {s.status === "running" && (
+                <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+              )}
+              {s.status === "done" && (
+                <CheckCircle2 className="w-3 h-3 text-green-600" />
+              )}
+              {s.status === "failed" && (
+                <XCircle className="w-3 h-3 text-red-500" />
+              )}
+            </span>
+            <span
+              className="flex-1 min-w-0 truncate text-[11px] text-gray-600"
+              title={labelById.get(sid) ?? sid}
+            >
+              {labelById.get(sid) ?? `${sid.substring(0, 8)}…`}
+            </span>
+            <span className="flex-shrink-0 text-[10px] text-gray-400">
+              {s.status === "done"
+                ? `${s.findingsCount ?? 0} issue${(s.findingsCount ?? 0) === 1 ? "" : "s"}`
+                : s.status === "failed"
+                  ? "failed"
+                  : s.status === "running"
+                    ? "running"
+                    : "queued"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
 
 function QAFindingsPanel({
   findings,
@@ -381,8 +513,8 @@ function QAFindingsPanel({
 
         <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1.5">
           <p className="text-xs text-gray-500">
-            Check each change against the PDF. Untick anything you disagree
-            with — nothing is saved until you Save the record.
+            Check each change against the PDF. Untick anything you disagree with
+            — nothing is saved until you Save the record.
           </p>
           {bulkReview.outcomes.map((o) => {
             const skipped = o.status === "skipped";
@@ -490,6 +622,64 @@ function QAFindingsPanel({
         key={f.id}
         className={`rounded-md border px-3 py-2 ${cfg.bg} ${cfg.border} ${isResolved ? "opacity-60" : ""}`}
       >
+        {!isResolved && (
+          <div className="flex gap-1 flex-shrink-0">
+            {canApply && APPLYABLE_ISSUE_TYPES.has(f.issue_type) && (
+              <>
+                {isRowOp ? (
+                  <Popconfirm
+                    title={rowOpLabel}
+                    description={`This changes ${f.field_path}'s row count/order — review the result in the JSON tree before Saving.`}
+                    okText={rowOpLabel}
+                    cancelText="Cancel"
+                    onConfirm={() => onApply(f)}
+                  >
+                    <button className="text-xs text-blue-700 font-medium hover:underline">
+                      {rowOpLabel}
+                    </button>
+                  </Popconfirm>
+                ) : (
+                  <button
+                    onClick={() => onApply(f)}
+                    className="text-xs text-blue-700 font-medium hover:underline"
+                    title={`Set ${f.field_path} = ${
+                      f.issue_type === "extra_value"
+                        ? "null"
+                        : f.corrected_value !== undefined
+                          ? JSON.stringify(f.corrected_value)
+                          : (f.expected ?? "null")
+                    }`}
+                  >
+                    Apply
+                  </button>
+                )}
+                <span className="text-gray-300">|</span>
+              </>
+            )}
+            <button
+              disabled={updating === f.id}
+              onClick={() => handleAction(f.id, "accepted")}
+              className="text-xs text-green-700 hover:underline disabled:opacity-50"
+            >
+              Accept
+            </button>
+            <span className="text-gray-300">|</span>
+            <button
+              disabled={updating === f.id}
+              onClick={() => handleAction(f.id, "dismissed")}
+              className="text-xs text-gray-500 hover:underline disabled:opacity-50"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        {isResolved && (
+          <span
+            className={`text-xs px-1.5 py-0.5 rounded-full capitalize ${f.status === "accepted" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}
+          >
+            {f.status}
+          </span>
+        )}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -513,18 +703,21 @@ function QAFindingsPanel({
                     <span className="font-medium">Actual:</span> {f.actual}
                   </div>
                 )}
-                {f.corrected_value !== undefined && f.corrected_value !== null && (
-                  <div>
-                    <span className="font-medium">Correction:</span>{" "}
-                    {JSON.stringify(f.corrected_value)}
-                  </div>
-                )}
+                {f.corrected_value !== undefined &&
+                  f.corrected_value !== null && (
+                    <div>
+                      <span className="font-medium">Correction:</span>{" "}
+                      {JSON.stringify(f.corrected_value)}
+                    </div>
+                  )}
               </div>
             )}
             {isRowOp && f.actual && (
               <div className="mt-1">
                 <span className="text-xs font-medium text-gray-600">
-                  {f.issue_type === "delete_row" ? "Row to remove:" : "Current row:"}
+                  {f.issue_type === "delete_row"
+                    ? "Row to remove:"
+                    : "Current row:"}
                 </span>
                 <pre className="mt-0.5 text-xs bg-white/60 border border-gray-200 rounded px-2 py-1 overflow-x-auto max-w-full">
                   {(() => {
@@ -539,7 +732,9 @@ function QAFindingsPanel({
             )}
             {isRowOp && f.row_value && (
               <div className="mt-1">
-                <span className="text-xs font-medium text-gray-600">Proposed row:</span>
+                <span className="text-xs font-medium text-gray-600">
+                  Proposed row:
+                </span>
                 <pre className="mt-0.5 text-xs bg-white/60 border border-gray-200 rounded px-2 py-1 overflow-x-auto max-w-full">
                   {JSON.stringify(f.row_value, null, 2)}
                 </pre>
@@ -547,64 +742,6 @@ function QAFindingsPanel({
             )}
             <p className="mt-1 text-xs text-gray-500 italic">{f.explanation}</p>
           </div>
-          {!isResolved && (
-            <div className="flex gap-1 flex-shrink-0">
-              {canApply && APPLYABLE_ISSUE_TYPES.has(f.issue_type) && (
-                <>
-                  {isRowOp ? (
-                    <Popconfirm
-                      title={rowOpLabel}
-                      description={`This changes ${f.field_path}'s row count/order — review the result in the JSON tree before Saving.`}
-                      okText={rowOpLabel}
-                      cancelText="Cancel"
-                      onConfirm={() => onApply(f)}
-                    >
-                      <button className="text-xs text-blue-700 font-medium hover:underline">
-                        {rowOpLabel}
-                      </button>
-                    </Popconfirm>
-                  ) : (
-                    <button
-                      onClick={() => onApply(f)}
-                      className="text-xs text-blue-700 font-medium hover:underline"
-                      title={`Set ${f.field_path} = ${
-                        f.issue_type === "extra_value"
-                          ? "null"
-                          : f.corrected_value !== undefined
-                            ? JSON.stringify(f.corrected_value)
-                            : (f.expected ?? "null")
-                      }`}
-                    >
-                      Apply
-                    </button>
-                  )}
-                  <span className="text-gray-300">|</span>
-                </>
-              )}
-              <button
-                disabled={updating === f.id}
-                onClick={() => handleAction(f.id, "accepted")}
-                className="text-xs text-green-700 hover:underline disabled:opacity-50"
-              >
-                Accept
-              </button>
-              <span className="text-gray-300">|</span>
-              <button
-                disabled={updating === f.id}
-                onClick={() => handleAction(f.id, "dismissed")}
-                className="text-xs text-gray-500 hover:underline disabled:opacity-50"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-          {isResolved && (
-            <span
-              className={`text-xs px-1.5 py-0.5 rounded-full capitalize ${f.status === "accepted" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}
-            >
-              {f.status}
-            </span>
-          )}
         </div>
       </div>
     );
@@ -784,6 +921,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   comments = [],
   onAddComment,
   fileId,
+  jobId,
   resultEnvelope,
   sectionResults,
   detectedSections,
@@ -1022,7 +1160,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       setVerifyLoading(true);
       try {
         await onBulkSectionVerify(ids, status);
-        message.success(`${ids.length} section${ids.length === 1 ? "" : "s"} marked as ${status}`);
+        message.success(
+          `${ids.length} section${ids.length === 1 ? "" : "s"} marked as ${status}`,
+        );
       } catch {
         message.error("Failed to bulk update");
       } finally {
@@ -1037,9 +1177,21 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const [qaFindings, setQaFindings] = useState<
     Record<string, import("@/lib/api").QAFinding[]>
   >({});
+  // QA runs are queued to the worker; this only tracks the (fast) enqueue
+  // request. Live run state comes from `qaRun` below via qa-progress-event.
   const [qaLoading, setQaLoading] = useState<"idle" | "section" | "all">(
     "idle",
   );
+  // Per-section live run state, keyed by section_result_id. Sections from
+  // concurrent jobs (e.g. two single-section runs) merge into one map, so
+  // every section's indicator is independent.
+  const [qaRun, setQaRun] = useState<QARunState | null>(null);
+  // Active jobs found on mount (client reloaded mid-run) — hydrated into
+  // qaRun once section ids are known.
+  const [activeQaSnapshot, setActiveQaSnapshot] = useState<{
+    jobs: import("@/lib/api").ActiveQAJob[];
+    qaedIds: string[];
+  } | null>(null);
   // Sections QA'd during this session. A clean pass persists no findings, so it
   // can't be inferred from qaFindings alone — we track it here so the buttons
   // still reflect that QA ran.
@@ -1062,7 +1214,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const [sectionMarkdownLoading, setSectionMarkdownLoading] = useState(false);
   // Cache section markdown by sectionResultId so toggling/navigating is instant.
   const [sectionMarkdownCache, setSectionMarkdownCache] = useState<
-    Record<string, { markdown: string; pages: { page_number: number; markdown: string }[] }>
+    Record<
+      string,
+      { markdown: string; pages: { page_number: number; markdown: string }[] }
+    >
   >({});
   // Sections with a persisted QA-run record (from the backend, incl. clean
   // passes). Makes "Re-run QA" / "Run remaining" correct across reloads.
@@ -1081,6 +1236,15 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         }
         if (res.status === "success" && res.qaRuns) {
           setPersistedQaedIds(new Set(Object.keys(res.qaRuns)));
+        }
+        // QA job(s) queued/running right now (page loaded mid-run) —
+        // restore the indicators. Resolved into qaRun by a later effect
+        // once the section list is known.
+        if (res.status === "success" && res.activeQa?.length) {
+          setActiveQaSnapshot({
+            jobs: res.activeQa,
+            qaedIds: Object.keys(res.qaRuns ?? {}),
+          });
         }
       })
       .catch(() => {
@@ -1116,6 +1280,171 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         .filter((id): id is string => !!id),
     [sectionEntries],
   );
+  // Hydrate qaRun from jobs that were already queued/running when the page
+  // loaded. Whole-file jobs don't carry a section list in the queue row, so
+  // approximate: all sections (scope=all) or the not-yet-QA'd ones
+  // (scope=remaining). Live qa-progress-events correct this as they arrive.
+  useEffect(() => {
+    if (!activeQaSnapshot || allSectionIds.length === 0) return;
+    const { jobs, qaedIds } = activeQaSnapshot;
+    const qaed = new Set(qaedIds);
+    const sections: Record<string, QASectionRun> = {};
+    let scope: QAJobScope | null = null;
+    for (const job of jobs) {
+      scope = job.scope;
+      const ids =
+        job.scope === "section" && job.sectionResultId
+          ? [job.sectionResultId]
+          : job.scope === "remaining"
+            ? allSectionIds.filter((id) => !qaed.has(id))
+            : allSectionIds;
+      for (const id of ids) {
+        sections[id] = {
+          status: job.status === "processing" ? "running" : "queued",
+        };
+      }
+    }
+    if (Object.keys(sections).length > 0) {
+      setQaRun((prev) => ({
+        scope: prev?.scope ?? scope,
+        sections: { ...sections, ...prev?.sections },
+      }));
+    }
+    setActiveQaSnapshot(null);
+  }, [activeQaSnapshot, allSectionIds]);
+
+  // Live QA progress. The socket room is per-job, so events for other files
+  // in the same job arrive too — filter by fileId.
+  useSocket(jobId, {
+    onQAProgressEvent: (evt: QAProgressEvent) => {
+      if (!fileId || evt.fileId !== fileId) return;
+      switch (evt.status) {
+        case "queued":
+        case "started": {
+          const ids = evt.sectionResultIds ?? [];
+          if (!ids.length) return;
+          setQaRun((prev) => ({
+            scope: evt.scope ?? prev?.scope ?? null,
+            sections: {
+              ...prev?.sections,
+              ...Object.fromEntries(
+                ids.map((id) => [id, { status: "queued" as const }]),
+              ),
+            },
+          }));
+          break;
+        }
+        case "section_start": {
+          if (!evt.sectionResultId) return;
+          const id = evt.sectionResultId;
+          setQaRun((prev) => ({
+            scope: prev?.scope ?? evt.scope ?? null,
+            sections: {
+              ...prev?.sections,
+              [id]: { status: "running" },
+            },
+          }));
+          break;
+        }
+        case "section_done": {
+          if (!evt.sectionResultId) return;
+          const id = evt.sectionResultId;
+          setQaRun((prev) => ({
+            scope: prev?.scope ?? evt.scope ?? null,
+            sections: {
+              ...prev?.sections,
+              [id]: { status: "done", findingsCount: evt.findingsCount ?? 0 },
+            },
+          }));
+          setQaFindings((prev) => ({ ...prev, [id]: evt.findings ?? [] }));
+          setSessionQaedIds((prev) => {
+            const next = new Set(prev);
+            next.add(id);
+            return next;
+          });
+          break;
+        }
+        case "section_failed": {
+          if (!evt.sectionResultId) return;
+          const id = evt.sectionResultId;
+          setQaRun((prev) => ({
+            scope: prev?.scope ?? evt.scope ?? null,
+            sections: {
+              ...prev?.sections,
+              [id]: { status: "failed", message: evt.message },
+            },
+          }));
+          break;
+        }
+        case "done": {
+          // Job finished — reload findings + run records (authoritative).
+          apiClient
+            .getQAFindings(fileId)
+            .then((r) => {
+              if (r.status === "success") {
+                if (r.findings) setQaFindings(r.findings);
+                if (r.qaRuns)
+                  setPersistedQaedIds(new Set(Object.keys(r.qaRuns)));
+              }
+            })
+            .catch(() => {});
+          const total = evt.totalFindings ?? 0;
+          const across = evt.totalSections ?? 0;
+          const failed = evt.failedSections ?? 0;
+          if (across > 0) {
+            message.success(
+              `QA complete — ${total} issue${total === 1 ? "" : "s"} found across ${across} section${across === 1 ? "" : "s"}` +
+                (failed > 0 ? ` (${failed} failed)` : ""),
+            );
+          }
+          break;
+        }
+        case "failed": {
+          // Fatal job failure: mark everything still pending as failed.
+          setQaRun((prev) => {
+            if (!prev) return prev;
+            const sections = { ...prev.sections };
+            for (const [id, s] of Object.entries(sections)) {
+              if (s.status === "queued" || s.status === "running") {
+                sections[id] = { status: "failed", message: evt.message };
+              }
+            }
+            return { ...prev, sections };
+          });
+          message.error(evt.message || "QA run failed");
+          break;
+        }
+      }
+    },
+  });
+
+  // Labels for the floating QA progress rows.
+  const qaSectionLabelById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of sectionEntries) {
+      if (e.sectionResultId) m.set(e.sectionResultId, formatSectionLabel(e));
+    }
+    return m;
+  }, [sectionEntries]);
+
+  // Auto-dismiss the floating QA panel a few seconds after everything is
+  // terminal (done/failed) — leaves time to read the outcome.
+  useEffect(() => {
+    if (!qaRun) return;
+    const states = Object.values(qaRun.sections);
+    const allTerminal =
+      states.length > 0 &&
+      states.every((s) => s.status === "done" || s.status === "failed");
+    if (!allTerminal) return;
+    const t = setTimeout(() => setQaRun(null), 5000);
+    return () => clearTimeout(t);
+  }, [qaRun]);
+
+  // Clear live QA state when switching files.
+  useEffect(() => {
+    setQaRun(null);
+  }, [fileId]);
+
   const qaedCount = useMemo(
     () => allSectionIds.filter((id) => qaedSectionIds.has(id)).length,
     [allSectionIds, qaedSectionIds],
@@ -1129,15 +1458,36 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     qaedSectionIds.has(selectedSection.sectionResultId);
   const sectionQaBase = selectedSectionQaed ? "Re-run QA" : "Run QA";
 
+  // Live per-section run status (unique per section — other sections stay
+  // actionable while one runs in the background).
+  const selectedSectionRunStatus = selectedSection?.sectionResultId
+    ? qaRun?.sections[selectedSection.sectionResultId]?.status
+    : undefined;
+  const selectedSectionQaBusy =
+    selectedSectionRunStatus === "queued" ||
+    selectedSectionRunStatus === "running";
+  // Any QA activity on the file — a whole-file run conflicts with everything
+  // (the server rejects overlapping jobs), so bulk controls lock on this.
+  const anyQaActive = useMemo(
+    () =>
+      !!qaRun &&
+      Object.values(qaRun.sections).some(
+        (s) => s.status === "queued" || s.status === "running",
+      ),
+    [qaRun],
+  );
+
   // Copy + label for the run-all / run-remaining control.
   const runAllLabel =
     qaLoading === "all"
-      ? "Running…"
-      : !someQaed
-        ? "Run all sections"
-        : allQaed
-          ? "Re-run all sections"
-          : `Run remaining sections · ${remainingQaCount}`;
+      ? "Queueing…"
+      : anyQaActive
+        ? "QA running…"
+        : !someQaed
+          ? "Run all sections"
+          : allQaed
+            ? "Re-run all sections"
+            : `Run remaining sections · ${remainingQaCount}`;
   const runAllOkText = !someQaed
     ? "Run all"
     : allQaed
@@ -1168,38 +1518,31 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const bulkApproveLabel =
     sectionApprovedCount > 0 ? "Approve remaining" : "Approve all";
 
+  // Queue a QA run on the selected section. Returns immediately (202) — the
+  // worker runs it and progress arrives via qa-progress-event.
   const handleRunSectionQA = useCallback(async () => {
     if (!fileId || !selectedSection?.sectionResultId) return;
+    const id = selectedSection.sectionResultId;
     setQaLoading("section");
     try {
-      const res = await apiClient.runSectionQA(
-        fileId,
-        selectedSection.sectionResultId,
-      );
-      if (res.status === "success" && res.findings) {
-        const id = selectedSection.sectionResultId;
-        setQaFindings((prev) => ({ ...prev, [id]: res.findings }));
-        setSessionQaedIds((prev) => {
-          const next = new Set(prev);
-          next.add(id);
-          return next;
-        });
-        const count = res.findings.filter(
-          (f: import("@/lib/api").QAFinding) => f.status === "open",
-        ).length;
-        message.success(
-          `QA complete — ${count} issue${count === 1 ? "" : "s"} found`,
-        );
+      const res = await apiClient.runSectionQA(fileId, id);
+      if (res.status === "success") {
+        // Optimistic — the server's `queued` socket event confirms this.
+        setQaRun((prev) => ({
+          scope: prev?.scope ?? "section",
+          sections: { ...prev?.sections, [id]: { status: "queued" } },
+        }));
       } else {
-        message.error(res.message || "QA failed");
+        message.error(res.message || "Failed to queue QA");
       }
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "QA failed");
+      message.error(err instanceof Error ? err.message : "Failed to queue QA");
     } finally {
       setQaLoading("idle");
     }
   }, [fileId, selectedSection?.sectionResultId, message]);
 
+  // Queue a QA run on all / remaining sections (one background job).
   const handleRunAllQA = useCallback(async () => {
     if (!fileId) return;
     const remaining = allSectionIds.filter((id) => !qaedSectionIds.has(id));
@@ -1215,28 +1558,25 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         remainingOnly ? "remaining" : undefined,
       );
       if (res.status === "success") {
-        // Reload findings + run records from the server (authoritative).
-        const findingsRes = await apiClient.getQAFindings(fileId);
-        if (findingsRes.status === "success") {
-          if (findingsRes.findings) setQaFindings(findingsRes.findings);
-          if (findingsRes.qaRuns)
-            setPersistedQaedIds(new Set(Object.keys(findingsRes.qaRuns)));
+        if (res.queued === false) {
+          message.info("All sections have already been QA'd");
+          return;
         }
-        setSessionQaedIds((prev) =>
-          remainingOnly ? new Set([...prev, ...remaining]) : new Set(allSectionIds),
-        );
-        const total = (res as any).totalFindings ?? 0;
-        const scopeLabel = remainingOnly
-          ? `${remaining.length} remaining section${remaining.length === 1 ? "" : "s"}`
-          : "all sections";
-        message.success(
-          `QA complete — ${total} issue${total === 1 ? "" : "s"} found across ${scopeLabel}`,
-        );
+        const ids: string[] = res.sectionResultIds ?? [];
+        setQaRun((prev) => ({
+          scope: remainingOnly ? "remaining" : "all",
+          sections: {
+            ...prev?.sections,
+            ...Object.fromEntries(
+              ids.map((id) => [id, { status: "queued" as const }]),
+            ),
+          },
+        }));
       } else {
-        message.error(res.message || "QA failed");
+        message.error(res.message || "Failed to queue QA");
       }
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "QA failed");
+      message.error(err instanceof Error ? err.message : "Failed to queue QA");
     } finally {
       setQaLoading("idle");
     }
@@ -1313,7 +1653,13 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, markdownScope, fileId, selectedSection?.sectionResultId, sectionMarkdownCache]);
+  }, [
+    activeTab,
+    markdownScope,
+    fileId,
+    selectedSection?.sectionResultId,
+    sectionMarkdownCache,
+  ]);
 
   // Items for the ⋯ "more actions" menu. Bulk QA and bulk approve are occasional
   // — tucking them here keeps the per-section actions front-and-centre.
@@ -1334,7 +1680,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     bulkMenuItems.push({
       key: "run-all-qa",
       label: runAllLabel,
-      disabled: qaLoading !== "idle",
+      disabled: qaLoading !== "idle" || anyQaActive,
       onClick: () =>
         modal.confirm({
           title: runAllTitle,
@@ -1345,11 +1691,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         }),
     });
   }
-  if (
-    onBulkSectionVerify &&
-    !allSectionsApproved &&
-    allSectionIds.length > 1
-  ) {
+  if (onBulkSectionVerify && !allSectionsApproved && allSectionIds.length > 1) {
     bulkMenuItems.push({
       key: "bulk-approve",
       label: bulkApproveLabel,
@@ -1379,10 +1721,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     ? sectionMarkdownCache[selectedSection.sectionResultId]
     : undefined;
   const mdForView = sectionScopeActive
-    ? currentSectionMarkdown?.markdown ?? ""
-    : markdown ?? "";
+    ? (currentSectionMarkdown?.markdown ?? "")
+    : (markdown ?? "");
   const pagesForView = sectionScopeActive
-    ? currentSectionMarkdown?.pages ?? []
+    ? (currentSectionMarkdown?.pages ?? [])
     : pages;
 
   // Inject a finding's correct answer into the editable JSON. The user
@@ -1451,7 +1793,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           });
         };
 
-        if (finding.issue_type === "delete_row" || finding.issue_type === "update_row") {
+        if (
+          finding.issue_type === "delete_row" ||
+          finding.issue_type === "update_row"
+        ) {
           if (finding.row_index == null) {
             throw new Error(`missing row_index for ${finding.issue_type}`);
           }
@@ -1465,7 +1810,11 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
           // Anchor to the row CONTENT the verifier froze at QA time, not the
           // index: earlier applies (or manual edits) shift positions.
-          const resolved = resolveRowAnchor(arr, finding.row_index, finding.actual);
+          const resolved = resolveRowAnchor(
+            arr,
+            finding.row_index,
+            finding.actual,
+          );
           if (resolved.index == null) {
             message.error(
               resolved.status === "not_found"
@@ -1477,13 +1826,19 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           const idx = resolved.index;
           if (idx < 0 || idx >= arr.length) {
             // no_anchor finding (pre-anchor era) whose stored index went stale
-            throw new Error(`row ${idx} is out of range for ${finding.field_path}`);
+            throw new Error(
+              `row ${idx} is out of range for ${finding.field_path}`,
+            );
           }
 
           const updated =
             finding.issue_type === "delete_row"
               ? removeAtPath(parsed, finding.field_path, idx)
-              : setByPath(parsed, `${finding.field_path}[${idx}]`, finding.row_value);
+              : setByPath(
+                  parsed,
+                  `${finding.field_path}[${idx}]`,
+                  finding.row_value,
+                );
           setEditableJson(JSON.stringify(updated, null, 2));
           setJsonError(null);
           if (finding.issue_type === "delete_row") {
@@ -1538,7 +1893,8 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         // coercion exactly like before this field existed. Mirrors the same
         // `!== null` check already used server-side in verifyFindingAgainstRecord.
         const hasCorrectedValue =
-          finding.corrected_value !== undefined && finding.corrected_value !== null;
+          finding.corrected_value !== undefined &&
+          finding.corrected_value !== null;
         const newValue =
           finding.issue_type === "extra_value"
             ? null
@@ -1632,7 +1988,9 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         findings: eligible,
         outcomes,
         excluded: new Set(
-          outcomes.filter((o) => o.status === "skipped").map((o) => o.findingId),
+          outcomes
+            .filter((o) => o.status === "skipped")
+            .map((o) => o.findingId),
         ),
         autoAccept: true,
         busy: false,
@@ -2065,23 +2423,30 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                         ? "Re-run QA on this section?"
                         : "Run QA on this section?"
                     }
-                    description="Analyzes the current section's extracted data. This may take a moment."
+                    description="Queues QA for this section — it runs in the background and results appear when done."
                     okText={sectionQaBase}
                     cancelText="Cancel"
-                    disabled={qaLoading !== "idle"}
+                    disabled={qaLoading !== "idle" || selectedSectionQaBusy}
                     onConfirm={handleRunSectionQA}
                   >
                     <span className="inline-flex">
                       <button
                         type="button"
-                        disabled={qaLoading !== "idle"}
-                        className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
+                        disabled={qaLoading !== "idle" || selectedSectionQaBusy}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
                       >
-                        {qaLoading === "section"
-                          ? "Running…"
-                          : openFindingsCount > 0
-                            ? `${sectionQaBase} · ${openFindingsCount} open`
-                            : sectionQaBase}
+                        {selectedSectionQaBusy && (
+                          <Loader2 className="w-2.5 h-2.5 animate-spin text-blue-600" />
+                        )}
+                        {selectedSectionQaBusy
+                          ? selectedSectionRunStatus === "queued"
+                            ? "QA queued…"
+                            : "QA running…"
+                          : qaLoading === "section"
+                            ? "Queueing…"
+                            : openFindingsCount > 0
+                              ? `${sectionQaBase} · ${openFindingsCount} open`
+                              : sectionQaBase}
                       </button>
                     </span>
                   </Popconfirm>
@@ -2258,42 +2623,44 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                 </div>
               )}
               {/* Markdown Subtabs */}
-              {pagesForView && Array.isArray(pagesForView) && pagesForView.length > 0 && (
-                <div className="flex border-b border-gray-200 bg-gray-50 px-4">
-                  <button
-                    onClick={() => setMarkdownView("full")}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      markdownView === "full"
-                        ? "text-blue-600 border-b-2 border-blue-600"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    Full
-                  </button>
-                  <button
-                    onClick={() => setMarkdownView("pages")}
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      markdownView === "pages"
-                        ? "text-blue-600 border-b-2 border-blue-600"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    Pages
-                  </button>
-                  {!sectionScopeActive && (
+              {pagesForView &&
+                Array.isArray(pagesForView) &&
+                pagesForView.length > 0 && (
+                  <div className="flex border-b border-gray-200 bg-gray-50 px-4">
                     <button
-                      onClick={() => setMarkdownView("chunks")}
+                      onClick={() => setMarkdownView("full")}
                       className={`px-4 py-2 text-sm font-medium transition-colors ${
-                        markdownView === "chunks"
+                        markdownView === "full"
                           ? "text-blue-600 border-b-2 border-blue-600"
                           : "text-gray-500 hover:text-gray-700"
                       }`}
                     >
-                      Chunks
+                      Full
                     </button>
-                  )}
-                </div>
-              )}
+                    <button
+                      onClick={() => setMarkdownView("pages")}
+                      className={`px-4 py-2 text-sm font-medium transition-colors ${
+                        markdownView === "pages"
+                          ? "text-blue-600 border-b-2 border-blue-600"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      Pages
+                    </button>
+                    {!sectionScopeActive && (
+                      <button
+                        onClick={() => setMarkdownView("chunks")}
+                        className={`px-4 py-2 text-sm font-medium transition-colors ${
+                          markdownView === "chunks"
+                            ? "text-blue-600 border-b-2 border-blue-600"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        Chunks
+                      </button>
+                    )}
+                  </div>
+                )}
               {sectionScopeActive && sectionMarkdownLoading && (
                 <div className="px-6 py-4 text-sm text-gray-400">
                   Loading section source…
@@ -2451,135 +2818,158 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                 {markdownView === "pages" &&
                   pagesForView &&
                   Array.isArray(pagesForView) && (
-                  <div className="space-y-8">
-                    {pagesForView.map((page: any, index: number) => {
-                      const pageMarkdown =
-                        page?.markdown?.text || page?.markdown || page?.text || "";
-                      const pageNumber =
-                        page?.page_number !== undefined
-                          ? page.page_number
-                          : page?.pageIndex !== undefined
-                            ? page.pageIndex + 1
-                            : index + 1;
+                    <div className="space-y-8">
+                      {pagesForView.map((page: any, index: number) => {
+                        const pageMarkdown =
+                          page?.markdown?.text ||
+                          page?.markdown ||
+                          page?.text ||
+                          "";
+                        const pageNumber =
+                          page?.page_number !== undefined
+                            ? page.page_number
+                            : page?.pageIndex !== undefined
+                              ? page.pageIndex + 1
+                              : index + 1;
 
-                      return (
-                        <div
-                          key={index}
-                          className="border-b border-gray-200 pb-8 last:border-b-0"
-                        >
-                          <div className="mb-4 flex items-center">
-                            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium">
-                              Page {pageNumber}
-                            </span>
-                          </div>
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[rehypeRaw]}
-                            components={{
-                              ...markdownRehypeRawPassthrough,
-                              h1: ({ node, ...props }) => (
-                                <h1
-                                  className="text-2xl font-bold mb-4 mt-6"
-                                  {...props}
-                                />
-                              ),
-                              h2: ({ node, ...props }) => (
-                                <h2
-                                  className="text-xl font-bold mb-3 mt-5"
-                                  {...props}
-                                />
-                              ),
-                              h3: ({ node, ...props }) => (
-                                <h3
-                                  className="text-lg font-semibold mb-2 mt-4"
-                                  {...props}
-                                />
-                              ),
-                              p: ({ node, ...props }: any) => (
-                                <p className="mb-4 text-gray-700" {...props} />
-                              ),
-                              code: ({ node, inline, ...props }: any) =>
-                                inline ? (
-                                  <code
-                                    className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-red-600"
-                                    {...props}
-                                  />
-                                ) : (
-                                  <code
-                                    className="block bg-gray-100 p-4 rounded-lg text-sm font-mono overflow-x-auto mb-4"
+                        return (
+                          <div
+                            key={index}
+                            className="border-b border-gray-200 pb-8 last:border-b-0"
+                          >
+                            <div className="mb-4 flex items-center">
+                              <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium">
+                                Page {pageNumber}
+                              </span>
+                            </div>
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              rehypePlugins={[rehypeRaw]}
+                              components={{
+                                ...markdownRehypeRawPassthrough,
+                                h1: ({ node, ...props }) => (
+                                  <h1
+                                    className="text-2xl font-bold mb-4 mt-6"
                                     {...props}
                                   />
                                 ),
-                              pre: ({ node, ...props }) => (
-                                <pre
-                                  className="bg-gray-100 p-4 rounded-lg overflow-x-auto mb-4"
-                                  {...props}
-                                />
-                              ),
-                              ul: ({ node, ...props }) => (
-                                <ul
-                                  className="list-disc list-inside mb-4 space-y-1"
-                                  {...props}
-                                />
-                              ),
-                              ol: ({ node, ...props }) => (
-                                <ol
-                                  className="list-decimal list-inside mb-4 space-y-1"
-                                  {...props}
-                                />
-                              ),
-                              table: ({ node, ...props }: any) => (
-                                <div className="overflow-x-auto mb-4 my-4">
-                                  <table
-                                    className="min-w-full border border-gray-300 border-collapse whitespace-nowrap"
+                                h2: ({ node, ...props }) => (
+                                  <h2
+                                    className="text-xl font-bold mb-3 mt-5"
                                     {...props}
                                   />
-                                </div>
-                              ),
-                              thead: ({ node, ...props }: any) => (
-                                <thead className="bg-gray-50" {...props} />
-                              ),
-                              tbody: ({ node, ...props }: any) => (
-                                <tbody {...props} />
-                              ),
-                              tr: ({ node, ...props }: any) => (
-                                <tr className="hover:bg-gray-50" {...props} />
-                              ),
-                              th: ({ node, ...props }: any) => (
-                                <th
-                                  className="border border-gray-300 px-4 py-2 bg-gray-50 font-semibold text-left align-top whitespace-nowrap"
-                                  {...props}
-                                />
-                              ),
-                              td: ({ node, ...props }: any) => (
-                                <td
-                                  className="border border-gray-300 px-4 py-2 align-top whitespace-nowrap"
-                                  {...props}
-                                />
-                              ),
-                            }}
-                          >
-                            {pageMarkdown}
-                          </ReactMarkdown>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                                ),
+                                h3: ({ node, ...props }) => (
+                                  <h3
+                                    className="text-lg font-semibold mb-2 mt-4"
+                                    {...props}
+                                  />
+                                ),
+                                p: ({ node, ...props }: any) => (
+                                  <p
+                                    className="mb-4 text-gray-700"
+                                    {...props}
+                                  />
+                                ),
+                                code: ({ node, inline, ...props }: any) =>
+                                  inline ? (
+                                    <code
+                                      className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono text-red-600"
+                                      {...props}
+                                    />
+                                  ) : (
+                                    <code
+                                      className="block bg-gray-100 p-4 rounded-lg text-sm font-mono overflow-x-auto mb-4"
+                                      {...props}
+                                    />
+                                  ),
+                                pre: ({ node, ...props }) => (
+                                  <pre
+                                    className="bg-gray-100 p-4 rounded-lg overflow-x-auto mb-4"
+                                    {...props}
+                                  />
+                                ),
+                                ul: ({ node, ...props }) => (
+                                  <ul
+                                    className="list-disc list-inside mb-4 space-y-1"
+                                    {...props}
+                                  />
+                                ),
+                                ol: ({ node, ...props }) => (
+                                  <ol
+                                    className="list-decimal list-inside mb-4 space-y-1"
+                                    {...props}
+                                  />
+                                ),
+                                table: ({ node, ...props }: any) => (
+                                  <div className="overflow-x-auto mb-4 my-4">
+                                    <table
+                                      className="min-w-full border border-gray-300 border-collapse whitespace-nowrap"
+                                      {...props}
+                                    />
+                                  </div>
+                                ),
+                                thead: ({ node, ...props }: any) => (
+                                  <thead className="bg-gray-50" {...props} />
+                                ),
+                                tbody: ({ node, ...props }: any) => (
+                                  <tbody {...props} />
+                                ),
+                                tr: ({ node, ...props }: any) => (
+                                  <tr className="hover:bg-gray-50" {...props} />
+                                ),
+                                th: ({ node, ...props }: any) => (
+                                  <th
+                                    className="border border-gray-300 px-4 py-2 bg-gray-50 font-semibold text-left align-top whitespace-nowrap"
+                                    {...props}
+                                  />
+                                ),
+                                td: ({ node, ...props }: any) => (
+                                  <td
+                                    className="border border-gray-300 px-4 py-2 align-top whitespace-nowrap"
+                                    {...props}
+                                  />
+                                ),
+                              }}
+                            >
+                              {pageMarkdown}
+                            </ReactMarkdown>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                 {markdownView === "chunks" &&
                   !sectionScopeActive &&
                   pages &&
                   Array.isArray(pages) && (
-                  <div className="space-y-8">
-                    {pages.map((page: any, pageIndex: number) => {
-                      const pageNumber =
-                        page?.pageIndex !== undefined
-                          ? page.pageIndex + 1
-                          : pageIndex + 1;
-                      const sourceBlocks = page?.source_blocks || [];
+                    <div className="space-y-8">
+                      {pages.map((page: any, pageIndex: number) => {
+                        const pageNumber =
+                          page?.pageIndex !== undefined
+                            ? page.pageIndex + 1
+                            : pageIndex + 1;
+                        const sourceBlocks = page?.source_blocks || [];
 
-                      if (!sourceBlocks || sourceBlocks.length === 0) {
+                        if (!sourceBlocks || sourceBlocks.length === 0) {
+                          return (
+                            <div
+                              key={pageIndex}
+                              className="border-b border-gray-200 pb-8 last:border-b-0"
+                            >
+                              <div className="mb-4 flex items-center">
+                                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium">
+                                  Page {pageNumber}
+                                </span>
+                                <span className="ml-4 text-sm text-gray-500">
+                                  No chunks available
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        }
+
                         return (
                           <div
                             key={pageIndex}
@@ -2590,123 +2980,106 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                                 Page {pageNumber}
                               </span>
                               <span className="ml-4 text-sm text-gray-500">
-                                No chunks available
+                                {sourceBlocks.length} chunk
+                                {sourceBlocks.length !== 1 ? "s" : ""}
                               </span>
                             </div>
-                          </div>
-                        );
-                      }
+                            <div className="space-y-4">
+                              {sourceBlocks.map(
+                                (block: any, blockIndex: number) => {
+                                  const chunkMarkdown =
+                                    block?.markdown ||
+                                    block?.text ||
+                                    block?.blockContent ||
+                                    "";
+                                  const chunkType = block?.type || "text";
 
-                      return (
-                        <div
-                          key={pageIndex}
-                          className="border-b border-gray-200 pb-8 last:border-b-0"
-                        >
-                          <div className="mb-4 flex items-center">
-                            <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm font-medium">
-                              Page {pageNumber}
-                            </span>
-                            <span className="ml-4 text-sm text-gray-500">
-                              {sourceBlocks.length} chunk
-                              {sourceBlocks.length !== 1 ? "s" : ""}
-                            </span>
-                          </div>
-                          <div className="space-y-4">
-                            {sourceBlocks.map(
-                              (block: any, blockIndex: number) => {
-                                const chunkMarkdown =
-                                  block?.markdown ||
-                                  block?.text ||
-                                  block?.blockContent ||
-                                  "";
-                                const chunkType = block?.type || "text";
-
-                                return (
-                                  <div
-                                    key={blockIndex}
-                                    className="border border-gray-200 rounded-lg p-4 bg-gray-50"
-                                  >
-                                    <div className="mb-2 flex items-center justify-between">
-                                      <span className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs font-medium">
-                                        Chunk {blockIndex + 1}
-                                      </span>
-                                      {chunkType && (
-                                        <span className="text-xs text-gray-500 capitalize">
-                                          {chunkType}
+                                  return (
+                                    <div
+                                      key={blockIndex}
+                                      className="border border-gray-200 rounded-lg p-4 bg-gray-50"
+                                    >
+                                      <div className="mb-2 flex items-center justify-between">
+                                        <span className="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs font-medium">
+                                          Chunk {blockIndex + 1}
                                         </span>
-                                      )}
-                                    </div>
-                                    <ReactMarkdown
-                                      remarkPlugins={[remarkGfm]}
-                                      rehypePlugins={[rehypeRaw]}
-                                      components={{
-                                        ...markdownRehypeRawPassthrough,
-                                        h1: ({ node, ...props }) => (
-                                          <h1
-                                            className="text-xl font-bold mb-3 mt-4"
-                                            {...props}
-                                          />
-                                        ),
-                                        h2: ({ node, ...props }) => (
-                                          <h2
-                                            className="text-lg font-bold mb-2 mt-3"
-                                            {...props}
-                                          />
-                                        ),
-                                        h3: ({ node, ...props }) => (
-                                          <h3
-                                            className="text-base font-semibold mb-2 mt-2"
-                                            {...props}
-                                          />
-                                        ),
-                                        p: ({ node, ...props }: any) => (
-                                          <p
-                                            className="mb-2 text-gray-700 text-sm"
-                                            {...props}
-                                          />
-                                        ),
-                                        code: ({
-                                          node,
-                                          inline,
-                                          ...props
-                                        }: any) =>
-                                          inline ? (
-                                            <code
-                                              className="bg-gray-200 px-1 py-0.5 rounded text-xs font-mono text-red-600"
-                                              {...props}
-                                            />
-                                          ) : (
-                                            <code
-                                              className="block bg-gray-200 p-2 rounded text-xs font-mono overflow-x-auto mb-2"
+                                        {chunkType && (
+                                          <span className="text-xs text-gray-500 capitalize">
+                                            {chunkType}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
+                                        rehypePlugins={[rehypeRaw]}
+                                        components={{
+                                          ...markdownRehypeRawPassthrough,
+                                          h1: ({ node, ...props }) => (
+                                            <h1
+                                              className="text-xl font-bold mb-3 mt-4"
                                               {...props}
                                             />
                                           ),
-                                        ul: ({ node, ...props }) => (
-                                          <ul
-                                            className="list-disc list-inside mb-2 space-y-1 text-sm"
-                                            {...props}
-                                          />
-                                        ),
-                                        ol: ({ node, ...props }) => (
-                                          <ol
-                                            className="list-decimal list-inside mb-2 space-y-1 text-sm"
-                                            {...props}
-                                          />
-                                        ),
-                                      }}
-                                    >
-                                      {chunkMarkdown}
-                                    </ReactMarkdown>
-                                  </div>
-                                );
-                              },
-                            )}
+                                          h2: ({ node, ...props }) => (
+                                            <h2
+                                              className="text-lg font-bold mb-2 mt-3"
+                                              {...props}
+                                            />
+                                          ),
+                                          h3: ({ node, ...props }) => (
+                                            <h3
+                                              className="text-base font-semibold mb-2 mt-2"
+                                              {...props}
+                                            />
+                                          ),
+                                          p: ({ node, ...props }: any) => (
+                                            <p
+                                              className="mb-2 text-gray-700 text-sm"
+                                              {...props}
+                                            />
+                                          ),
+                                          code: ({
+                                            node,
+                                            inline,
+                                            ...props
+                                          }: any) =>
+                                            inline ? (
+                                              <code
+                                                className="bg-gray-200 px-1 py-0.5 rounded text-xs font-mono text-red-600"
+                                                {...props}
+                                              />
+                                            ) : (
+                                              <code
+                                                className="block bg-gray-200 p-2 rounded text-xs font-mono overflow-x-auto mb-2"
+                                                {...props}
+                                              />
+                                            ),
+                                          ul: ({ node, ...props }) => (
+                                            <ul
+                                              className="list-disc list-inside mb-2 space-y-1 text-sm"
+                                              {...props}
+                                            />
+                                          ),
+                                          ol: ({ node, ...props }) => (
+                                            <ol
+                                              className="list-decimal list-inside mb-2 space-y-1 text-sm"
+                                              {...props}
+                                            />
+                                          ),
+                                        }}
+                                      >
+                                        {chunkMarkdown}
+                                      </ReactMarkdown>
+                                    </div>
+                                  );
+                                },
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  )}
               </div>
             </div>
           )}
@@ -2796,8 +3169,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         confirmLoading={reprocessLoading}
         okText="Reprocess section"
         okButtonProps={{
-          disabled:
-            !reprocessOpts.reExtractText && !reprocessOpts.reProcessAi,
+          disabled: !reprocessOpts.reExtractText && !reprocessOpts.reProcessAi,
         }}
         onOk={handleReprocessSection}
         width={520}
@@ -2842,6 +3214,16 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           </Checkbox>
         </div>
       </Modal>
+
+      {/* Floating QA progress — one row per section in the background run,
+          same pattern as the job page's processing toast. */}
+      {qaRun && (
+        <QAProgressFloat
+          run={qaRun}
+          labelById={qaSectionLabelById}
+          onDismiss={() => setQaRun(null)}
+        />
+      )}
     </div>
   );
 };

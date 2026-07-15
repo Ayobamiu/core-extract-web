@@ -417,6 +417,48 @@ export interface QARun {
     last_qa_at: string;
 }
 
+// ── Background QA jobs ──────────────────────────────────────────────
+// QA runs are queued and executed by the worker; progress arrives over
+// Socket.IO as `qa-progress-event` in the job room.
+
+export type QAJobScope = 'all' | 'remaining' | 'section';
+
+/** A QA job currently queued or running (from GET /files/:id/qa-findings). */
+export interface ActiveQAJob {
+    scope: QAJobScope;
+    sectionResultId: string | null;
+    model: string | null;
+    status: 'queued' | 'processing';
+}
+
+/** Live `qa-progress-event` payload (worker → server → job room). */
+export interface QAProgressEvent {
+    jobId: string;
+    fileId: string;
+    status:
+        | 'queued'
+        | 'started'
+        | 'section_start'
+        | 'section_done'
+        | 'section_failed'
+        | 'done'
+        | 'failed';
+    scope?: QAJobScope;
+    sectionResultId?: string;
+    slug?: string;
+    /** Present on queued/started: every section this job will QA. */
+    sectionResultIds?: string[];
+    progress?: { current: number; total: number };
+    findingsCount?: number;
+    overallQuality?: QAOverallQuality;
+    findings?: QAFinding[];
+    totalSections?: number;
+    totalFindings?: number;
+    failedSections?: number;
+    message?: string;
+    timestamp: string;
+}
+
 // ── Processing timeline (curated, frontend-facing progress events) ──
 export type ProcessingPhase =
     | 'queued' | 'classifying' | 'extracting' | 'ai_extraction'
@@ -1822,12 +1864,15 @@ class ApiClient {
     }
 
     // ── Section QA ─────────────────────────────────────────────────────
+    // QA runs are queued and processed by the worker. The POST endpoints
+    // return 202 immediately; progress and results arrive over Socket.IO
+    // (`qa-progress-event`) in the job room.
 
-    /** Run VLM QA on a single section. */
+    /** Queue a VLM QA run on a single section. */
     async runSectionQA(
         fileId: string,
         sectionResultId: string,
-    ): Promise<ApiResponse<{ sectionResultId: string; overall_quality: QAOverallQuality; summary: string; findings: QAFinding[] }>> {
+    ): Promise<ApiResponse<{ queued: boolean; fileId: string; scope: QAJobScope; sectionResultIds: string[]; totalSections: number }>> {
         return this.request(
             `/files/${encodeURIComponent(fileId)}/sections/${encodeURIComponent(sectionResultId)}/qa`,
             { method: 'POST' },
@@ -1835,13 +1880,13 @@ class ApiClient {
     }
 
     /**
-     * Run VLM QA on a file's sections. `scope: 'remaining'` QAs only the
-     * sections that haven't been QA'd yet (decided server-side); omit for all.
+     * Queue a VLM QA run on a file's sections. `scope: 'remaining'` QAs only
+     * the sections that haven't been QA'd yet (decided server-side); omit for all.
      */
     async runFileQA(
         fileId: string,
         scope?: 'remaining',
-    ): Promise<ApiResponse<{ totalSections: number; totalFindings: number; results: unknown[] }>> {
+    ): Promise<ApiResponse<{ queued: boolean; fileId: string; scope: QAJobScope; sectionResultIds: string[]; totalSections: number }>> {
         const qs = scope ? `?scope=${scope}` : '';
         return this.request(
             `/files/${encodeURIComponent(fileId)}/qa${qs}`,
@@ -1852,7 +1897,7 @@ class ApiClient {
     /** Get all QA findings for a file, grouped by section_result_id. */
     async getQAFindings(
         fileId: string,
-    ): Promise<ApiResponse<{ findings: Record<string, QAFinding[]>; qaRuns?: Record<string, QARun> }>> {
+    ): Promise<ApiResponse<{ findings: Record<string, QAFinding[]>; qaRuns?: Record<string, QARun>; activeQa?: ActiveQAJob[] }>> {
         return this.request(`/files/${encodeURIComponent(fileId)}/qa-findings`);
     }
 
