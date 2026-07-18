@@ -329,6 +329,19 @@ type QARunState = {
   sections: Record<string, QASectionRun>;
 };
 
+/** Live state of one group inside a directed re-extraction request. */
+type ReextractGroupRun = {
+  status: "queued" | "running" | "done" | "failed";
+  findingsCount?: number;
+  message?: string;
+};
+
+/** Live state of background re-extraction request(s), keyed by requestId. */
+type ReextractRunState = Record<
+  string,
+  { sectionResultId: string; groups: Record<string, ReextractGroupRun> }
+>;
+
 /** State for the in-panel bulk-review mode. Lives in TabbedDataViewer (which
  *  owns editableJson); QAFindingsPanel only renders it. */
 type BulkReviewState = {
@@ -438,6 +451,117 @@ function QAProgressFloat({
                   ? "failed"
                   : s.status === "running"
                     ? "running"
+                    : "queued"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+/**
+ * Floating progress card for directed re-extractions — same shell and drag
+ * behavior as QAProgressFloat, one row per (section, group). Sits above the
+ * QA float so both can show at once.
+ */
+function ReextractProgressFloat({
+  run,
+  labelById,
+  onDismiss,
+}: {
+  run: ReextractRunState;
+  labelById: Map<string, string>;
+  onDismiss: () => void;
+}) {
+  const dragControls = useDragControls();
+  const rows: Array<{ key: string; label: string; s: ReextractGroupRun }> = [];
+  for (const [reqId, r] of Object.entries(run)) {
+    const sectionLabel =
+      labelById.get(r.sectionResultId) ??
+      `${r.sectionResultId.substring(0, 8)}…`;
+    for (const [group, s] of Object.entries(r.groups)) {
+      rows.push({ key: `${reqId}:${group}`, label: `${sectionLabel} · ${group}`, s });
+    }
+  }
+  if (rows.length === 0) return null;
+  const finished = rows.filter(
+    ({ s }) => s.status === "done" || s.status === "failed",
+  ).length;
+  const total = rows.length;
+  const allTerminal = finished === total;
+  const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
+
+  return (
+    <motion.div
+      drag
+      dragListener={false}
+      dragControls={dragControls}
+      dragMomentum={false}
+      dragElastic={0}
+      className="fixed bottom-24 right-6 z-[1100] w-80 max-w-[calc(100vw-3rem)] bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
+    >
+      <div
+        onPointerDown={(e) => dragControls.start(e)}
+        className="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-100 bg-gray-50 cursor-move select-none touch-none"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <GripVertical className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+          {!allTerminal && (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 flex-shrink-0" />
+          )}
+          <span className="text-xs font-medium text-gray-700 truncate">
+            {allTerminal
+              ? "Group fixes finished"
+              : `Fixing groups with AI — ${finished}/${total}`}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="p-0.5 text-gray-400 hover:text-gray-700 rounded transition-colors flex-shrink-0 cursor-pointer"
+          aria-label="Dismiss re-extraction progress"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="h-1 bg-gray-100">
+        <div
+          className={`h-full transition-all duration-500 ${allTerminal ? "bg-green-500" : "bg-blue-500"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
+        {rows.map(({ key, label, s }) => (
+          <div key={key} className="flex items-center gap-2 px-3 py-1.5">
+            <span className="flex-shrink-0">
+              {s.status === "queued" && (
+                <Clock className="w-3 h-3 text-gray-400" />
+              )}
+              {s.status === "running" && (
+                <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+              )}
+              {s.status === "done" && (
+                <CheckCircle2 className="w-3 h-3 text-green-600" />
+              )}
+              {s.status === "failed" && (
+                <XCircle className="w-3 h-3 text-red-500" />
+              )}
+            </span>
+            <span
+              className="flex-1 min-w-0 truncate text-[11px] text-gray-600"
+              title={label}
+            >
+              {label}
+            </span>
+            <span className="flex-shrink-0 text-[10px] text-gray-400">
+              {s.status === "done"
+                ? `${s.findingsCount ?? 0} fix${(s.findingsCount ?? 0) === 1 ? "" : "es"}`
+                : s.status === "failed"
+                  ? "failed"
+                  : s.status === "running"
+                    ? "reading pages"
                     : "queued"}
             </span>
           </div>
@@ -1207,6 +1331,104 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     reProcessAi: true,
   });
 
+  // ── Directed group re-extraction ──────────────────────────────────
+  // Vision repair for up to 3 groups of the selected section: re-reads the
+  // page images (optionally steered by an operator note) and stages the
+  // differences as QA findings for review — never overwrites data directly.
+  // Queued: the POST returns 202; findings arrive per group over
+  // `reextract-progress-event`.
+  const [reextractOpen, setReextractOpen] = useState(false);
+  const [reextractLoading, setReextractLoading] = useState(false);
+  const [reextractGroups, setReextractGroups] = useState<string[]>([]);
+  const [reextractMode, setReextractMode] =
+    useState<import("@/lib/api").ReextractMode>("auto");
+  const [reextractPrompt, setReextractPrompt] = useState("");
+  const [reextractPages, setReextractPages] = useState<number[]>([]);
+  // In-flight requests by sectionResultId → group names (drives the busy
+  // hint + double-submit guard; server-side dedupe is the authority).
+  const [pendingReextractions, setPendingReextractions] = useState<
+    Record<string, string[]>
+  >({});
+  // Live per-group progress (drives the floating tracker, mirroring qaRun).
+  const [reextractRun, setReextractRun] = useState<ReextractRunState | null>(
+    null,
+  );
+  // Which section the modal's form was last seeded for. Closing the modal
+  // never clears the form — reopening on the same section restores it, so
+  // an operator can close it to check the PDF and come back.
+  const [reextractFormSection, setReextractFormSection] = useState<
+    string | null
+  >(null);
+  // "What's wrong?" suggestions mined from past requests, cached per slug.
+  const [promptSuggestions, setPromptSuggestions] = useState<
+    import("@/lib/api").ReextractPromptSuggestion[]
+  >([]);
+  const promptSuggCacheRef = React.useRef<
+    Record<string, import("@/lib/api").ReextractPromptSuggestion[]>
+  >({});
+  // Drag controls for the (non-blocking, draggable) re-extraction modal.
+  const reextractDragControls = useDragControls();
+
+  const MAX_REEXTRACT_GROUPS = 3;
+  const MAX_REEXTRACT_PAGES = 4;
+
+  // Group options = the record's top-level keys (strict extraction emits
+  // every schema group, so this matches the schema's group list).
+  const reextractGroupOptions = useMemo(() => {
+    const data = selectedSection?.data;
+    if (!data || typeof data !== "object") return [];
+    return Object.keys(data)
+      .filter((k) => k !== "section_result_id")
+      .map((k) => ({ value: k, label: k }));
+  }, [selectedSection?.data]);
+
+  // The section's extraction pages — suggested (and pre-selected) in the
+  // page picker. section_results first; detected_sections as fallback (its
+  // rows carry extraction_pages and, in real data, section_result_id — the
+  // prop type just doesn't declare the id).
+  const reextractSectionPages = useMemo(() => {
+    const sid = selectedSection?.sectionResultId;
+    if (!sid) return [];
+    const fromResults = Array.isArray(sectionResults)
+      ? sectionResults.find((s) => s.section_result_id === sid)
+          ?.extraction_pages
+      : undefined;
+    if (Array.isArray(fromResults) && fromResults.length > 0) {
+      return fromResults;
+    }
+    const ds = detectedSections?.sections?.find(
+      (s) =>
+        (s as { section_result_id?: string }).section_result_id === sid,
+    );
+    return Array.isArray(ds?.extraction_pages) ? ds.extraction_pages : [];
+  }, [sectionResults, detectedSections, selectedSection?.sectionResultId]);
+
+  // Fetch operator-note suggestions when the modal opens (cached per slug).
+  useEffect(() => {
+    const slug = selectedSection?.slug;
+    if (!reextractOpen || !slug) return;
+    const cached = promptSuggCacheRef.current[slug];
+    if (cached) {
+      setPromptSuggestions(cached);
+      return;
+    }
+    let cancelled = false;
+    apiClient
+      .getReextractPromptSuggestions(slug)
+      .then((res) => {
+        if (cancelled || res.status !== "success") return;
+        const prompts = res.prompts ?? [];
+        promptSuggCacheRef.current[slug] = prompts;
+        setPromptSuggestions(prompts);
+      })
+      .catch(() => {
+        if (!cancelled) setPromptSuggestions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reextractOpen, selectedSection?.slug]);
+
   // ── Per-section markdown scope ("This section" vs "Whole file") ──
   const [markdownScope, setMarkdownScope] = useState<"section" | "file">(
     "section",
@@ -1245,6 +1467,34 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
             jobs: res.activeQa,
             qaedIds: Object.keys(res.qaRuns ?? {}),
           });
+        }
+        // Directed re-extractions queued/running right now (page loaded
+        // mid-run) — restore the busy hints and the floating tracker.
+        if (res.status === "success") {
+          const pending: Record<string, string[]> = {};
+          const run: ReextractRunState = {};
+          for (const r of res.activeReextractions ?? []) {
+            pending[r.section_result_id] = [
+              ...(pending[r.section_result_id] ?? []),
+              ...r.groups,
+            ];
+            run[r.id] = {
+              sectionResultId: r.section_result_id,
+              groups: Object.fromEntries(
+                r.groups.map((g: string) => [
+                  g,
+                  {
+                    status:
+                      r.status === "processing"
+                        ? ("running" as const)
+                        : ("queued" as const),
+                  },
+                ]),
+              ),
+            };
+          }
+          setPendingReextractions(pending);
+          setReextractRun(Object.keys(run).length > 0 ? run : null);
         }
       })
       .catch(() => {
@@ -1416,7 +1666,134 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         }
       }
     },
+    onReextractProgressEvent: (evt: import("@/lib/api").ReextractProgressEvent) => {
+      if (!fileId || evt.fileId !== fileId) return;
+      const sid = evt.sectionResultId;
+      // Upsert this request's per-group status in the floating tracker.
+      const setGroupStatuses = (
+        status: ReextractGroupRun["status"],
+        onlyGroup?: string,
+        extra?: Partial<ReextractGroupRun>,
+      ) =>
+        setReextractRun((prev) => {
+          const req = prev?.[evt.requestId] ?? {
+            sectionResultId: sid,
+            groups: Object.fromEntries(
+              evt.groups.map((g) => [g, { status: "queued" as const }]),
+            ),
+          };
+          const groups = { ...req.groups };
+          for (const g of onlyGroup ? [onlyGroup] : evt.groups) {
+            // A terminal per-group state never regresses (the job-level
+            // `done` sweep must not overwrite a group's `failed`).
+            const cur = groups[g]?.status;
+            if (
+              !onlyGroup &&
+              (cur === "done" || cur === "failed") &&
+              status !== "failed"
+            ) {
+              continue;
+            }
+            groups[g] = { ...groups[g], status, ...extra };
+          }
+          return { ...prev, [evt.requestId]: { ...req, groups } };
+        });
+      switch (evt.status) {
+        case "queued":
+        case "started": {
+          setGroupStatuses(evt.status === "queued" ? "queued" : "running");
+          setPendingReextractions((prev) => ({
+            ...prev,
+            [sid]: [...new Set([...(prev[sid] ?? []), ...evt.groups])],
+          }));
+          break;
+        }
+        case "group_done": {
+          const group = evt.group;
+          if (!group) return;
+          setGroupStatuses(
+            evt.message ? "failed" : "done",
+            group,
+            evt.message
+              ? { message: evt.message }
+              : { findingsCount: evt.findingsCount ?? 0 },
+          );
+          // The server replaced this group's open findings — mirror that.
+          const staged = evt.findings ?? [];
+          setQaFindings((prev) => {
+            const list = prev[sid] ?? [];
+            const inGroup = (p: string) =>
+              p === group ||
+              p.startsWith(`${group}.`) ||
+              p.startsWith(`${group}[`);
+            const kept = list.filter(
+              (f) => !(f.status === "open" && inGroup(f.field_path)),
+            );
+            return { ...prev, [sid]: [...staged, ...kept] };
+          });
+          if (evt.message) {
+            message.warning(`Re-extraction of "${group}" failed: ${evt.message}`);
+          }
+          break;
+        }
+        case "done": {
+          // Sweep any group the per-group events missed into a terminal
+          // state (failedGroups → failed, the rest → done).
+          for (const g of evt.failedGroups ?? []) {
+            setGroupStatuses("failed", g);
+          }
+          setGroupStatuses("done");
+          setPendingReextractions((prev) => {
+            const next = { ...prev };
+            const remaining = (next[sid] ?? []).filter(
+              (g) => !evt.groups.includes(g),
+            );
+            if (remaining.length) next[sid] = remaining;
+            else delete next[sid];
+            return next;
+          });
+          const total = evt.totalFindings ?? 0;
+          const failed = evt.failedGroups ?? [];
+          message.success(
+            total === 0 && failed.length === 0
+              ? `Re-read ${evt.groups.map((g) => `"${g}"`).join(", ")} — already matches the page`
+              : `${total} suggested fix${total === 1 ? "" : "es"} staged for ${evt.groups.map((g) => `"${g}"`).join(", ")} — review in the QA panel` +
+                  (failed.length ? ` (${failed.join(", ")} failed)` : ""),
+          );
+          break;
+        }
+        case "failed": {
+          setGroupStatuses("failed", undefined, { message: evt.message });
+          setPendingReextractions((prev) => {
+            const next = { ...prev };
+            const remaining = (next[sid] ?? []).filter(
+              (g) => !evt.groups.includes(g),
+            );
+            if (remaining.length) next[sid] = remaining;
+            else delete next[sid];
+            return next;
+          });
+          message.error(evt.message || "Directed re-extraction failed");
+          break;
+        }
+      }
+    },
   });
+
+  // Auto-dismiss the floating re-extraction tracker once every group is
+  // terminal — same pattern as the QA float below.
+  useEffect(() => {
+    if (!reextractRun) return;
+    const states = Object.values(reextractRun).flatMap((r) =>
+      Object.values(r.groups),
+    );
+    const allTerminal =
+      states.length > 0 &&
+      states.every((s) => s.status === "done" || s.status === "failed");
+    if (!allTerminal) return;
+    const t = setTimeout(() => setReextractRun(null), 6000);
+    return () => clearTimeout(t);
+  }, [reextractRun]);
 
   // Labels for the floating QA progress rows.
   const qaSectionLabelById = useMemo(() => {
@@ -1620,6 +1997,62 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     }
   }, [fileId, selectedSection?.sectionResultId, reprocessOpts, message]);
 
+  // Queue a directed group re-extraction. Returns 202 immediately — the
+  // worker runs it and findings arrive per group via reextract-progress-event
+  // (handled in the useSocket block above).
+  const handleReextractGroup = useCallback(async () => {
+    const sid = selectedSection?.sectionResultId;
+    if (!fileId || !sid || reextractGroups.length === 0) return;
+    setReextractLoading(true);
+    try {
+      const res = await apiClient.reextractSectionGroup(fileId, sid, {
+        groups: reextractGroups,
+        mode: reextractMode,
+        ...(reextractPrompt.trim() ? { prompt: reextractPrompt.trim() } : {}),
+        ...(reextractPages.length > 0 ? { pages: reextractPages } : {}),
+      });
+      if (res.status === "success" && res.queued) {
+        // Optimistic — the server's `queued` socket event confirms this.
+        setPendingReextractions((prev) => ({
+          ...prev,
+          [sid]: [...new Set([...(prev[sid] ?? []), ...reextractGroups])],
+        }));
+        setReextractRun((prev) => ({
+          ...prev,
+          [res.requestId]: {
+            sectionResultId: sid,
+            groups: Object.fromEntries(
+              reextractGroups.map((g) => [g, { status: "queued" as const }]),
+            ),
+          },
+        }));
+        setReextractOpen(false);
+        // The request is on its way — clear the form so the next open
+        // starts fresh (closing WITHOUT queueing keeps everything typed).
+        setReextractFormSection(null);
+        message.success(
+          `Re-extraction of ${reextractGroups.map((g) => `"${g}"`).join(", ")} queued — findings will appear in the QA panel`,
+        );
+      } else {
+        message.error(res.message || "Failed to queue re-extraction");
+      }
+    } catch (err) {
+      message.error(
+        err instanceof Error ? err.message : "Failed to queue re-extraction",
+      );
+    } finally {
+      setReextractLoading(false);
+    }
+  }, [
+    fileId,
+    selectedSection?.sectionResultId,
+    reextractGroups,
+    reextractMode,
+    reextractPrompt,
+    reextractPages,
+    message,
+  ]);
+
   // Lazily fetch the selected section's markdown when the Markdown tab is open
   // and scoped to "This section". Cached by sectionResultId.
   useEffect(() => {
@@ -1673,6 +2106,30 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       onClick: () => {
         setReprocessOpts({ reExtractText: true, reProcessAi: true });
         setReprocessOpen(true);
+      },
+    });
+    const sid = selectedSection.sectionResultId;
+    const pendingGroups = pendingReextractions[sid] ?? [];
+    bulkMenuItems.push({
+      key: "reextract-group",
+      label: pendingGroups.length
+        ? `Fixing ${pendingGroups.map((g) => `"${g}"`).join(", ")}…`
+        : "Fix groups with AI…",
+      disabled: pendingGroups.length > 0,
+      onClick: () => {
+        // Seed the form only when it belongs to a different section (or was
+        // consumed by a queued request) — closing and reopening on the same
+        // section keeps whatever the operator had typed.
+        if (reextractFormSection !== sid) {
+          setReextractGroups([]);
+          setReextractMode("auto");
+          setReextractPrompt("");
+          setReextractPages(
+            reextractSectionPages.slice(0, MAX_REEXTRACT_PAGES),
+          );
+          setReextractFormSection(sid);
+        }
+        setReextractOpen(true);
       },
     });
   }
@@ -3215,6 +3672,178 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
         </div>
       </Modal>
 
+      {/* Directed group re-extraction: pick up to 3 groups, say what's
+          wrong, and a vision model re-reads the chosen pages (one focused
+          call per group). Differences arrive as QA findings to review —
+          nothing is overwritten directly.
+          Maskless + draggable (framer-motion, like QAProgressFloat) so the
+          operator can scroll the PDF/result behind it while deciding what to
+          fix; closing it keeps the typed state (see reextractFormSection). */}
+      <Modal
+        title={
+          <div
+            onPointerDown={(e) => reextractDragControls.start(e)}
+            className="flex items-center gap-2 cursor-move select-none touch-none -my-1 py-1"
+          >
+            <GripVertical className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+            Fix groups with AI
+          </div>
+        }
+        open={reextractOpen}
+        onCancel={() => setReextractOpen(false)}
+        confirmLoading={reextractLoading}
+        okText={reextractLoading ? "Queueing…" : "Queue re-extraction"}
+        okButtonProps={{
+          disabled: reextractGroups.length === 0 || reextractPages.length === 0,
+        }}
+        onOk={handleReextractGroup}
+        width={560}
+        mask={false}
+        maskClosable={false}
+        wrapClassName="pointer-events-none"
+        modalRender={(node) => (
+          <motion.div
+            drag
+            dragListener={false}
+            dragControls={reextractDragControls}
+            dragMomentum={false}
+            dragElastic={0}
+            className="pointer-events-auto"
+          >
+            {node}
+          </motion.div>
+        )}
+      >
+        <p className="text-sm text-gray-600 mb-3">
+          Re-reads the selected pages with a vision model and stages the
+          differences as QA findings for{" "}
+          <span className="font-medium">
+            {selectedSection?.recordId ||
+              selectedSection?.slug ||
+              "this section"}
+          </span>
+          . Runs in the background; nothing is applied until you review.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <div className="text-xs font-medium text-gray-700 mb-1">
+              Groups to re-extract{" "}
+              <span className="text-gray-400">
+                (up to {MAX_REEXTRACT_GROUPS} — each gets its own focused pass)
+              </span>
+            </div>
+            <Select
+              mode="multiple"
+              className="w-full"
+              placeholder="e.g. samples_collected"
+              value={reextractGroups}
+              onChange={(v: string[]) =>
+                setReextractGroups(v.slice(0, MAX_REEXTRACT_GROUPS))
+              }
+              options={reextractGroupOptions}
+              showSearch
+              disabled={reextractLoading}
+            />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-gray-700 mb-1">
+              What&apos;s wrong? <span className="text-gray-400">(optional)</span>
+            </div>
+            <Input.TextArea
+              rows={3}
+              placeholder="e.g. Most sample rows are missing — the table continues onto the second page."
+              value={reextractPrompt}
+              onChange={(e) => setReextractPrompt(e.target.value)}
+              disabled={reextractLoading}
+            />
+            {promptSuggestions.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {promptSuggestions.slice(0, 5).map((s) => (
+                  <button
+                    key={s.prompt}
+                    type="button"
+                    title={`${s.prompt}${s.uses > 1 ? ` — used ${s.uses}×` : ""}`}
+                    onClick={() => setReextractPrompt(s.prompt)}
+                    disabled={reextractLoading}
+                    className={`max-w-full truncate text-[11px] px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                      s.same_slug
+                        ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                        : "border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                    }`}
+                  >
+                    {s.prompt.length > 64
+                      ? `${s.prompt.slice(0, 64)}…`
+                      : s.prompt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-xs font-medium text-gray-700 mb-1">
+              Strategy
+            </div>
+            <Select
+              className="w-full"
+              value={reextractMode}
+              onChange={(v: import("@/lib/api").ReextractMode) =>
+                setReextractMode(v)
+              }
+              disabled={reextractLoading}
+              options={[
+                {
+                  value: "auto",
+                  label: "Auto — full re-read, or spot-fix for large tables",
+                },
+                {
+                  value: "full",
+                  label: "Full re-read — re-transcribe the whole group",
+                },
+                {
+                  value: "patch",
+                  label: "Spot-fix — only flag what's wrong (large tables)",
+                },
+              ]}
+            />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-gray-700 mb-1">
+              Pages to read{" "}
+              <span className="text-gray-400">
+                (max {MAX_REEXTRACT_PAGES} — type any page number, e.g. one the
+                classifier missed)
+              </span>
+            </div>
+            <Select
+              mode="tags"
+              className="w-full"
+              placeholder="e.g. 46"
+              value={reextractPages.map(String)}
+              onChange={(vals: string[]) => {
+                const pages = [
+                  ...new Set(
+                    vals
+                      .map((v) => parseInt(v, 10))
+                      .filter((n) => Number.isInteger(n) && n >= 1),
+                  ),
+                ].sort((a, b) => a - b);
+                if (pages.length > MAX_REEXTRACT_PAGES) {
+                  message.warning(
+                    `At most ${MAX_REEXTRACT_PAGES} pages — pick the pages that actually hold the data`,
+                  );
+                }
+                setReextractPages(pages.slice(0, MAX_REEXTRACT_PAGES));
+              }}
+              options={reextractSectionPages.map((p) => ({
+                value: String(p),
+                label: `Page ${p}`,
+              }))}
+              disabled={reextractLoading}
+            />
+          </div>
+        </div>
+      </Modal>
+
       {/* Floating QA progress — one row per section in the background run,
           same pattern as the job page's processing toast. */}
       {qaRun && (
@@ -3222,6 +3851,16 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           run={qaRun}
           labelById={qaSectionLabelById}
           onDismiss={() => setQaRun(null)}
+        />
+      )}
+
+      {/* Floating re-extraction progress — one row per (section, group),
+          stacked above the QA float so both can show at once. */}
+      {reextractRun && (
+        <ReextractProgressFloat
+          run={reextractRun}
+          labelById={qaSectionLabelById}
+          onDismiss={() => setReextractRun(null)}
         />
       )}
     </div>

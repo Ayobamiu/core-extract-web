@@ -202,7 +202,15 @@ export interface BulkFinding {
   field_path: string;
   expected: string | null;
   actual: string | null;
-  corrected_value?: string | number | boolean | null;
+  // Directed group re-extraction can stage a whole-group fill-in whose
+  // corrected_value is the full array/object; setByPath applies it as-is.
+  corrected_value?:
+    | string
+    | number
+    | boolean
+    | Record<string, unknown>
+    | unknown[]
+    | null;
   row_index?: number | null;
   row_value?: unknown;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { QAProgressEvent } from '@/lib/api';
+import type { QAProgressEvent, ReextractProgressEvent } from '@/lib/api';
 
 interface SocketEventHandlers {
     onJobStatusUpdate?: (data: any) => void;
@@ -8,6 +8,7 @@ interface SocketEventHandlers {
     onPreviewUpdated?: (data: any) => void;
     onFileProcessingEvent?: (data: any) => void;
     onQAProgressEvent?: (data: QAProgressEvent) => void;
+    onReextractProgressEvent?: (data: ReextractProgressEvent) => void;
 }
 
 export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
@@ -67,12 +68,17 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
             handlersRef.current?.onQAProgressEvent?.(data);
         };
 
+        const handleReextractProgressEvent = (data: ReextractProgressEvent) => {
+            handlersRef.current?.onReextractProgressEvent?.(data);
+        };
+
         // Remove old listeners first to avoid duplicates
         newSocket.off('job-status-update');
         newSocket.off('file-status-update');
         newSocket.off('preview-updated');
         newSocket.off('file-processing-event');
         newSocket.off('qa-progress-event');
+        newSocket.off('reextract-progress-event');
 
         // Register event handlers
         newSocket.on('job-status-update', handleJobStatusUpdate);
@@ -80,6 +86,7 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
         newSocket.on('preview-updated', handlePreviewUpdated);
         newSocket.on('file-processing-event', handleFileProcessingEvent);
         newSocket.on('qa-progress-event', handleQAProgressEvent);
+        newSocket.on('reextract-progress-event', handleReextractProgressEvent);
         
         console.log('📡 Registered all Socket.IO event handlers');
 
@@ -96,6 +103,7 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
             newSocket.off('preview-updated');
             newSocket.off('file-processing-event');
             newSocket.off('qa-progress-event');
+            newSocket.off('reextract-progress-event');
             newSocket.disconnect();
         };
     }, [jobId]);

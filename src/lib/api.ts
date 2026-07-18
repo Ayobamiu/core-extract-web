@@ -385,8 +385,18 @@ export interface QAFinding {
      * marker/note, not the literal word "true"/"false"). Absent (undefined)
      * on findings saved before this field existed — fall back to
      * coerceExpected(expected, ...) in that case.
+     *
+     * Directed group re-extraction can stage a WHOLE-GROUP fill-in (a group
+     * that was never extracted): corrected_value is then the full array or
+     * object for the bare group path.
      */
-    corrected_value?: string | number | boolean | null;
+    corrected_value?:
+        | string
+        | number
+        | boolean
+        | Record<string, unknown>
+        | unknown[]
+        | null;
     /**
      * 0-indexed position within the target array (which must itself be
      * `field_path`). Required for delete_row/update_row; optional insertion
@@ -455,6 +465,53 @@ export interface QAProgressEvent {
     totalSections?: number;
     totalFindings?: number;
     failedSections?: number;
+    message?: string;
+    timestamp: string;
+}
+
+// ── Directed group re-extraction ────────────────────────────────────
+// Operator repair tool: re-reads 1..3 schema groups from the section's page
+// images and stages the differences as QA findings. Queued (worker-side);
+// progress arrives as `reextract-progress-event` in the job room.
+
+export type ReextractMode = 'auto' | 'full' | 'patch';
+
+/** An active request row (from GET /files/:id/qa-findings hydration). */
+export interface ActiveReextraction {
+    id: string;
+    section_result_id: string;
+    slug: string;
+    groups: string[];
+    pages: number[];
+    mode: ReextractMode;
+    status: 'queued' | 'processing';
+    created_at: string;
+}
+
+/** A past "What's wrong?" note, suggested back in the re-extraction modal. */
+export interface ReextractPromptSuggestion {
+    prompt: string;
+    uses: number;
+    last_used_at: string;
+    /** True when the note was used on this document type before. */
+    same_slug: boolean;
+}
+
+/** Live `reextract-progress-event` payload (worker → server → job room). */
+export interface ReextractProgressEvent {
+    jobId: string;
+    fileId: string;
+    status: 'queued' | 'started' | 'group_done' | 'done' | 'failed';
+    requestId: string;
+    sectionResultId: string;
+    groups: string[];
+    /** group_done only. */
+    group?: string;
+    modeUsed?: 'full' | 'patch';
+    findings?: QAFinding[];
+    findingsCount?: number;
+    totalFindings?: number;
+    failedGroups?: string[];
     message?: string;
     timestamp: string;
 }
@@ -1894,10 +1951,48 @@ class ApiClient {
         );
     }
 
+    /**
+     * Directed group re-extraction: re-read up to 3 schema groups from the
+     * section's page images with a vision model, optionally steered by an
+     * operator prompt about what's wrong. Queued — returns 202 immediately;
+     * staged findings arrive over Socket.IO (`reextract-progress-event`,
+     * one `group_done` per group) and replace each group's open findings.
+     */
+    async reextractSectionGroup(
+        fileId: string,
+        sectionResultId: string,
+        body: {
+            groups: string[];
+            prompt?: string;
+            pages?: number[];
+            mode?: ReextractMode;
+            model?: string;
+        },
+    ): Promise<ApiResponse<{
+        queued: boolean;
+        requestId: string;
+        sectionResultId: string;
+        groups: string[];
+        pages: number[];
+        mode: ReextractMode;
+    }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/sections/${encodeURIComponent(sectionResultId)}/reextract-group`,
+            { method: 'POST', body: JSON.stringify(body) },
+        );
+    }
+
+    /** Operator-note suggestions for the re-extraction modal (same-slug first). */
+    async getReextractPromptSuggestions(
+        slug: string,
+    ): Promise<ApiResponse<{ prompts: ReextractPromptSuggestion[] }>> {
+        return this.request(`/reextract-prompts?slug=${encodeURIComponent(slug)}`);
+    }
+
     /** Get all QA findings for a file, grouped by section_result_id. */
     async getQAFindings(
         fileId: string,
-    ): Promise<ApiResponse<{ findings: Record<string, QAFinding[]>; qaRuns?: Record<string, QARun>; activeQa?: ActiveQAJob[] }>> {
+    ): Promise<ApiResponse<{ findings: Record<string, QAFinding[]>; qaRuns?: Record<string, QARun>; activeQa?: ActiveQAJob[]; activeReextractions?: ActiveReextraction[] }>> {
         return this.request(`/files/${encodeURIComponent(fileId)}/qa-findings`);
     }
 
