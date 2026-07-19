@@ -309,6 +309,10 @@ export interface DetectedPage {
     document_type_slug: string; // 'none' for boilerplate/empty pages
     page_role?: 'first' | 'middle' | 'last' | 'standalone' | 'none' | null;
     page_purpose?: 'data' | 'reference' | 'boilerplate' | 'cover' | 'blank' | 'attachment' | 'unknown';
+    /** Human override set by attach-page (routing review): wins over
+     *  page_purpose when deciding extractability. The classifier's original
+     *  verdict stays in page_purpose. */
+    page_purpose_override?: string;
     confidence: number;
     duplicate_of?: number | null;
     dupe_signature?: string | null;
@@ -324,7 +328,15 @@ export interface DetectedSectionSkippedPage {
 export interface DetectedSection {
     document_type_slug: string;
     record_id?: string | null;
+    /** Explicit membership: sorted original-PDF page numbers. Sections may be
+     *  NON-CONTIGUOUS (e.g. a log on pp 2–3 plus its appendix figure on p 7),
+     *  so page_range is only the [min, max] display span and spans of two
+     *  sections may interleave — never derive membership from the range; use
+     *  getMemberPages() from lib/routingEdits. Absent on legacy blobs (which
+     *  were always contiguous, so range expansion is exact for them). */
+    member_pages?: number[];
     page_range: [number, number];
+    /** Member-page count (== span width only when contiguous). Display-only. */
     page_count: number;
     extraction_pages: number[];
     skipped_pages: DetectedSectionSkippedPage[];

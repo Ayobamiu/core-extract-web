@@ -44,6 +44,8 @@ import {
   unsupersedeSection,
   hasUnsavedChanges,
   getSectionsNeedingExtraction,
+  getMemberPages,
+  formatMemberPages,
 } from "@/lib/routingEdits";
 import { recordIdentifier } from "@/lib/recordIdentifier";
 
@@ -80,14 +82,16 @@ type ActionKind =
   | "change_slug"
   | "split"
   | "merge"
+  | "merge_into"
   | "new_section"
   | "include_skipped"
+  | "attach_to_section"
   | "reassign_pages"
   | "mark_duplicate";
 interface ActionState {
   kind: ActionKind;
   sectionIndex: number;
-  // For "new_section": the orphan page the section is created from.
+  // For "new_section" / "attach_to_section": the orphan page being assigned.
   pageNumber?: number;
 }
 
@@ -241,11 +245,10 @@ function decisionsForSection(
   section: DetectedSection,
   pages: DetectedPage[]
 ): PageDecision[] {
-  const inRange = pages.filter(
-    (p) =>
-      p.page_number >= section.page_range[0] &&
-      p.page_number <= section.page_range[1]
-  );
+  // Membership, not range: a non-contiguous section's [min, max] span can
+  // cover pages that belong to a different section.
+  const members = new Set(getMemberPages(section));
+  const inRange = pages.filter((p) => members.has(p.page_number));
   return inRange.map((p) => {
     if (section.extraction_pages.includes(p.page_number)) {
       return { page: p, decision: "extract" };
@@ -270,13 +273,11 @@ function pagesOutsideAnySection(
   sections: DetectedSection[]
 ): DetectedPage[] {
   if (sections.length === 0) return pages;
-  return pages.filter(
-    (p) =>
-      !sections.some(
-        (s) =>
-          p.page_number >= s.page_range[0] && p.page_number <= s.page_range[1]
-      )
-  );
+  const owned = new Set<number>();
+  for (const s of sections) {
+    for (const p of getMemberPages(s)) owned.add(p);
+  }
+  return pages.filter((p) => !owned.has(p.page_number));
 }
 
 // For an orphan page, find the nearest section ending before it (prev) and the
@@ -335,6 +336,8 @@ export default function DocumentRoutingPanel({
   const [pickedFromPage, setPickedFromPage] = useState<number | null>(null);
   const [pickedToPage, setPickedToPage] = useState<number | null>(null);
   const [pickedCanonical, setPickedCanonical] = useState<number | null>(null);
+  // Target section index for "merge into…" / "attach page to section…".
+  const [pickedTargetSection, setPickedTargetSection] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -364,6 +367,7 @@ export default function DocumentRoutingPanel({
     setPickedFromPage(null);
     setPickedToPage(null);
     setPickedCanonical(null);
+    setPickedTargetSection(null);
   }, []);
 
   // ── Duplicate detection (same slug + same record identifier) ──────
@@ -502,6 +506,26 @@ export default function DocumentRoutingPanel({
     [activeSections],
   );
 
+  // "Merge into…" modal OK. The TARGET is the anchor (the merged section
+  // keeps the target's document type); the source section's pages join it —
+  // no adjacency required, so this wires an appendix section to its log.
+  const handleMergeInto = useCallback(() => {
+    if (!activeAction || activeAction.kind !== "merge_into") return;
+    if (!activeSections || pickedTargetSection == null) return;
+    try {
+      const updated = mergeSections(
+        activeSections,
+        pickedTargetSection,
+        activeAction.sectionIndex,
+      );
+      setDraft(updated);
+      message.success("Sections merged (unsaved)");
+      closeAction();
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : "Merge failed");
+    }
+  }, [activeAction, pickedTargetSection, activeSections, closeAction]);
+
   const handleAddToSection = useCallback(
     (pageNumber: number, sectionIndex: number) => {
       if (!activeSections) return;
@@ -515,6 +539,14 @@ export default function DocumentRoutingPanel({
     },
     [activeSections],
   );
+
+  // "Add page to section…" modal OK (orphan page → any live section).
+  const handleAttachToSection = useCallback(() => {
+    if (!activeAction || activeAction.kind !== "attach_to_section") return;
+    if (activeAction.pageNumber == null || pickedTargetSection == null) return;
+    handleAddToSection(activeAction.pageNumber, pickedTargetSection);
+    closeAction();
+  }, [activeAction, pickedTargetSection, handleAddToSection, closeAction]);
 
   const handleIncludeSkipped = useCallback(() => {
     if (!activeAction || activeAction.kind !== "include_skipped") return;
@@ -906,7 +938,7 @@ export default function DocumentRoutingPanel({
               dupOf.length > 0
                 ? `Same identifier "${sectionIdentifiers[i]}" as ` +
                   dupOf
-                    .map((j) => `pages ${sections[j].page_range[0]}–${sections[j].page_range[1]}`)
+                    .map((j) => `pages ${formatMemberPages(sections[j])}`)
                     .join(", ")
                 : null;
             const canonical = section.superseded_by
@@ -940,6 +972,13 @@ export default function DocumentRoutingPanel({
                     setActiveAction({ kind: "split", sectionIndex: i });
                   }}
                   onMerge={() => handleMerge(i)}
+                  canMergeInto={sections.some(
+                    (s2, j) => j !== i && !s2.superseded_by,
+                  )}
+                  onMergeInto={() => {
+                    setPickedTargetSection(null);
+                    setActiveAction({ kind: "merge_into", sectionIndex: i });
+                  }}
                   onIncludeSkipped={() => {
                     setPickedSkippedPages([]);
                     setActiveAction({ kind: "include_skipped", sectionIndex: i });
@@ -1010,12 +1049,11 @@ export default function DocumentRoutingPanel({
                       p.page_number,
                       sections,
                     );
-                    const canPrev =
-                      prevIdx >= 0 &&
-                      sections[prevIdx].page_range[1] + 1 === p.page_number;
-                    const canNext =
-                      nextIdx >= 0 &&
-                      sections[nextIdx].page_range[0] - 1 === p.page_number;
+                    // Attach is union-based (member_pages), so ANY section
+                    // can take the page — the quick buttons just surface the
+                    // nearest live neighbours; the modal covers the rest.
+                    const canPrev = prevIdx >= 0 && !sections[prevIdx].superseded_by;
+                    const canNext = nextIdx >= 0 && !sections[nextIdx].superseded_by;
                     return (
                       <PageRow
                         key={p.page_number}
@@ -1034,10 +1072,9 @@ export default function DocumentRoutingPanel({
                                   <span className="text-xs">
                                     It will be extracted as part of{" "}
                                     <b>{sections[prevIdx].document_type_slug}</b>{" "}
-                                    (pages {sections[prevIdx].page_range[0]}–
-                                    {sections[prevIdx].page_range[1]}). The
-                                    page&apos;s text is pulled from the original
-                                    PDF when you Save &amp; Re-extract.
+                                    (pages {formatMemberPages(sections[prevIdx])}).
+                                    The page&apos;s text is pulled from the
+                                    original PDF when you Save &amp; Re-extract.
                                   </span>
                                 }
                                 okText="Add page"
@@ -1047,12 +1084,11 @@ export default function DocumentRoutingPanel({
                                 }
                               >
                                 <Tooltip
-                                  title={`Merge into the preceding ${sections[prevIdx].document_type_slug} section (pages ${sections[prevIdx].page_range[0]}–${sections[prevIdx].page_range[1]})`}
+                                  title={`Add to the preceding ${sections[prevIdx].document_type_slug} section (pages ${formatMemberPages(sections[prevIdx])})`}
                                 >
                                   <Button size="small" block>
                                     ← Add to {sections[prevIdx].document_type_slug}{" "}
-                                    (p{sections[prevIdx].page_range[0]}–
-                                    {sections[prevIdx].page_range[1]})
+                                    (p{formatMemberPages(sections[prevIdx])})
                                   </Button>
                                 </Tooltip>
                               </Popconfirm>
@@ -1064,10 +1100,9 @@ export default function DocumentRoutingPanel({
                                   <span className="text-xs">
                                     It will be extracted as part of{" "}
                                     <b>{sections[nextIdx].document_type_slug}</b>{" "}
-                                    (pages {sections[nextIdx].page_range[0]}–
-                                    {sections[nextIdx].page_range[1]}). The
-                                    page&apos;s text is pulled from the original
-                                    PDF when you Save &amp; Re-extract.
+                                    (pages {formatMemberPages(sections[nextIdx])}).
+                                    The page&apos;s text is pulled from the
+                                    original PDF when you Save &amp; Re-extract.
                                   </span>
                                 }
                                 okText="Add page"
@@ -1077,15 +1112,32 @@ export default function DocumentRoutingPanel({
                                 }
                               >
                                 <Tooltip
-                                  title={`Merge into the following ${sections[nextIdx].document_type_slug} section (pages ${sections[nextIdx].page_range[0]}–${sections[nextIdx].page_range[1]})`}
+                                  title={`Add to the following ${sections[nextIdx].document_type_slug} section (pages ${formatMemberPages(sections[nextIdx])})`}
                                 >
                                   <Button size="small" block>
                                     Add to {sections[nextIdx].document_type_slug}{" "}
-                                    (p{sections[nextIdx].page_range[0]}–
-                                    {sections[nextIdx].page_range[1]}) →
+                                    (p{formatMemberPages(sections[nextIdx])}) →
                                   </Button>
                                 </Tooltip>
                               </Popconfirm>
+                            )}
+                            {sections.some((s) => !s.superseded_by) && (
+                              <Tooltip title="Add this page to any section — e.g. an appendix figure that belongs to a log elsewhere in the document. The section becomes non-contiguous; pages in between are not affected.">
+                                <Button
+                                  size="small"
+                                  block
+                                  onClick={() => {
+                                    setPickedTargetSection(null);
+                                    setActiveAction({
+                                      kind: "attach_to_section",
+                                      sectionIndex: -1,
+                                      pageNumber: p.page_number,
+                                    });
+                                  }}
+                                >
+                                  Add to section…
+                                </Button>
+                              </Tooltip>
                             )}
                             <Tooltip title="Create a new single-page section for this page with a document type you choose">
                               <Button
@@ -1120,7 +1172,7 @@ export default function DocumentRoutingPanel({
       <Modal
         title={
           activeAction?.kind === "change_slug" && sections[activeAction.sectionIndex]
-            ? `Re-route section: pages ${sections[activeAction.sectionIndex].page_range[0]}–${sections[activeAction.sectionIndex].page_range[1]}`
+            ? `Re-route section: pages ${formatMemberPages(sections[activeAction.sectionIndex])}`
             : "Re-route section"
         }
         open={activeAction?.kind === "change_slug"}
@@ -1159,7 +1211,7 @@ export default function DocumentRoutingPanel({
       <Modal
         title={
           activeAction?.kind === "split" && sections[activeAction.sectionIndex]
-            ? `Split section at page (current range ${sections[activeAction.sectionIndex].page_range[0]}–${sections[activeAction.sectionIndex].page_range[1]})`
+            ? `Split section at page (current pages ${formatMemberPages(sections[activeAction.sectionIndex])})`
             : "Split section"
         }
         open={activeAction?.kind === "split"}
@@ -1182,9 +1234,10 @@ export default function DocumentRoutingPanel({
             if (activeAction?.kind !== "split") return null;
             const section = sections[activeAction.sectionIndex];
             if (!section) return null;
-            const [start, end] = section.page_range;
-            const candidates: number[] = [];
-            for (let p = start + 1; p <= end; p++) candidates.push(p);
+            // Offer member pages only (a non-contiguous section's span
+            // covers pages that aren't part of it).
+            const members = getMemberPages(section);
+            const candidates = members.slice(1);
             if (candidates.length === 0) {
               return (
                 <div className="text-sm text-amber-700">
@@ -1193,6 +1246,8 @@ export default function DocumentRoutingPanel({
                 </div>
               );
             }
+            const fmt = (pages: number[]) =>
+              formatMemberPages({ member_pages: pages, page_range: [pages[0], pages[pages.length - 1]] });
             return (
               <Select
                 value={pickedSplitPage ?? undefined}
@@ -1201,11 +1256,96 @@ export default function DocumentRoutingPanel({
                 className="w-full"
                 options={candidates.map((p) => ({
                   value: p,
-                  label: `Page ${p} (split → [${start}–${p - 1}] + [${p}–${end}])`,
+                  label: `Page ${p} (split → [${fmt(members.filter((m) => m < p))}] + [${fmt(members.filter((m) => m >= p))}])`,
                 }))}
               />
             );
           })()}
+        </div>
+      </Modal>
+
+      {/* Merge-into modal (non-adjacent merge: e.g. appendix section → its log) */}
+      <Modal
+        title={
+          activeAction?.kind === "merge_into" && sections[activeAction.sectionIndex]
+            ? `Merge section (pages ${formatMemberPages(sections[activeAction.sectionIndex])}) into…`
+            : "Merge into…"
+        }
+        open={activeAction?.kind === "merge_into"}
+        onCancel={closeAction}
+        onOk={handleMergeInto}
+        okText="Merge & approve"
+        okButtonProps={{ disabled: pickedTargetSection == null }}
+        destroyOnHidden
+      >
+        <div className="space-y-3">
+          <div className="text-xs text-gray-500">
+            This section&apos;s pages join the target section, which keeps its
+            document type. The sections do NOT need to be next to each other —
+            pages in between stay where they are (the merged section becomes
+            non-contiguous). The merged section re-extracts on Save.
+          </div>
+          <Select
+            showSearch
+            value={pickedTargetSection ?? undefined}
+            onChange={(v) => setPickedTargetSection(v)}
+            placeholder="Pick the target section"
+            optionFilterProp="label"
+            className="w-full"
+            options={sections
+              .map((s, j) => ({ s, j }))
+              .filter(
+                ({ s, j }) =>
+                  j !== activeAction?.sectionIndex && !s.superseded_by,
+              )
+              .map(({ s, j }) => ({
+                value: j,
+                label: `${s.document_type_slug} — pages ${formatMemberPages(s)}${
+                  sectionIdentifiers[j] ? ` · ${sectionIdentifiers[j]}` : ""
+                }`,
+              }))}
+          />
+        </div>
+      </Modal>
+
+      {/* Attach-page modal (orphan page → any live section) */}
+      <Modal
+        title={
+          activeAction?.kind === "attach_to_section" && activeAction.pageNumber != null
+            ? `Add page ${activeAction.pageNumber} to a section`
+            : "Add page to section"
+        }
+        open={activeAction?.kind === "attach_to_section"}
+        onCancel={closeAction}
+        onOk={handleAttachToSection}
+        okText="Add page"
+        okButtonProps={{ disabled: pickedTargetSection == null }}
+        destroyOnHidden
+      >
+        <div className="space-y-3">
+          <div className="text-xs text-gray-500">
+            The page joins the picked section and WILL be extracted with it
+            (this overrides the classifier&apos;s skip decision — useful for
+            appendix figures that carry data). The section does not need to be
+            adjacent; it becomes non-contiguous and re-extracts on Save.
+          </div>
+          <Select
+            showSearch
+            value={pickedTargetSection ?? undefined}
+            onChange={(v) => setPickedTargetSection(v)}
+            placeholder="Pick the section this page belongs to"
+            optionFilterProp="label"
+            className="w-full"
+            options={sections
+              .map((s, j) => ({ s, j }))
+              .filter(({ s }) => !s.superseded_by)
+              .map(({ s, j }) => ({
+                value: j,
+                label: `${s.document_type_slug} — pages ${formatMemberPages(s)}${
+                  sectionIdentifiers[j] ? ` · ${sectionIdentifiers[j]}` : ""
+                }`,
+              }))}
+          />
         </div>
       </Modal>
 
@@ -1214,7 +1354,7 @@ export default function DocumentRoutingPanel({
         title={
           activeAction?.kind === "reassign_pages" &&
           sections[activeAction.sectionIndex]
-            ? `Reassign pages to a different type (section range ${sections[activeAction.sectionIndex].page_range[0]}–${sections[activeAction.sectionIndex].page_range[1]})`
+            ? `Reassign pages to a different type (section pages ${formatMemberPages(sections[activeAction.sectionIndex])})`
             : "Reassign pages"
         }
         open={activeAction?.kind === "reassign_pages"}
@@ -1241,9 +1381,9 @@ export default function DocumentRoutingPanel({
             if (activeAction?.kind !== "reassign_pages") return null;
             const section = sections[activeAction.sectionIndex];
             if (!section) return null;
-            const [start, end] = section.page_range;
-            const candidates: number[] = [];
-            for (let p = start; p <= end; p++) candidates.push(p);
+            // Member pages only — the span of a non-contiguous section
+            // covers pages that belong elsewhere.
+            const candidates = getMemberPages(section);
             return (
               <div className="flex gap-2">
                 <Select
@@ -1502,6 +1642,8 @@ function SectionActions({
   onChangeSlug,
   onSplit,
   onMerge,
+  canMergeInto,
+  onMergeInto,
   onIncludeSkipped,
   onReassignPages,
   onMarkDuplicate,
@@ -1516,6 +1658,8 @@ function SectionActions({
   onChangeSlug: () => void;
   onSplit: () => void;
   onMerge: () => void;
+  canMergeInto: boolean;
+  onMergeInto: () => void;
   onIncludeSkipped: () => void;
   onReassignPages: () => void;
   onMarkDuplicate: () => void;
@@ -1523,8 +1667,7 @@ function SectionActions({
   onDelete: () => void;
 }) {
   const { modal } = App.useApp();
-  const [start, end] = section.page_range;
-  const canSplit = end > start;
+  const canSplit = getMemberPages(section).length > 1;
   const canMerge = !isLastSection; // can merge with next section (unless this is the last one)
   const isPending = section.status === "pending_review";
   const skippedCount = section.skipped_pages?.length ?? 0;
@@ -1577,6 +1720,14 @@ function SectionActions({
       disabled: !canMerge,
       title: canMerge ? undefined : "No next section to merge with",
     },
+    {
+      key: "merge_into",
+      label: "Merge into…",
+      disabled: !canMergeInto,
+      title: canMergeInto
+        ? "Merge this section into any other section — no adjacency required (e.g. an appendix figure section into its log)"
+        : "No other section to merge into",
+    },
     ...(skippedCount > 0
       ? [{ key: "include_skipped", label: `Include skipped pages (${skippedCount})…` }]
       : []),
@@ -1597,6 +1748,9 @@ function SectionActions({
         break;
       case "merge":
         onMerge();
+        break;
+      case "merge_into":
+        onMergeInto();
         break;
       case "include_skipped":
         onIncludeSkipped();
@@ -1657,7 +1811,6 @@ function SectionHeader({
   /** The canonical section this one is superseded by, when marked. */
   canonical?: DetectedSection | null;
 }) {
-  const [start, end] = section.page_range;
   const isSuperseded = !!section.superseded_by;
   const needsExtraction = section.section_result_id == null && !isSuperseded;
   return (
@@ -1672,21 +1825,19 @@ function SectionHeader({
         <span className="font-mono text-xs text-gray-600">{identifier}</span>
       )}
       <span className="text-sm text-gray-500">
-        pages {start}–{end} ({section.page_count})
+        pages {formatMemberPages(section)} ({section.page_count})
       </span>
       {isSuperseded && (
         <Tooltip
           title={
             canonical
-              ? `Duplicate — superseded by the section on pages ${canonical.page_range[0]}–${canonical.page_range[1]}. Its record leaves the results on Save.`
+              ? `Duplicate — superseded by the section on pages ${formatMemberPages(canonical)}. Its record leaves the results on Save.`
               : "Duplicate — superseded. Its record leaves the results on Save."
           }
         >
           <Tag color="default" style={{ marginInlineEnd: 0 }}>
             superseded
-            {canonical
-              ? ` → pages ${canonical.page_range[0]}–${canonical.page_range[1]}`
-              : ""}
+            {canonical ? ` → pages ${formatMemberPages(canonical)}` : ""}
           </Tag>
         </Tooltip>
       )}

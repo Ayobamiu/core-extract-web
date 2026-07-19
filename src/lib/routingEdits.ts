@@ -39,17 +39,72 @@ function deriveFileStatus(
 
 const EXTRACTABLE_PURPOSE = "data";
 
+/**
+ * The section's member pages, sorted ascending. Falls back to expanding
+ * `page_range` for legacy sections that predate explicit membership
+ * (those were always contiguous, so the expansion is exact).
+ *
+ * This is THE membership lookup: non-contiguous sections' [min, max] spans
+ * may interleave, so `page_range` containment checks are wrong.
+ */
+export function getMemberPages(
+  section: Pick<DetectedSection, "member_pages" | "page_range"> | null | undefined
+): number[] {
+  if (Array.isArray(section?.member_pages) && section.member_pages.length > 0) {
+    return [...section.member_pages].sort((a, b) => a - b);
+  }
+  const range = section?.page_range;
+  if (!Array.isArray(range) || range.length !== 2) return [];
+  const [start, end] = range;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) return [];
+  const pages: number[] = [];
+  for (let p = start; p <= end; p++) pages.push(p);
+  return pages;
+}
+
+/**
+ * Human-readable member pages, collapsing contiguous runs:
+ * [2,3,7] → "2–3, 7"; [4] → "4".
+ */
+export function formatMemberPages(
+  section: Pick<DetectedSection, "member_pages" | "page_range">
+): string {
+  const pages = getMemberPages(section);
+  if (pages.length === 0) return "—";
+  const runs: string[] = [];
+  let runStart = pages[0];
+  let prev = pages[0];
+  for (const p of pages.slice(1)) {
+    if (p === prev + 1) {
+      prev = p;
+      continue;
+    }
+    runs.push(runStart === prev ? `${runStart}` : `${runStart}–${prev}`);
+    runStart = p;
+    prev = p;
+  }
+  runs.push(runStart === prev ? `${runStart}` : `${runStart}–${prev}`);
+  return runs.join(", ");
+}
+
+/** Effective purpose: a human override (set by attach) wins over the classifier. */
+function effectivePurpose(page: DetectedPage): string {
+  return page.page_purpose_override ?? page.page_purpose ?? "unknown";
+}
+
 function buildSectionFromPages(
   allPages: DetectedPage[],
-  [start, end]: [number, number],
+  memberPages: number[],
   proto: DetectedSection
 ): DetectedSection {
-  const inRange = allPages.filter(
-    (p) =>
-      typeof p?.page_number === "number" &&
-      p.page_number >= start &&
-      p.page_number <= end
-  );
+  if (!Array.isArray(memberPages) || memberPages.length === 0) {
+    throw new Error("Cannot build a section from an empty page list");
+  }
+  const member_pages = [...new Set(memberPages)].sort((a, b) => a - b);
+  const memberSet = new Set(member_pages);
+  const inSection = allPages
+    .filter((p) => typeof p?.page_number === "number" && memberSet.has(p.page_number))
+    .sort((a, b) => a.page_number - b.page_number);
 
   const extraction_pages: number[] = [];
   const skipped_pages: DetectedSection["skipped_pages"] = [];
@@ -57,8 +112,8 @@ function buildSectionFromPages(
   const page_purposes: string[] = [];
   const confidences: number[] = [];
 
-  for (const p of inRange) {
-    const purpose = p.page_purpose ?? "unknown";
+  for (const p of inSection) {
+    const purpose = effectivePurpose(p);
     const isData = purpose === EXTRACTABLE_PURPOSE;
     const isDuplicate = p.duplicate_of != null;
 
@@ -68,6 +123,8 @@ function buildSectionFromPages(
       skipped_pages.push({
         page_number: p.page_number,
         reason: "duplicate",
+        duplicate_of: p.duplicate_of,
+        page_purpose: purpose,
       });
     } else {
       skipped_pages.push({ page_number: p.page_number, reason: purpose });
@@ -85,8 +142,11 @@ function buildSectionFromPages(
 
   return {
     document_type_slug: proto.document_type_slug,
-    page_range: [start, end],
-    page_count: end - start + 1,
+    member_pages,
+    // Derived [min, max] display span — may interleave with other sections'.
+    page_range: [member_pages[0], member_pages[member_pages.length - 1]],
+    // Member count, NOT span width.
+    page_count: member_pages.length,
     extraction_pages,
     skipped_pages,
     page_roles,
@@ -102,9 +162,11 @@ function buildSectionFromPages(
 // ─── Public API ──────────────────────────────────────────────────────
 
 /**
- * Split a section into two at `atPage`.
- * First half: [section.start, atPage - 1], second: [atPage, section.end].
- * Both halves get section_result_id: null (need extraction).
+ * Split a section into two at `atPage`: member pages below `atPage` vs
+ * member pages at/above it. For a contiguous section that's the classic
+ * [start, atPage-1] / [atPage, end] split; for a non-contiguous one it
+ * splits by position in the member list (splitting [2,3,7] at 7 peels the
+ * appendix page back off). Both halves get section_result_id: null.
  */
 export function splitSection(
   detectedSections: DetectedSections,
@@ -117,17 +179,20 @@ export function splitSection(
 
   const blob = cloneBlob(detectedSections);
   const section = requireSection(blob, index);
-  const [start, end] = section.page_range;
+  const members = getMemberPages(section);
 
-  if (atPage <= start || atPage > end) {
+  const firstPages = members.filter((p) => p < atPage);
+  const secondPages = members.filter((p) => p >= atPage);
+  if (firstPages.length === 0 || secondPages.length === 0) {
     throw new Error(
-      `atPage ${atPage} is outside section range (${start}–${end})`
+      `atPage ${atPage} does not split section pages [${members.join(", ")}] ` +
+        `into two non-empty halves`
     );
   }
 
   const allPages = blob.pages ?? [];
-  const first = buildSectionFromPages(allPages, [start, atPage - 1], section);
-  const second = buildSectionFromPages(allPages, [atPage, end], section);
+  const first = buildSectionFromPages(allPages, firstPages, section);
+  const second = buildSectionFromPages(allPages, secondPages, section);
 
   blob.sections.splice(index, 1, first, second);
   blob.status = deriveFileStatus(blob.sections);
@@ -135,32 +200,49 @@ export function splitSection(
 }
 
 /**
- * Merge two adjacent sections into one.
- * The merged section inherits the first section's slug.
- * Gets section_result_id: null (needs extraction).
+ * Merge two sections into one. `indexA` is the anchor: the merged section
+ * inherits its slug and threshold. Defaults to merging with the next
+ * section, but ANY other section may be passed — adjacency is NOT
+ * required. Member pages are unioned, so pages in the gap between two
+ * non-adjacent sections are untouched (this is the gesture for wiring an
+ * appendix-figure section to its log). Gets section_result_id: null.
  */
 export function mergeSections(
   detectedSections: DetectedSections,
-  indexA: number
+  indexA: number,
+  indexB: number = indexA + 1
 ): DetectedSections {
-  const indexB = indexA + 1;
+  if (indexA === indexB) {
+    throw new Error("Cannot merge a section with itself");
+  }
 
   const blob = cloneBlob(detectedSections);
   const secA = requireSection(blob, indexA);
   const secB = requireSection(blob, indexB);
 
-  if (secA.page_range[1] + 1 !== secB.page_range[0]) {
+  if (secA.superseded_by || secB.superseded_by) {
+    throw new Error("Cannot merge a superseded section");
+  }
+
+  const pagesA = getMemberPages(secA);
+  const pagesB = getMemberPages(secB);
+  const overlap = pagesA.filter((p) => pagesB.includes(p));
+  if (overlap.length > 0) {
     throw new Error(
-      `Sections are not page-adjacent: section ${indexA} ends at page ${secA.page_range[1]}, ` +
-        `section ${indexB} starts at page ${secB.page_range[0]}`
+      `Sections ${indexA} and ${indexB} both claim page(s) ${overlap.join(", ")}`
     );
   }
 
   const allPages = blob.pages ?? [];
-  const mergedRange: [number, number] = [secA.page_range[0], secB.page_range[1]];
-  const merged = buildSectionFromPages(allPages, mergedRange, secA);
+  const merged = buildSectionFromPages(allPages, [...pagesA, ...pagesB], secA);
 
-  blob.sections.splice(indexA, 2, merged);
+  // Remove the higher index first so the lower stays valid; insert at the
+  // lower index — the merged section starts at the earlier section's first
+  // page, so ordering by start page is preserved.
+  const hi = Math.max(indexA, indexB);
+  const lo = Math.min(indexA, indexB);
+  blob.sections.splice(hi, 1);
+  blob.sections.splice(lo, 1, merged);
   blob.status = deriveFileStatus(blob.sections);
   return blob;
 }
@@ -181,14 +263,11 @@ export function changeSectionSlug(
   section.status = "approved";
   section.section_result_id = null;
 
-  // Update per-page slugs within the section's range
-  const [start, end] = section.page_range;
+  // Update per-page slugs by MEMBERSHIP, not range: a non-contiguous
+  // section's span may cover pages that belong to another section.
+  const members = new Set(getMemberPages(section));
   for (const p of blob.pages ?? []) {
-    if (
-      typeof p.page_number === "number" &&
-      p.page_number >= start &&
-      p.page_number <= end
-    ) {
+    if (typeof p.page_number === "number" && members.has(p.page_number)) {
       p.document_type_slug = slug;
     }
   }
@@ -200,16 +279,19 @@ export function changeSectionSlug(
 const DEFAULT_THRESHOLD = 0.75;
 
 /**
- * Add a single page (typically one the classifier left "outside any section")
- * into an existing section, as an extraction page. This is a reviewer override
- * of the classifier's skip decision, so the page is forced into
- * `extraction_pages` regardless of its page_purpose. The section's range is
- * widened to cover the page and it's marked for re-extraction.
+ * Attach a page the classifier left "outside any section" to an existing
+ * section. The page does NOT need to be adjacent to the section — attaching
+ * an appendix figure on p 7 to a log on pp 2–3 yields a non-contiguous
+ * section with member_pages [2,3,7]; pages in between are untouched.
  *
- * Intended for pages adjacent to the section boundary; the caller (UI) only
- * offers this when `page === section.end + 1` or `page === section.start - 1`,
- * which keeps the [start,end] range contiguous and avoids swallowing other
- * unassigned pages into the section's display range.
+ * This is a reviewer override of the classifier's skip decision, so the
+ * page gets `page_purpose_override: 'data'` and lands in extraction_pages
+ * regardless of what the classifier thought it was (otherwise attaching a
+ * "figure" page would be a silent no-op). The classifier's original
+ * page_purpose is preserved. The section is rebuilt and marked for
+ * re-extraction.
+ *
+ * Mirrors `applyAttachPages` in ai/src/services/sectionRoutingEdits.js.
  */
 export function addPageToSection(
   detectedSections: DetectedSections,
@@ -223,26 +305,38 @@ export function addPageToSection(
   const blob = cloneBlob(detectedSections);
   const section = requireSection(blob, index);
 
-  if (section.extraction_pages.includes(pageNumber)) {
-    throw new Error(`Page ${pageNumber} is already in this section`);
+  if (section.superseded_by) {
+    throw new Error("Cannot attach pages to a superseded section");
   }
 
-  // Force into extraction (override the classifier's skip), keep sorted.
-  section.extraction_pages = [...section.extraction_pages, pageNumber].sort(
-    (a, b) => a - b
-  );
-  // If it was previously recorded as a skipped page here, drop that record.
-  section.skipped_pages = section.skipped_pages.filter(
-    (s) => s.page_number !== pageNumber
-  );
+  // A page belongs to at most one section — check MEMBERSHIP across all
+  // sections (spans may interleave, so range containment is wrong here).
+  for (let i = 0; i < blob.sections.length; i++) {
+    if (getMemberPages(blob.sections[i]).includes(pageNumber)) {
+      throw new Error(
+        i === index
+          ? `Page ${pageNumber} is already in this section`
+          : `Page ${pageNumber} already belongs to another section — merge instead`
+      );
+    }
+  }
 
-  const start = Math.min(section.page_range[0], pageNumber);
-  const end = Math.max(section.page_range[1], pageNumber);
-  section.page_range = [start, end];
-  section.page_count = end - start + 1;
-  section.status = "approved";
-  section.section_result_id = null;
+  const allPages = blob.pages ?? [];
+  const page = allPages.find((p) => p.page_number === pageNumber);
+  if (!page) {
+    throw new Error(`Page ${pageNumber} not found in this file's classified pages`);
+  }
 
+  // Reviewer override: make the page extractable and align its per-page slug.
+  page.page_purpose_override = EXTRACTABLE_PURPOSE;
+  page.document_type_slug = section.document_type_slug;
+
+  const rebuilt = buildSectionFromPages(
+    allPages,
+    [...getMemberPages(section), pageNumber],
+    section
+  );
+  blob.sections.splice(index, 1, rebuilt);
   blob.status = deriveFileStatus(blob.sections);
   return blob;
 }
@@ -269,10 +363,7 @@ export function createSectionFromPage(
 
   if (
     Array.isArray(blob.sections) &&
-    blob.sections.some(
-      (s) =>
-        pageNumber >= s.page_range[0] && pageNumber <= s.page_range[1]
-    )
+    blob.sections.some((s) => getMemberPages(s).includes(pageNumber))
   ) {
     throw new Error(`Page ${pageNumber} already belongs to a section`);
   }
@@ -286,6 +377,7 @@ export function createSectionFromPage(
 
   const newSection: DetectedSection = {
     document_type_slug: slug,
+    member_pages: [pageNumber],
     page_range: [pageNumber, pageNumber],
     page_count: 1,
     extraction_pages: [pageNumber],
@@ -329,14 +421,13 @@ export function deleteSection(
   const section = requireSection(blob, index);
 
   // Reflect the removal on the pages so the per-page view reads "none".
-  const [start, end] = section.page_range;
+  // Membership-based: don't clobber interleaved pages of other sections.
+  const members = new Set(getMemberPages(section));
   for (const p of blob.pages ?? []) {
-    if (
-      typeof p.page_number === "number" &&
-      p.page_number >= start &&
-      p.page_number <= end
-    ) {
+    if (typeof p.page_number === "number" && members.has(p.page_number)) {
       p.document_type_slug = "none";
+      // A deleted section's attach overrides are void too.
+      delete p.page_purpose_override;
     }
   }
 
@@ -466,7 +557,11 @@ export function hasUnsavedChanges(
     const c = current.sections[i];
     const s = saved.sections[i];
     if (c.document_type_slug !== s.document_type_slug) return true;
-    if (c.page_range[0] !== s.page_range[0] || c.page_range[1] !== s.page_range[1]) return true;
+    // Compare full membership, not just the span — an attach can change
+    // members without moving the [min, max] endpoints.
+    const cm = getMemberPages(c);
+    const sm = getMemberPages(s);
+    if (cm.length !== sm.length || cm.some((p, j) => p !== sm[j])) return true;
     if (c.section_result_id !== s.section_result_id) return true;
     if ((c.superseded_by ?? null) !== (s.superseded_by ?? null)) return true;
   }
