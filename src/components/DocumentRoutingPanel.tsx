@@ -681,29 +681,34 @@ export default function DocumentRoutingPanel({
   }, []);
 
   // ── Save & Re-extract (the only server call for edits) ────────────
+  //
+  // Extraction runs on the WORKER (`async: true` → 202 'queued'): the save
+  // returns immediately, each section's result lands live over the
+  // file-patch socket channel, and `reextractQueued` drives the
+  // "extracting…" indicators until every pending section has resolved.
 
   const [saveLoading, setSaveLoading] = useState(false);
+  const [reextractQueued, setReextractQueued] = useState(false);
 
   const handleSaveAndReextract = useCallback(async () => {
     if (!draft) return;
     setSaveLoading(true);
     try {
-      const res = await apiClient.saveAndReextractSections(fileId, draft);
-      if (res.status === "success") {
-        const count = getSectionsNeedingExtraction(draft).length;
+      const count = getSectionsNeedingExtraction(draft).length;
+      const res = await apiClient.saveAndReextractSections(fileId, draft, { async: true });
+      if (res.status === "queued") {
         message.success(
-          count > 0
-            ? `Saved and re-extracted ${count} section${count === 1 ? "" : "s"}`
-            : "Saved (no extraction needed)",
+          `Saved — extracting ${count} section${count === 1 ? "" : "s"} in the background. ` +
+            `Results appear as they finish.`,
         );
-        const noText = res.pages_without_text ?? [];
-        if (noText.length > 0) {
-          message.warning(
-            `No extractable text found for page${noText.length === 1 ? "" : "s"} ${noText.join(", ")} — ` +
-              `the corresponding section${noText.length === 1 ? "" : "s"} may have produced no content.`,
-            8,
-          );
+        if (res.detected_sections) {
+          onSectionsUpdated?.(res.detected_sections);
         }
+        setReextractQueued(true);
+        setDraft(null);
+      } else if (res.status === "success") {
+        // Fast path: nothing needed extraction (pure save / delete reconcile).
+        message.success("Saved (no extraction needed)");
         if (res.detected_sections) {
           onSectionsUpdated?.(res.detected_sections);
         }
@@ -722,6 +727,19 @@ export default function DocumentRoutingPanel({
   const needsExtractionIndices = useMemo(() => {
     return getSectionsNeedingExtraction(detectedSections);
   }, [detectedSections]);
+
+  // Every pending section resolved (results landed via socket patches) —
+  // the queued run is done.
+  useEffect(() => {
+    if (reextractQueued && needsExtractionIndices.length === 0) {
+      setReextractQueued(false);
+    }
+  }, [reextractQueued, needsExtractionIndices.length]);
+
+  // New file selected — any in-flight indicator belongs to the old file.
+  useEffect(() => {
+    setReextractQueued(false);
+  }, [fileId]);
 
   // Draft sections needing extraction
   const draftNeedsExtraction = useMemo(() => {
@@ -888,35 +906,46 @@ export default function DocumentRoutingPanel({
       {/* Server-side needs-extraction banner (for files that already have null IDs from prior edits) */}
       {!isDirty && needsExtractionIndices.length > 0 && sections.length > 0 && (
         <div className="mx-2 mb-2 p-2.5 rounded-md bg-amber-50 border border-amber-200 flex flex-col gap-2">
-          <span className="text-xs text-amber-800">
-            {needsExtractionIndices.length} section{needsExtractionIndices.length === 1 ? "" : "s"} need{needsExtractionIndices.length === 1 ? "s" : ""} extraction.
-          </span>
+          {reextractQueued ? (
+            <span className="text-xs text-amber-800 flex items-center gap-1.5">
+              <Loader className="w-3 h-3 animate-spin" />
+              Extracting {needsExtractionIndices.length} section
+              {needsExtractionIndices.length === 1 ? "" : "s"}… results appear
+              as they finish.
+            </span>
+          ) : (
+            <span className="text-xs text-amber-800">
+              {needsExtractionIndices.length} section{needsExtractionIndices.length === 1 ? "" : "s"} need{needsExtractionIndices.length === 1 ? "s" : ""} extraction.
+            </span>
+          )}
           <Button
             size="small"
             type="primary"
             loading={saveLoading}
             onClick={() => {
-              // Save existing detected_sections (with null IDs) to trigger re-extract
+              // Queue a worker re-extract of the sections that still have
+              // null IDs (server dedupes if one is already queued).
               if (detectedSections) {
-                setDraft(detectedSections);
-                // Immediately save — the user didn't make local edits, they just need re-extract
-                apiClient.saveAndReextractSections(fileId, detectedSections).then((res) => {
-                  if (res.status === "success" && res.detected_sections) {
-                    message.success(`Re-extracted ${needsExtractionIndices.length} section(s)`);
-                    onSectionsUpdated?.(res.detected_sections);
-                    setDraft(null);
-                  } else {
-                    message.error(res.message || "Re-extraction failed");
-                    setDraft(null);
-                  }
-                }).catch((err) => {
-                  message.error(err instanceof Error ? err.message : "Re-extraction failed");
-                  setDraft(null);
-                });
+                apiClient
+                  .saveAndReextractSections(fileId, detectedSections, { async: true })
+                  .then((res) => {
+                    if (res.status === "queued" || res.status === "success") {
+                      message.success(
+                        `Extraction queued for ${needsExtractionIndices.length} section(s) — results appear as they finish`,
+                      );
+                      if (res.detected_sections) onSectionsUpdated?.(res.detected_sections);
+                      setReextractQueued(true);
+                    } else {
+                      message.error(res.message || "Re-extraction failed");
+                    }
+                  })
+                  .catch((err) => {
+                    message.error(err instanceof Error ? err.message : "Re-extraction failed");
+                  });
               }
             }}
           >
-            Re-extract ({needsExtractionIndices.length})
+            {reextractQueued ? "Re-queue" : `Re-extract (${needsExtractionIndices.length})`}
           </Button>
         </div>
       )}
@@ -954,6 +983,7 @@ export default function DocumentRoutingPanel({
                   identifier={sectionIdentifiers[i]}
                   duplicateHint={duplicateHint}
                   canonical={canonical}
+                  extracting={reextractQueued}
                 />
               ),
               extra: (
@@ -1802,6 +1832,7 @@ function SectionHeader({
   identifier,
   duplicateHint,
   canonical,
+  extracting = false,
 }: {
   section: DetectedSection;
   /** Record identifier (e.g. "W-01"), when resolvable from the envelope. */
@@ -1810,6 +1841,9 @@ function SectionHeader({
   duplicateHint?: string | null;
   /** The canonical section this one is superseded by, when marked. */
   canonical?: DetectedSection | null;
+  /** A queued worker re-extract is running — pending sections are actively
+   *  being extracted, not just waiting for the operator. */
+  extracting?: boolean;
 }) {
   const isSuperseded = !!section.superseded_by;
   const needsExtraction = section.section_result_id == null && !isSuperseded;
@@ -1849,8 +1883,12 @@ function SectionHeader({
         </Tooltip>
       )}
       {needsExtraction && (
-        <Tag color="warning" style={{ marginInlineEnd: 0 }}>
-          needs extraction
+        <Tag
+          color={extracting ? "processing" : "warning"}
+          style={{ marginInlineEnd: 0 }}
+          icon={extracting ? <Loader className="w-3 h-3 animate-spin inline-block mr-1" /> : undefined}
+        >
+          {extracting ? "extracting…" : "needs extraction"}
         </Tag>
       )}
       <Tag

@@ -203,7 +203,11 @@ export default function FileViewerRightPane({
       <div className="flex-1 min-h-0 overflow-hidden">
         {activeTab === "results" && (
           <>
-            {file.processing_status !== "completed" || !file.result ? (
+            {/* Show results whenever an envelope EXISTS — a running section
+                re-extract (or full reprocess) must not blank out the data
+                that's still valid. Sections being re-extracted render as
+                "Loading result…" entries inside the viewer instead. */}
+            {!file.result ? (
               <div className="flex items-center justify-center h-full p-6">
                 <div className="text-center">
                   <ExclamationCircleOutlined className="text-gray-300 text-3xl mb-3" />
