@@ -106,6 +106,7 @@ interface TabbedDataViewerProps {
       document_type_slug: string;
       record_id?: string | null;
       page_range?: [number, number];
+      member_pages?: number[];
       extraction_pages?: number[];
     }>;
   } | null;
@@ -148,7 +149,30 @@ interface SectionPickerEntry {
   fieldCount: number;
   // From section_results (when available) — gives extra context to the user.
   pageRange?: [number | null, number | null];
+  /** Explicit page list (member/extraction pages). Preferred over pageRange
+   *  for labels: a non-contiguous section's [min, max] span would claim
+   *  pages that belong to other sections. */
+  pages?: number[];
   status?: string;
+}
+
+/** "2–3, 7" from [2,3,7] — collapse contiguous runs for display. */
+function formatPagesList(pages: number[]): string {
+  const sorted = [...pages].sort((a, b) => a - b);
+  const runs: string[] = [];
+  let runStart = sorted[0];
+  let prev = sorted[0];
+  for (const p of sorted.slice(1)) {
+    if (p === prev + 1) {
+      prev = p;
+      continue;
+    }
+    runs.push(runStart === prev ? `${runStart}` : `${runStart}–${prev}`);
+    runStart = p;
+    prev = p;
+  }
+  runs.push(runStart === prev ? `${runStart}` : `${runStart}–${prev}`);
+  return runs.join(", ");
 }
 
 function buildSectionPickerEntries(
@@ -159,6 +183,7 @@ function buildSectionPickerEntries(
       document_type_slug: string;
       record_id?: string | null;
       page_range?: [number, number];
+      member_pages?: number[];
       extraction_pages?: number[];
     }>;
   } | null,
@@ -183,13 +208,23 @@ function buildSectionPickerEntries(
   // Group by slug in document order to match envelope ordering.
   const detectedBySlug = new Map<
     string,
-    Array<{ record_id?: string | null; page_range?: [number, number] }>
+    Array<{
+      record_id?: string | null;
+      page_range?: [number, number];
+      member_pages?: number[];
+      extraction_pages?: number[];
+    }>
   >();
   if (detectedSections?.sections) {
     for (const ds of detectedSections.sections) {
       if (!ds.document_type_slug || ds.document_type_slug === "none") continue;
       const arr = detectedBySlug.get(ds.document_type_slug) ?? [];
-      arr.push({ record_id: ds.record_id, page_range: ds.page_range });
+      arr.push({
+        record_id: ds.record_id,
+        page_range: ds.page_range,
+        member_pages: ds.member_pages,
+        extraction_pages: ds.extraction_pages,
+      });
       detectedBySlug.set(ds.document_type_slug, arr);
     }
   }
@@ -216,6 +251,11 @@ function buildSectionPickerEntries(
             ? Object.keys(dataObj).length
             : 0,
         pageRange: sr?.page_range ?? ds?.page_range,
+        pages:
+          ds?.member_pages ??
+          (Array.isArray(sr?.extraction_pages) && sr.extraction_pages.length > 0
+            ? sr.extraction_pages
+            : ds?.extraction_pages),
         status: sr?.status,
       });
     });
@@ -226,11 +266,13 @@ function buildSectionPickerEntries(
 function formatSectionLabel(entry: SectionPickerEntry): string {
   const range = entry.pageRange;
   const pageBit =
-    range && range[0] != null && range[1] != null
-      ? range[0] === range[1]
-        ? `p${range[0]}`
-        : `p${range[0]}–${range[1]}`
-      : null;
+    entry.pages && entry.pages.length > 0
+      ? `p${formatPagesList(entry.pages)}`
+      : range && range[0] != null && range[1] != null
+        ? range[0] === range[1]
+          ? `p${range[0]}`
+          : `p${range[0]}–${range[1]}`
+        : null;
   const parts: string[] = [];
   if (entry.recordId) parts.push(entry.recordId);
   parts.push(entry.slug);
@@ -245,11 +287,13 @@ function formatSectionOptionLabel(
 ): string {
   const range = entry.pageRange;
   const pageBit =
-    range && range[0] != null && range[1] != null
-      ? range[0] === range[1]
-        ? `p${range[0]}`
-        : `p${range[0]}–${range[1]}`
-      : null;
+    entry.pages && entry.pages.length > 0
+      ? `p${formatPagesList(entry.pages)}`
+      : range && range[0] != null && range[1] != null
+        ? range[0] === range[1]
+          ? `p${range[0]}`
+          : `p${range[0]}–${range[1]}`
+        : null;
   const parts: string[] = [];
   if (entry.recordId) parts.push(entry.recordId);
   if (pageBit) parts.push(pageBit);
