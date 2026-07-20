@@ -108,6 +108,8 @@ interface TabbedDataViewerProps {
       page_range?: [number, number];
       member_pages?: number[];
       extraction_pages?: number[];
+      section_result_id?: string | null;
+      superseded_by?: string | null;
     }>;
   } | null;
   // Per-section verification
@@ -154,6 +156,10 @@ interface SectionPickerEntry {
    *  pages that belong to other sections. */
   pages?: number[];
   status?: string;
+  /** Section is being (re-)extracted — it has no envelope record yet
+   *  (detected_sections.section_result_id is null). Rendered as a
+   *  "Loading result…" entry; the record pops in via socket patches. */
+  loading?: boolean;
 }
 
 /** "2–3, 7" from [2,3,7] — collapse contiguous runs for display. */
@@ -185,6 +191,8 @@ function buildSectionPickerEntries(
       page_range?: [number, number];
       member_pages?: number[];
       extraction_pages?: number[];
+      section_result_id?: string | null;
+      superseded_by?: string | null;
     }>;
   } | null,
 ): SectionPickerEntry[] {
@@ -213,6 +221,8 @@ function buildSectionPickerEntries(
       page_range?: [number, number];
       member_pages?: number[];
       extraction_pages?: number[];
+      section_result_id?: string | null;
+      superseded_by?: string | null;
     }>
   >();
   if (detectedSections?.sections) {
@@ -260,6 +270,27 @@ function buildSectionPickerEntries(
       });
     });
   }
+
+  // Sections currently (re-)extracting have no envelope record yet
+  // (section_result_id is null) — surface them as "Loading result…"
+  // entries so a running re-extract never makes a section silently vanish
+  // from the picker. Their records pop in via socket patches.
+  for (const ds of detectedSections?.sections ?? []) {
+    if (!ds.document_type_slug || ds.document_type_slug === "none") continue;
+    if (ds.section_result_id != null || ds.superseded_by) continue;
+    const slugCount = entries.filter((e) => e.slug === ds.document_type_slug).length;
+    entries.push({
+      slug: ds.document_type_slug,
+      recordId: ds.record_id ?? null,
+      instanceIndex: slugCount,
+      globalIndex: globalIndex++,
+      data: {},
+      fieldCount: 0,
+      pageRange: ds.page_range,
+      pages: ds.member_pages ?? ds.extraction_pages,
+      loading: true,
+    });
+  }
   return entries;
 }
 
@@ -277,7 +308,11 @@ function formatSectionLabel(entry: SectionPickerEntry): string {
   if (entry.recordId) parts.push(entry.recordId);
   parts.push(entry.slug);
   if (pageBit) parts.push(pageBit);
-  parts.push(`${entry.fieldCount} field${entry.fieldCount === 1 ? "" : "s"}`);
+  if (entry.loading) {
+    parts.push("extracting…");
+  } else {
+    parts.push(`${entry.fieldCount} field${entry.fieldCount === 1 ? "" : "s"}`);
+  }
   return parts.join(" · ");
 }
 
@@ -297,7 +332,11 @@ function formatSectionOptionLabel(
   const parts: string[] = [];
   if (entry.recordId) parts.push(entry.recordId);
   if (pageBit) parts.push(pageBit);
-  parts.push(`${entry.fieldCount} fields`);
+  if (entry.loading) {
+    parts.push("extracting…");
+  } else {
+    parts.push(`${entry.fieldCount} fields`);
+  }
   const label = parts.join(" · ");
   const isApproved =
     entry.sectionResultId &&
@@ -1607,9 +1646,33 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     setActiveQaSnapshot(null);
   }, [activeQaSnapshot, allSectionIds]);
 
+  // Live Save & Re-extract progress ("Re-extracting sections… n/N"). The
+  // actual data lands via file patches; this only drives the banner.
+  const [sreexProgress, setSreexProgress] = useState<{
+    completed: number;
+    total: number;
+    failed?: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    // New file — any banner state belongs to the previous one.
+    setSreexProgress(null);
+  }, [fileId]);
+
   // Live QA progress. The socket room is per-job, so events for other files
   // in the same job arrive too — filter by fileId.
   useSocket(jobId, {
+    onSectionReextractProgressEvent: (evt) => {
+      if (!fileId || evt.fileId !== fileId) return;
+      if (evt.phase === "started" || evt.phase === "section") {
+        setSreexProgress({ completed: evt.completed, total: evt.total });
+      } else if (evt.phase === "done") {
+        setSreexProgress(null);
+      } else if (evt.phase === "failed") {
+        setSreexProgress({ completed: evt.completed, total: evt.total, failed: true });
+        setTimeout(() => setSreexProgress(null), 8000);
+      }
+    },
     onQAProgressEvent: (evt: QAProgressEvent) => {
       if (!fileId || evt.fileId !== fileId) return;
       switch (evt.status) {
@@ -2825,6 +2888,23 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     <div
       className={`bg-white flex flex-col h-full overflow-hidden ${className}`}
     >
+      {/* Save & Re-extract progress — data lands live via socket patches;
+          this banner just shows the worker's progress. */}
+      {sreexProgress && (
+        <div
+          className={`flex items-center gap-2 px-3 py-1.5 border-b text-xs flex-shrink-0 ${
+            sreexProgress.failed
+              ? "bg-red-50 border-red-200 text-red-700"
+              : "bg-blue-50 border-blue-200 text-blue-700"
+          }`}
+        >
+          {!sreexProgress.failed && <Loader2 className="w-3 h-3 animate-spin" />}
+          {sreexProgress.failed
+            ? `Re-extraction failed after ${sreexProgress.completed}/${sreexProgress.total} sections — see the Routing tab to retry`
+            : `Re-extracting sections… ${sreexProgress.completed}/${sreexProgress.total} done. Results appear as they finish.`}
+        </div>
+      )}
+
       {/* Per-section picker (v2 envelope only) — sits ABOVE the tab strip
           and only swaps the data fed to data-shaped tabs. Markdown / Compare
           / Comments stay file-level. */}
@@ -3069,7 +3149,20 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           transition={{ duration: 0.2 }}
           className="flex-1 overflow-hidden flex flex-col min-h-0"
         >
+          {activeTab === "results" && selectedSection?.loading && (
+            <div className="flex-1 min-h-0 flex items-center justify-center">
+              <div className="text-center text-gray-500">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" />
+                <div className="text-sm font-medium">Loading result…</div>
+                <div className="text-xs mt-1">
+                  This section is being extracted — its data will appear here
+                  automatically.
+                </div>
+              </div>
+            </div>
+          )}
           {activeTab === "results" &&
+            !selectedSection?.loading &&
             (showFindings && !onQaPanelActiveChange ? (
               // Host doesn't support a QA side column: fall back to JSON on
               // top, QA findings below, draggable divider (standalone embeds).
