@@ -103,8 +103,8 @@ export function BoreholeLogHero({ data }: { data: Record<string, unknown> }) {
             const top = (from - minDepth) * pxPerFt;
             const c = colorFor(iv.primary_material);
             const label =
-              iv.uscs_symbol ||
               iv.primary_material ||
+              iv.uscs_symbol ||
               (iv.description_raw || "").slice(0, 28);
             return (
               <div
