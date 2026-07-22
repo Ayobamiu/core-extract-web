@@ -26,6 +26,7 @@ import {
   Clock,
   GripVertical,
   Loader2,
+  LocateFixed,
   MessageSquare,
   MoreHorizontal,
   X,
@@ -134,6 +135,8 @@ interface TabbedDataViewerProps {
   // Tells the host whether the QA column has content to show (findings exist
   // and the results tab is active) so it can mount/unmount the third pane.
   onQaPanelActiveChange?: (active: boolean) => void;
+  /** Scroll the left-hand PDF pane to a 1-based page (file details modal). */
+  onNavigateToPdfPage?: (pageNumber: number) => void;
 }
 
 // One discoverable "row" in the section picker. We derive these from the
@@ -968,6 +971,7 @@ function SectionVerifyControls({
   totalSections,
   verificationMap,
   sectionEntries,
+  approveShortcutLabel,
 }: {
   verification: SectionVerification | null;
   loading: boolean;
@@ -975,6 +979,7 @@ function SectionVerifyControls({
   totalSections: number;
   verificationMap: Map<string, SectionVerification>;
   sectionEntries: SectionPickerEntry[];
+  approveShortcutLabel?: string;
 }) {
   const currentStatus = verification?.status ?? "pending";
   const cfg = VERIFY_STATUS_CONFIG[currentStatus];
@@ -1018,9 +1023,18 @@ function SectionVerifyControls({
                 type="button"
                 disabled={loading}
                 className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-                title="Approve this section"
+                title={
+                  approveShortcutLabel
+                    ? `Approve this section (${approveShortcutLabel})`
+                    : "Approve this section"
+                }
               >
                 Approve
+                {approveShortcutLabel && (
+                  <span className="ml-1 text-gray-400 tabular-nums">
+                    {approveShortcutLabel}
+                  </span>
+                )}
               </button>
             </span>
           </Popconfirm>
@@ -1102,6 +1116,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   onActiveResultTabChange,
   qaPanelContainer = null,
   onQaPanelActiveChange,
+  onNavigateToPdfPage,
 }) => {
   const { message, modal } = App.useApp();
   const [fallbackTab, setFallbackTab] = useState<TabType>("results");
@@ -1240,6 +1255,13 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const selectedSection =
     sectionEntries[selectedSectionIdx] ?? sectionEntries[0];
 
+  // First page of the selected section — used by the "scroll PDF" control.
+  const selectedSectionPage =
+    selectedSection?.pages?.[0] ??
+    (typeof selectedSection?.pageRange?.[0] === "number"
+      ? selectedSection.pageRange[0]
+      : null);
+
   // Build a lookup map: section_result_id → verification row
   const verificationMap = useMemo(() => {
     const m = new Map<string, SectionVerification>();
@@ -1314,6 +1336,54 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     },
     [selectedSection?.sectionResultId, onSectionVerify, message],
   );
+
+  // ⌘⇧↵ / Ctrl+Shift+Enter — approve current section without the click confirm.
+  // Chosen over Alt+A: Option+A inserts å on Mac, and Alt+letter hits Windows
+  // menu mnemonics. Pairs with ⌘↵ save; that handler already ignores Shift.
+  useEffect(() => {
+    if (!onSectionVerify) return;
+
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        return true;
+      }
+      if (target.isContentEditable) return true;
+      if (target.closest(".cm-editor")) return true;
+      if (target.closest(".ant-select-dropdown")) return true;
+      return false;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      if (e.key !== "Enter") return;
+      if (e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (verifyLoading) return;
+      if (!selectedSection?.sectionResultId) return;
+      if (selectedVerification?.status === "approved") return;
+
+      e.preventDefault();
+      void handleVerify("approved");
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    onSectionVerify,
+    verifyLoading,
+    selectedSection?.sectionResultId,
+    selectedVerification?.status,
+    handleVerify,
+  ]);
+
+  const approveShortcutLabel = useMemo(() => {
+    if (typeof navigator === "undefined") return "Ctrl+Shift+↵";
+    return /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+      ? "⌘⇧↵"
+      : "Ctrl+Shift+↵";
+  }, []);
 
   const handleBulkVerify = useCallback(
     async (status: SectionVerificationStatus) => {
@@ -2904,6 +2974,37 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           <span className="text-xs text-gray-400 whitespace-nowrap tabular-nums">
             {selectedSectionIdx + 1} / {sectionEntries.length}
           </span>
+          <button
+            type="button"
+            disabled={
+              !onNavigateToPdfPage ||
+              typeof selectedSectionPage !== "number" ||
+              selectedSectionPage < 1
+            }
+            onClick={() => {
+              if (
+                onNavigateToPdfPage &&
+                typeof selectedSectionPage === "number" &&
+                selectedSectionPage >= 1
+              ) {
+                onNavigateToPdfPage(selectedSectionPage);
+              }
+            }}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title={
+              typeof selectedSectionPage === "number" && selectedSectionPage >= 1
+                ? `Scroll PDF to page ${selectedSectionPage}`
+                : "No page for this section"
+            }
+          >
+            <LocateFixed className="w-3.5 h-3.5 text-gray-600" />
+            <span className="text-xs text-gray-600 whitespace-nowrap">
+              {typeof selectedSectionPage === "number" &&
+              selectedSectionPage >= 1
+                ? `p${selectedSectionPage}`
+                : "Go to page"}
+            </span>
+          </button>
         </div>
       )}
 
@@ -2964,6 +3065,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   totalSections={sectionEntries.length}
                   verificationMap={verificationMap}
                   sectionEntries={sectionEntries}
+                  approveShortcutLabel={approveShortcutLabel}
                 />
               </>
             )}
