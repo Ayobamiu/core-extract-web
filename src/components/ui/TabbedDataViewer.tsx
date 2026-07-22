@@ -26,6 +26,7 @@ import {
   Clock,
   GripVertical,
   Loader2,
+  LocateFixed,
   MessageSquare,
   MoreHorizontal,
   X,
@@ -134,6 +135,8 @@ interface TabbedDataViewerProps {
   // Tells the host whether the QA column has content to show (findings exist
   // and the results tab is active) so it can mount/unmount the third pane.
   onQaPanelActiveChange?: (active: boolean) => void;
+  /** Scroll the left-hand PDF pane to a 1-based page (file details modal). */
+  onNavigateToPdfPage?: (pageNumber: number) => void;
 }
 
 // One discoverable "row" in the section picker. We derive these from the
@@ -1102,6 +1105,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   onActiveResultTabChange,
   qaPanelContainer = null,
   onQaPanelActiveChange,
+  onNavigateToPdfPage,
 }) => {
   const { message, modal } = App.useApp();
   const [fallbackTab, setFallbackTab] = useState<TabType>("results");
@@ -1239,6 +1243,13 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
   const selectedSection =
     sectionEntries[selectedSectionIdx] ?? sectionEntries[0];
+
+  // First page of the selected section — used by the "scroll PDF" control.
+  const selectedSectionPage =
+    selectedSection?.pages?.[0] ??
+    (typeof selectedSection?.pageRange?.[0] === "number"
+      ? selectedSection.pageRange[0]
+      : null);
 
   // Build a lookup map: section_result_id → verification row
   const verificationMap = useMemo(() => {
@@ -2904,6 +2915,37 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           <span className="text-xs text-gray-400 whitespace-nowrap tabular-nums">
             {selectedSectionIdx + 1} / {sectionEntries.length}
           </span>
+          <button
+            type="button"
+            disabled={
+              !onNavigateToPdfPage ||
+              typeof selectedSectionPage !== "number" ||
+              selectedSectionPage < 1
+            }
+            onClick={() => {
+              if (
+                onNavigateToPdfPage &&
+                typeof selectedSectionPage === "number" &&
+                selectedSectionPage >= 1
+              ) {
+                onNavigateToPdfPage(selectedSectionPage);
+              }
+            }}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title={
+              typeof selectedSectionPage === "number" && selectedSectionPage >= 1
+                ? `Scroll PDF to page ${selectedSectionPage}`
+                : "No page for this section"
+            }
+          >
+            <LocateFixed className="w-3.5 h-3.5 text-gray-600" />
+            <span className="text-xs text-gray-600 whitespace-nowrap">
+              {typeof selectedSectionPage === "number" &&
+              selectedSectionPage >= 1
+                ? `p${selectedSectionPage}`
+                : "Go to page"}
+            </span>
+          </button>
         </div>
       )}
 

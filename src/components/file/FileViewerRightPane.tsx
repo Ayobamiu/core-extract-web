@@ -240,6 +240,7 @@ export default function FileViewerRightPane({
                 onActiveResultTabChange={onViewerResultTabChange}
                 qaPanelContainer={qaPanelContainer}
                 onQaPanelActiveChange={onQaPanelActiveChange}
+                onNavigateToPdfPage={onNavigateToPdfPage}
                 className="h-full"
               />
             )}
