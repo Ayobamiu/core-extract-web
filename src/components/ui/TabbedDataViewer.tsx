@@ -971,6 +971,7 @@ function SectionVerifyControls({
   totalSections,
   verificationMap,
   sectionEntries,
+  approveShortcutLabel,
 }: {
   verification: SectionVerification | null;
   loading: boolean;
@@ -978,6 +979,7 @@ function SectionVerifyControls({
   totalSections: number;
   verificationMap: Map<string, SectionVerification>;
   sectionEntries: SectionPickerEntry[];
+  approveShortcutLabel?: string;
 }) {
   const currentStatus = verification?.status ?? "pending";
   const cfg = VERIFY_STATUS_CONFIG[currentStatus];
@@ -1021,9 +1023,18 @@ function SectionVerifyControls({
                 type="button"
                 disabled={loading}
                 className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-                title="Approve this section"
+                title={
+                  approveShortcutLabel
+                    ? `Approve this section (${approveShortcutLabel})`
+                    : "Approve this section"
+                }
               >
                 Approve
+                {approveShortcutLabel && (
+                  <span className="ml-1 text-gray-400 tabular-nums">
+                    {approveShortcutLabel}
+                  </span>
+                )}
               </button>
             </span>
           </Popconfirm>
@@ -1325,6 +1336,54 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     },
     [selectedSection?.sectionResultId, onSectionVerify, message],
   );
+
+  // ⌘⇧↵ / Ctrl+Shift+Enter — approve current section without the click confirm.
+  // Chosen over Alt+A: Option+A inserts å on Mac, and Alt+letter hits Windows
+  // menu mnemonics. Pairs with ⌘↵ save; that handler already ignores Shift.
+  useEffect(() => {
+    if (!onSectionVerify) return;
+
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        return true;
+      }
+      if (target.isContentEditable) return true;
+      if (target.closest(".cm-editor")) return true;
+      if (target.closest(".ant-select-dropdown")) return true;
+      return false;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      if (e.key !== "Enter") return;
+      if (e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (verifyLoading) return;
+      if (!selectedSection?.sectionResultId) return;
+      if (selectedVerification?.status === "approved") return;
+
+      e.preventDefault();
+      void handleVerify("approved");
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    onSectionVerify,
+    verifyLoading,
+    selectedSection?.sectionResultId,
+    selectedVerification?.status,
+    handleVerify,
+  ]);
+
+  const approveShortcutLabel = useMemo(() => {
+    if (typeof navigator === "undefined") return "Ctrl+Shift+↵";
+    return /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+      ? "⌘⇧↵"
+      : "Ctrl+Shift+↵";
+  }, []);
 
   const handleBulkVerify = useCallback(
     async (status: SectionVerificationStatus) => {
@@ -3006,6 +3065,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   totalSections={sectionEntries.length}
                   verificationMap={verificationMap}
                   sectionEntries={sectionEntries}
+                  approveShortcutLabel={approveShortcutLabel}
                 />
               </>
             )}
