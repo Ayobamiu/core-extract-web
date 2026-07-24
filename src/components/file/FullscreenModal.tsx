@@ -151,6 +151,7 @@ const FullscreenModal: React.FC<FullscreenModalProps> = ({
         onSectionsUpdated={(next) => onSectionsUpdated?.(file.id, next)}
         detailLoading={detailLoading || viewerReloading}
         splitContainerClassName="file-viewer-split-modal"
+        shortcutScopeActive={open}
         showNavigation
         fileIndex={fileIndex}
         totalFiles={totalFiles}
