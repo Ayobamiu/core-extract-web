@@ -309,16 +309,25 @@ export function addPageToSection(
     throw new Error("Cannot attach pages to a superseded section");
   }
 
-  // A page belongs to at most one section — check MEMBERSHIP across all
-  // sections (spans may interleave, so range containment is wrong here).
+  // This function serves two distinct gestures:
+  //   1. ATTACH a free page (owned by no section) — e.g. an appendix figure.
+  //   2. INCLUDE a skipped page that is ALREADY a member of this section but
+  //      was left out of extraction_pages because the classifier called it
+  //      attachment/unknown/figure.
+  // Only (1) needs the ownership guard. Rejecting (2) as "already in this
+  // section" made "Include skipped pages" impossible for every section — a
+  // skipped page is by definition already a member. Reject a page owned by a
+  // DIFFERENT section (that's a merge), and no-op a page already extracting.
   for (let i = 0; i < blob.sections.length; i++) {
+    if (i === index) continue;
     if (getMemberPages(blob.sections[i]).includes(pageNumber)) {
       throw new Error(
-        i === index
-          ? `Page ${pageNumber} is already in this section`
-          : `Page ${pageNumber} already belongs to another section — merge instead`
+        `Page ${pageNumber} already belongs to another section — merge instead`
       );
     }
+  }
+  if (section.extraction_pages.includes(pageNumber)) {
+    throw new Error(`Page ${pageNumber} is already extracted in this section`);
   }
 
   const allPages = blob.pages ?? [];
