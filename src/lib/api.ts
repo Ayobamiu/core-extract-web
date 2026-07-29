@@ -528,6 +528,23 @@ export interface ReextractProgressEvent {
     timestamp: string;
 }
 
+/** Save & Re-extract worker-job progress (`section-reextract-progress-event`).
+ *  Data updates (result / detected_sections) ride the normal file-patch
+ *  channel — this event only drives progress indicators. */
+export interface SectionReextractProgressEvent {
+    jobId: string;
+    fileId: string;
+    phase: 'started' | 'section' | 'done' | 'failed';
+    completed: number;
+    total: number;
+    /** `section` phase only: index in detected_sections.sections. */
+    section_index?: number;
+    slug?: string;
+    status?: string;
+    error?: string;
+    timestamp: string;
+}
+
 // ── Processing timeline (curated, frontend-facing progress events) ──
 export type ProcessingPhase =
     | 'queued' | 'classifying' | 'extracting' | 'ai_extraction'
@@ -1296,15 +1313,28 @@ class ApiClient {
     async saveAndReextractSections(
         fileId: string,
         detectedSections: DetectedSections,
-    ): Promise<ApiResponse<{ detected_sections?: DetectedSections; sectionResults?: unknown[]; pages_without_text?: number[] }>> {
+        opts: { async?: boolean } = {},
+    ): Promise<Omit<ApiResponse<{
+        detected_sections?: DetectedSections;
+        sectionResults?: unknown[];
+        pages_without_text?: number[];
+        /** `async: true` responses only (status: 'queued'). */
+        pending_section_indices?: number[];
+    }>, 'status'> & { status: 'success' | 'error' | 'queued' }> {
         // Send only the edited `sections` array — the server preserves all other
         // classifier metadata (pages, page_summaries, …). This keeps the body
         // small (avoids PayloadTooLargeError on large files).
+        // `async: true` queues extraction on the worker and returns 202
+        // immediately; results land incrementally over the file-patch channel
+        // and progress over `section-reextract-progress-event`.
         return this.request(
             `/files/${encodeURIComponent(fileId)}/sections/save-and-reextract`,
             {
                 method: 'POST',
-                body: JSON.stringify({ sections: detectedSections.sections }),
+                body: JSON.stringify({
+                    sections: detectedSections.sections,
+                    ...(opts.async ? { async: true } : {}),
+                }),
             },
         );
     }
