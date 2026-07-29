@@ -700,6 +700,40 @@ export interface RunServiceResult {
     precisionTiers?: Record<string, number>;
 }
 
+/** A queued post-processing backfill (`post_processing_requests` row). */
+export interface PostProcessingRequest {
+    id: string;
+    job_id: string;
+    service: string;
+    slug: string;
+    apply: boolean;
+    force: boolean;
+    status: 'queued' | 'processing' | 'completed' | 'failed';
+    total_files: number;
+    processed_files: number;
+    /** Accumulated across every file scanned so far. */
+    summary: RunServiceResult | Record<string, never>;
+    error: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+/** Live `postprocess-progress-event` (worker → server → job room). */
+export interface PostProcessProgressEvent {
+    jobId: string;
+    fileId: string;
+    requestId: string;
+    phase: 'started' | 'file' | 'done' | 'failed';
+    service: string;
+    slug: string;
+    apply: boolean;
+    processed: number;
+    total: number;
+    summary?: RunServiceResult;
+    error?: string;
+    timestamp: string;
+}
+
 export interface PreviewDataTable {
     id: string;
     name: string;
@@ -1355,15 +1389,25 @@ class ApiClient {
     /**
      * Reprocess a SINGLE section: re-extract its text (re-OCR its pages),
      * re-run AI on it, or both. At least one of the two must be true.
+     *
+     * With `async: true` the server marks the section and queues the same
+     * worker job as Save & Re-extract (202 `status: 'queued'`); results land
+     * over the file-patch channel and progress over
+     * `section-reextract-progress-event`. `pending_section_indices` is every
+     * section the run will touch — normally just this one, but the job
+     * extracts anything already pending on the file.
      */
     async reprocessSection(
         fileId: string,
         sectionResultId: string,
-        opts: { reExtractText: boolean; reProcessAi: boolean },
+        opts: { reExtractText: boolean; reProcessAi: boolean; async?: boolean },
     ): Promise<ApiResponse<{
+        status?: 'success' | 'queued';
         sectionResultId: string;
         reExtractText: boolean;
         reProcessAi: boolean;
+        section_index?: number;
+        pending_section_indices?: number[];
         result?: unknown;
         detected_sections?: DetectedSections;
     }>> {
@@ -1947,12 +1991,24 @@ class ApiClient {
      */
     async runJobService(
         jobId: string,
-        body: { name: string; slug: string; options?: Record<string, unknown>; apply?: boolean; force?: boolean },
-    ): Promise<ApiResponse<RunServiceResult>> {
+        body: {
+            name: string; slug: string; options?: Record<string, unknown>;
+            apply?: boolean; force?: boolean;
+            /** Queue it on the worker (202) instead of scanning every file in-request. */
+            async?: boolean;
+        },
+    ): Promise<ApiResponse<RunServiceResult | { requestId: string; totalFiles: number; queued: number }>> {
         return this.request(`/jobs/${jobId}/run-service`, {
             method: 'POST',
             body: JSON.stringify(body),
         });
+    }
+
+    /** The job's most recent backfill request — for showing a run in flight after a reload. */
+    async getJobPostProcessingRequest(
+        jobId: string,
+    ): Promise<ApiResponse<{ request: PostProcessingRequest | null }>> {
+        return this.request(`/jobs/${jobId}/post-processing`);
     }
 
     async updateJobSchema(jobId: string, schema: any): Promise<ApiResponse<{ jobId: string; schema: any }>> {

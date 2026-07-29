@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { QAProgressEvent, ReextractProgressEvent, SectionReextractProgressEvent } from '@/lib/api';
+import type { QAProgressEvent, ReextractProgressEvent, SectionReextractProgressEvent, PostProcessProgressEvent } from '@/lib/api';
 
 interface SocketEventHandlers {
     onJobStatusUpdate?: (data: any) => void;
@@ -10,6 +10,7 @@ interface SocketEventHandlers {
     onQAProgressEvent?: (data: QAProgressEvent) => void;
     onReextractProgressEvent?: (data: ReextractProgressEvent) => void;
     onSectionReextractProgressEvent?: (data: SectionReextractProgressEvent) => void;
+    onPostProcessProgressEvent?: (data: PostProcessProgressEvent) => void;
 }
 
 export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
@@ -77,6 +78,10 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
             handlersRef.current?.onSectionReextractProgressEvent?.(data);
         };
 
+        const handlePostProcessProgressEvent = (data: PostProcessProgressEvent) => {
+            handlersRef.current?.onPostProcessProgressEvent?.(data);
+        };
+
         // Remove old listeners first to avoid duplicates
         newSocket.off('job-status-update');
         newSocket.off('file-status-update');
@@ -85,6 +90,7 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
         newSocket.off('qa-progress-event');
         newSocket.off('reextract-progress-event');
         newSocket.off('section-reextract-progress-event');
+        newSocket.off('postprocess-progress-event');
 
         // Register event handlers
         newSocket.on('job-status-update', handleJobStatusUpdate);
@@ -94,6 +100,7 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
         newSocket.on('qa-progress-event', handleQAProgressEvent);
         newSocket.on('reextract-progress-event', handleReextractProgressEvent);
         newSocket.on('section-reextract-progress-event', handleSectionReextractProgressEvent);
+        newSocket.on('postprocess-progress-event', handlePostProcessProgressEvent);
         
         console.log('📡 Registered all Socket.IO event handlers');
 
@@ -112,6 +119,7 @@ export const useSocket = (jobId?: string, handlers?: SocketEventHandlers) => {
             newSocket.off('qa-progress-event');
             newSocket.off('reextract-progress-event');
             newSocket.off('section-reextract-progress-event');
+            newSocket.off('postprocess-progress-event');
             newSocket.disconnect();
         };
     }, [jobId]);

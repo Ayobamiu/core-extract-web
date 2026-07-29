@@ -2177,12 +2177,15 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     const sid = selectedSection.sectionResultId;
     setReprocessLoading(true);
     try {
-      const res = await apiClient.reprocessSection(fileId, sid, reprocessOpts);
-      if (res.status === "success") {
-        // Result/detected_sections update arrives via the socket file-patch the
-        // server emits (same path reextract-sections uses). Drop any cached
-        // section markdown so the Markdown tab refetches the new text, and
-        // refresh QA findings since the data changed.
+      // Queued on the worker: returns 202 immediately, the section shows as
+      // "extracting…" until its record lands over the file-patch channel.
+      const res = await apiClient.reprocessSection(fileId, sid, {
+        ...reprocessOpts,
+        async: true,
+      });
+      if (res.success) {
+        // Drop any cached section markdown so the Markdown tab refetches the
+        // new text, and refresh QA findings since the data is about to change.
         setSectionMarkdownCache((prev) => {
           const next = { ...prev };
           delete next[sid];
@@ -2194,7 +2197,14 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
             if (r.status === "success" && r.findings) setQaFindings(r.findings);
           })
           .catch(() => {});
-        message.success("Section reprocessed");
+        // The job extracts every pending section on the file, not only this
+        // one — say so instead of letting extra sections surprise the operator.
+        const alsoPending = (res.data?.pending_section_indices?.length ?? 1) - 1;
+        message.success(
+          alsoPending > 0
+            ? `Section queued for reprocessing (also re-extracting ${alsoPending} other pending section${alsoPending === 1 ? "" : "s"})`
+            : "Section queued for reprocessing",
+        );
         setReprocessOpen(false);
       } else {
         message.error(res.message || "Reprocess failed");
@@ -3909,7 +3919,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               selectedSection?.slug ||
               "this section"}
           </span>
-          .
+          . It runs on the worker — you can keep reviewing while it does.
         </p>
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
           <Checkbox
