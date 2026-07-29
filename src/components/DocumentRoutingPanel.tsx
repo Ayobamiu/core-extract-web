@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   App,
   Button,
   Checkbox,
@@ -758,7 +759,19 @@ export default function DocumentRoutingPanel({
       0
     );
     const orphans = pagesOutsideAnySection(pages, sections);
-    return { totalPages, extractCount, skipCount, orphanCount: orphans.length };
+    // Sections with nothing to extract produce no record at all — the silent
+    // data loss this panel exists to prevent. Counted separately from
+    // skipCount, which is per-page and normal in healthy sections.
+    const noRecordSections = sections.filter(
+      (s) => !s.superseded_by && s.extraction_pages.length === 0
+    );
+    return {
+      totalPages,
+      extractCount,
+      skipCount,
+      orphanCount: orphans.length,
+      noRecordSections,
+    };
   }, [pages, sections]);
 
   if (!detectedSections) {
@@ -783,6 +796,38 @@ export default function DocumentRoutingPanel({
 
   return (
     <div className="px-4 py-3 space-y-3">
+      {/* Sections that will yield no record at all. Surfaced above the fold:
+          they look like ordinary sections in the list below, so nothing else
+          tells the operator the document is quietly missing records. */}
+      {summary.noRecordSections.length > 0 && (
+        <Alert
+          type="error"
+          showIcon
+          message={`${summary.noRecordSections.length} section${
+            summary.noRecordSections.length === 1 ? "" : "s"
+          } will produce no record`}
+          description={
+            <div className="text-xs space-y-1">
+              <div>
+                Every page in{" "}
+                {summary.noRecordSections.length === 1 ? "this section" : "these sections"}{" "}
+                was classified non-data, so extraction skips{" "}
+                {summary.noRecordSections.length === 1 ? "it" : "them"} entirely:{" "}
+                <span className="font-medium">
+                  {summary.noRecordSections
+                    .map((s) => `${s.document_type_slug} pp ${formatMemberPages(s)}`)
+                    .join("; ")}
+                </span>
+              </div>
+              <div className="text-gray-600">
+                Use <span className="font-medium">Include skipped pages</span> on
+                the section to pull the pages back in, then Save &amp; Re-extract.
+              </div>
+            </div>
+          }
+        />
+      )}
+
       {/* Top summary bar */}
       <div className="flex items-center justify-between flex-wrap gap-2 bg-gray-50 border border-gray-200 rounded p-3">
         <div className="flex items-center gap-3 flex-wrap">
@@ -1904,7 +1949,13 @@ function SectionHeader({
       </span>
       <span className="text-xs text-gray-500">
         ·{" "}
-        <span className="text-green-700 font-medium">
+        <span
+          className={
+            section.extraction_pages.length === 0
+              ? "text-red-700 font-medium"
+              : "text-green-700 font-medium"
+          }
+        >
           {section.extraction_pages.length} extract
         </span>
         {section.skipped_pages.length > 0 && (
@@ -1917,6 +1968,14 @@ function SectionHeader({
           </>
         )}
       </span>
+      {/* Zero extraction pages => this section produces NO record at all. It
+          still shows in the routing panel, so without this it looks healthy
+          while silently contributing nothing to the result. */}
+      {section.extraction_pages.length === 0 && !section.superseded_by && (
+        <Tag color="red" style={{ marginInlineEnd: 0 }}>
+          no record — every page skipped
+        </Tag>
+      )}
     </div>
   );
 }

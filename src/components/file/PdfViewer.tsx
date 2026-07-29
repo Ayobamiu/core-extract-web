@@ -90,6 +90,10 @@ export default function PdfViewer({
   const appliedTarget = useRef<{ page: number; n: number; nonce: number } | null>(
     null,
   );
+  // The auto-nav target we're still trying to land on. While set, any page at or
+  // above it that measures its real height re-anchors the scroll (see
+  // onPageRender). Cleared once the user scrolls or navigates manually.
+  const navTarget = useRef<number | null>(null);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -159,6 +163,7 @@ export default function PdfViewer({
       return next;
     });
     if (!programmaticScroll.current) {
+      navTarget.current = null; // user took over scrolling — stop re-anchoring
       setPageNumber((prev) => (prev === current ? prev : current));
     }
   }, [viewMode]);
@@ -196,17 +201,6 @@ export default function PdfViewer({
     [],
   );
 
-  const onPageRender = useCallback(
-    (p: number) => () => {
-      const el = pageEls.current.get(p);
-      if (el) {
-        const h = el.getBoundingClientRect().height;
-        if (h > 0) pageHeights.current.set(p, h);
-      }
-    },
-    [],
-  );
-
   const scrollToPage = useCallback((p: number) => {
     const el = pageEls.current.get(p);
     const cont = scrollRef.current;
@@ -216,9 +210,28 @@ export default function PdfViewer({
       el.getBoundingClientRect().top - cont.getBoundingClientRect().top;
   }, []);
 
+  const onPageRender = useCallback(
+    (p: number) => () => {
+      const el = pageEls.current.get(p);
+      if (el) {
+        const h = el.getBoundingClientRect().height;
+        if (h > 0) pageHeights.current.set(p, h);
+      }
+      // Re-anchor to a pending auto-nav target. A page at or above the target
+      // that just measured its real height (replacing its estimated placeholder)
+      // shifts where the target sits, so scroll to it again. This replaces the
+      // fixed t=250ms retry and its platform-dependent race — slower machines
+      // (e.g. Windows) measured after the timer fired and landed a page off.
+      const target = navTarget.current;
+      if (target != null && p <= target) scrollToPage(target);
+    },
+    [scrollToPage],
+  );
+
   const goTo = useCallback(
     (next: number) => {
       const target = clamp(Number.isFinite(next) ? next : 1, 1, numPages || 1);
+      navTarget.current = null; // explicit user navigation overrides auto-nav
       setPageNumber(target);
       if (viewMode === "continuous") scrollToPage(target);
     },
@@ -226,10 +239,11 @@ export default function PdfViewer({
   );
 
   // Parent-driven auto-navigation: scroll to targetPage once the doc is loaded
-  // and laid out, and again whenever the target (or loaded doc) changes. We
-  // scroll twice — immediately and after a short delay — because the continuous
-  // virtualizer sizes off-screen pages from an estimate until the first page
-  // measures; the second pass lands accurately once real heights are known.
+  // and laid out, and again whenever the target (or loaded doc) changes. The
+  // continuous virtualizer sizes off-screen pages from an estimate until each
+  // one measures, so an immediate scroll can land a page off. We register the
+  // target with navTarget so onPageRender re-anchors as real heights arrive, and
+  // do one immediate scroll to get close right away.
   useEffect(() => {
     if (targetPage == null || numPages <= 0 || baseWidth <= 0) return;
     const target = clamp(targetPage, 1, numPages);
@@ -243,13 +257,10 @@ export default function PdfViewer({
       return;
     }
     appliedTarget.current = { page: target, n: numPages, nonce: targetPageNonce };
+    navTarget.current = target;
     setPageNumber(target);
     const t1 = setTimeout(() => scrollToPage(target), 0);
-    const t2 = setTimeout(() => scrollToPage(target), 250);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
+    return () => clearTimeout(t1);
   }, [targetPage, targetPageNonce, numPages, baseWidth, scrollToPage]);
 
   // When switching to continuous, jump to the page the user was on.

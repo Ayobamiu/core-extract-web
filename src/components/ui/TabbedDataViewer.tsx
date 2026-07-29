@@ -26,6 +26,7 @@ import {
   Clock,
   GripVertical,
   Loader2,
+  LocateFixed,
   MessageSquare,
   MoreHorizontal,
   X,
@@ -105,10 +106,10 @@ interface TabbedDataViewerProps {
     sections?: Array<{
       document_type_slug: string;
       record_id?: string | null;
+      section_result_id?: string | null;
       page_range?: [number, number];
       member_pages?: number[];
       extraction_pages?: number[];
-      section_result_id?: string | null;
       superseded_by?: string | null;
     }>;
   } | null;
@@ -136,6 +137,8 @@ interface TabbedDataViewerProps {
   // Tells the host whether the QA column has content to show (findings exist
   // and the results tab is active) so it can mount/unmount the third pane.
   onQaPanelActiveChange?: (active: boolean) => void;
+  /** Scroll the left-hand PDF pane to a 1-based page (file details modal). */
+  onNavigateToPdfPage?: (pageNumber: number) => void;
 }
 
 // One discoverable "row" in the section picker. We derive these from the
@@ -188,23 +191,37 @@ function buildSectionPickerEntries(
     sections?: Array<{
       document_type_slug: string;
       record_id?: string | null;
+      section_result_id?: string | null;
       page_range?: [number, number];
       member_pages?: number[];
       extraction_pages?: number[];
-      section_result_id?: string | null;
       superseded_by?: string | null;
     }>;
   } | null,
 ): SectionPickerEntry[] {
   // Walk the envelope first (it's the ground truth for what data exists),
-  // then enrich each entry with the matching section_results row when we can.
-  // The envelope is keyed by slug; values are arrays in document order. We
-  // pair them with the section_results for the same slug, in order.
+  // then enrich each entry with its section_results row and detected section.
+  //
+  // Enrichment is keyed by section_result_id, NEVER by position within the
+  // slug. Positional pairing silently mislabels whenever the two lists have
+  // different lengths, which happens routinely:
+  //   - a section that extracts nothing (all its pages classified attachment/
+  //     none => empty extraction_pages) is absent from the envelope but still
+  //     present in detected_sections, shifting every later entry;
+  //   - a partial re-extract REPLACES processing_metadata.section_results with
+  //     just the re-extracted subset (server.js), so section_results can be a
+  //     single row for a 22-record file.
+  // Found 2026-07-28 on a 149-page closure report: two sections (MW-1, MW-2)
+  // extracted nothing, so records from p86/p87/p88 were labelled p84/p85/p86,
+  // and the first record inherited the record_id of the one re-extracted
+  // section. Position is not identity — match on the id.
   const entries: SectionPickerEntry[] = [];
+  const sectionResultById = new Map<string, SectionResult>();
   const sectionsBySlug = new Map<string, SectionResult[]>();
   if (Array.isArray(sectionResults)) {
     for (const s of sectionResults) {
       if (!s || s.status !== "success") continue;
+      if (s.section_result_id) sectionResultById.set(s.section_result_id, s);
       const arr = sectionsBySlug.get(s.slug) ?? [];
       arr.push(s);
       sectionsBySlug.set(s.slug, arr);
@@ -213,28 +230,29 @@ function buildSectionPickerEntries(
 
   // Fallback: use detected_sections for record_id and page_range when
   // section_results is missing (older extractions, extraction-only runs).
-  // Group by slug in document order to match envelope ordering.
-  const detectedBySlug = new Map<
-    string,
-    Array<{
-      record_id?: string | null;
-      page_range?: [number, number];
-      member_pages?: number[];
-      extraction_pages?: number[];
-      section_result_id?: string | null;
-      superseded_by?: string | null;
-    }>
-  >();
+  // Indexed by section_result_id where the blob carries one, and additionally
+  // grouped by slug in document order for legacy blobs that never had ids
+  // written back (extraction-only runs leave every section_result_id null).
+  type DetectedSectionInfo = {
+    record_id?: string | null;
+    page_range?: [number, number];
+    member_pages?: number[];
+    extraction_pages?: number[];
+  };
+  const detectedById = new Map<string, DetectedSectionInfo>();
+  const detectedBySlug = new Map<string, DetectedSectionInfo[]>();
   if (detectedSections?.sections) {
     for (const ds of detectedSections.sections) {
       if (!ds.document_type_slug || ds.document_type_slug === "none") continue;
-      const arr = detectedBySlug.get(ds.document_type_slug) ?? [];
-      arr.push({
+      const info: DetectedSectionInfo = {
         record_id: ds.record_id,
         page_range: ds.page_range,
         member_pages: ds.member_pages,
         extraction_pages: ds.extraction_pages,
-      });
+      };
+      if (ds.section_result_id) detectedById.set(ds.section_result_id, info);
+      const arr = detectedBySlug.get(ds.document_type_slug) ?? [];
+      arr.push(info);
       detectedBySlug.set(ds.document_type_slug, arr);
     }
   }
@@ -245,13 +263,30 @@ function buildSectionPickerEntries(
     const matching = sectionsBySlug.get(slug) ?? [];
     const detectedMatching = detectedBySlug.get(slug) ?? [];
     instances.forEach((data, instanceIndex) => {
-      const sr = matching[instanceIndex];
-      const ds = detectedMatching[instanceIndex];
       const dataObj = data as Record<string, unknown>;
+      // The record carries its own section_result_id (perSectionExtractor
+      // stamps it onto every envelope entry) — that's the join key.
+      const sectionResultId = dataObj?.section_result_id as string | undefined;
+      // Match by id whenever that side carries ids at all. Fall back to
+      // position ONLY when it carries none (legacy blobs predating the
+      // id write-back), where the lists are necessarily 1:1 anyway. Never
+      // fall back per-entry: a miss there means the section is genuinely
+      // gone, and position would hand back a neighbour's pages.
+      const sr =
+        sectionResultById.size > 0
+          ? sectionResultId
+            ? sectionResultById.get(sectionResultId)
+            : undefined
+          : matching[instanceIndex];
+      const ds =
+        detectedById.size > 0
+          ? sectionResultId
+            ? detectedById.get(sectionResultId)
+            : undefined
+          : detectedMatching[instanceIndex];
       entries.push({
         slug,
-        sectionResultId:
-          (dataObj?.section_result_id as string) ?? sr?.section_result_id,
+        sectionResultId: sectionResultId ?? sr?.section_result_id,
         recordId: sr?.record_id ?? ds?.record_id ?? null,
         instanceIndex,
         globalIndex: globalIndex++,
@@ -1007,6 +1042,7 @@ function SectionVerifyControls({
   totalSections,
   verificationMap,
   sectionEntries,
+  approveShortcutLabel,
 }: {
   verification: SectionVerification | null;
   loading: boolean;
@@ -1014,6 +1050,7 @@ function SectionVerifyControls({
   totalSections: number;
   verificationMap: Map<string, SectionVerification>;
   sectionEntries: SectionPickerEntry[];
+  approveShortcutLabel?: string;
 }) {
   const currentStatus = verification?.status ?? "pending";
   const cfg = VERIFY_STATUS_CONFIG[currentStatus];
@@ -1057,9 +1094,18 @@ function SectionVerifyControls({
                 type="button"
                 disabled={loading}
                 className="px-1.5 py-0.5 text-[10px] text-gray-500 hover:text-green-700 hover:bg-green-50 rounded transition-colors disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed"
-                title="Approve this section"
+                title={
+                  approveShortcutLabel
+                    ? `Approve this section (${approveShortcutLabel})`
+                    : "Approve this section"
+                }
               >
                 Approve
+                {approveShortcutLabel && (
+                  <span className="ml-1 text-gray-400 tabular-nums">
+                    {approveShortcutLabel}
+                  </span>
+                )}
               </button>
             </span>
           </Popconfirm>
@@ -1141,6 +1187,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   onActiveResultTabChange,
   qaPanelContainer = null,
   onQaPanelActiveChange,
+  onNavigateToPdfPage,
 }) => {
   const { message, modal } = App.useApp();
   const [fallbackTab, setFallbackTab] = useState<TabType>("results");
@@ -1279,6 +1326,13 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const selectedSection =
     sectionEntries[selectedSectionIdx] ?? sectionEntries[0];
 
+  // First page of the selected section — used by the "scroll PDF" control.
+  const selectedSectionPage =
+    selectedSection?.pages?.[0] ??
+    (typeof selectedSection?.pageRange?.[0] === "number"
+      ? selectedSection.pageRange[0]
+      : null);
+
   // Build a lookup map: section_result_id → verification row
   const verificationMap = useMemo(() => {
     const m = new Map<string, SectionVerification>();
@@ -1353,6 +1407,54 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     },
     [selectedSection?.sectionResultId, onSectionVerify, message],
   );
+
+  // ⌘⇧↵ / Ctrl+Shift+Enter — approve current section without the click confirm.
+  // Chosen over Alt+A: Option+A inserts å on Mac, and Alt+letter hits Windows
+  // menu mnemonics. Pairs with ⌘↵ save; that handler already ignores Shift.
+  useEffect(() => {
+    if (!onSectionVerify) return;
+
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        return true;
+      }
+      if (target.isContentEditable) return true;
+      if (target.closest(".cm-editor")) return true;
+      if (target.closest(".ant-select-dropdown")) return true;
+      return false;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      if (e.key !== "Enter") return;
+      if (e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (verifyLoading) return;
+      if (!selectedSection?.sectionResultId) return;
+      if (selectedVerification?.status === "approved") return;
+
+      e.preventDefault();
+      void handleVerify("approved");
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    onSectionVerify,
+    verifyLoading,
+    selectedSection?.sectionResultId,
+    selectedVerification?.status,
+    handleVerify,
+  ]);
+
+  const approveShortcutLabel = useMemo(() => {
+    if (typeof navigator === "undefined") return "Ctrl+Shift+↵";
+    return /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+      ? "⌘⇧↵"
+      : "Ctrl+Shift+↵";
+  }, []);
 
   const handleBulkVerify = useCallback(
     async (status: SectionVerificationStatus) => {
@@ -2984,6 +3086,37 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           <span className="text-xs text-gray-400 whitespace-nowrap tabular-nums">
             {selectedSectionIdx + 1} / {sectionEntries.length}
           </span>
+          <button
+            type="button"
+            disabled={
+              !onNavigateToPdfPage ||
+              typeof selectedSectionPage !== "number" ||
+              selectedSectionPage < 1
+            }
+            onClick={() => {
+              if (
+                onNavigateToPdfPage &&
+                typeof selectedSectionPage === "number" &&
+                selectedSectionPage >= 1
+              ) {
+                onNavigateToPdfPage(selectedSectionPage);
+              }
+            }}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title={
+              typeof selectedSectionPage === "number" && selectedSectionPage >= 1
+                ? `Scroll PDF to page ${selectedSectionPage}`
+                : "No page for this section"
+            }
+          >
+            <LocateFixed className="w-3.5 h-3.5 text-gray-600" />
+            <span className="text-xs text-gray-600 whitespace-nowrap">
+              {typeof selectedSectionPage === "number" &&
+              selectedSectionPage >= 1
+                ? `p${selectedSectionPage}`
+                : "Go to page"}
+            </span>
+          </button>
         </div>
       )}
 
@@ -3044,6 +3177,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                   totalSections={sectionEntries.length}
                   verificationMap={verificationMap}
                   sectionEntries={sectionEntries}
+                  approveShortcutLabel={approveShortcutLabel}
                 />
               </>
             )}

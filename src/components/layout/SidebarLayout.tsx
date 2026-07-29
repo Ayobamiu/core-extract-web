@@ -168,6 +168,44 @@ export default function SidebarLayout({
     return () => document.removeEventListener("keydown", onKey);
   }, [isSidebarOpen, isDesktop]);
 
+  // ⌘B / Ctrl+B — toggle primary sidebar (Cursor/VS Code feel). Desktop
+  // collapses to the icon rail; mobile opens/closes the drawer. Skip when
+  // typing, and ignore Shift (⌘⇧B is the file-viewer QA toggle).
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (target.isContentEditable) return true;
+      if (target.closest(".cm-editor")) return true;
+      if (target.closest(".ant-select-dropdown")) return true;
+      return false;
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key.toLowerCase() !== "b") return;
+      if (e.shiftKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      // File viewer modal owns ⌘B for the PDF pane while open.
+      if (document.querySelector('[data-file-viewer-modal="open"]')) return;
+
+      e.preventDefault();
+      if (isDesktop) {
+        setIsCollapsed((prev) => {
+          const next = !prev;
+          localStorage.setItem("sidebarCollapsed", String(next));
+          return next;
+        });
+      } else {
+        setIsSidebarOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isDesktop]);
+
   const handleLogout = async () => {
     try {
       await logout();
@@ -190,6 +228,12 @@ export default function SidebarLayout({
     setIsCollapsed(newCollapsedState);
     localStorage.setItem("sidebarCollapsed", String(newCollapsedState));
   };
+
+  const sidebarShortcutLabel =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+      ? "⌘B"
+      : "Ctrl+B";
 
   const navLinkIsActive = (href: string) =>
     href !== "/"
@@ -302,10 +346,10 @@ export default function SidebarLayout({
                     type="button"
                     onClick={toggleCollapse}
                     className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors flex-shrink-0"
-                    title="Collapse sidebar"
+                    title={`Collapse sidebar (${sidebarShortcutLabel})`}
                     aria-expanded
                     aria-controls="app-sidebar"
-                    aria-label="Collapse sidebar"
+                    aria-label={`Collapse sidebar (${sidebarShortcutLabel})`}
                   >
                     <PanelLeftClose className="h-4 w-4" aria-hidden />
                   </button>
@@ -382,10 +426,10 @@ export default function SidebarLayout({
                     type="button"
                     onClick={toggleCollapse}
                     className="flex items-center justify-center p-2 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
-                    title="Expand sidebar"
+                    title={`Expand sidebar (${sidebarShortcutLabel})`}
                     aria-expanded={false}
                     aria-controls="app-sidebar"
-                    aria-label="Expand sidebar"
+                    aria-label={`Expand sidebar (${sidebarShortcutLabel})`}
                   >
                     <PanelLeftOpen className="h-4 w-4" aria-hidden />
                   </button>
