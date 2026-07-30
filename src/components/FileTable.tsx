@@ -52,6 +52,7 @@ import {
 } from "@/lib/constraintUtils";
 import FileDetailsDrawer from "@/components/file/FileDetailsDrawer";
 import FullscreenModal from "@/components/file/FullscreenModal";
+import PreviewLinkHoverCard from "@/components/preview/PreviewLinkHoverCard";
 import styles from "./FileTable.module.css";
 import { Loader, MessageSquare, SearchIcon } from "lucide-react";
 import { SignalIcon } from "@heroicons/react/24/outline";
@@ -1587,11 +1588,11 @@ const FileTable: React.FC<FileTableProps> = ({
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {previews.slice(0, 2).map((p) => (
-              <a
+              <PreviewLinkHoverCard
                 key={p.id}
+                previewId={p.id}
+                name={p.name}
                 href={`/preview/${p.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
                 style={{
                   fontSize: 12,
                   whiteSpace: "nowrap",
@@ -1600,10 +1601,7 @@ const FileTable: React.FC<FileTableProps> = ({
                   maxWidth: 110,
                   display: "block",
                 }}
-                title={p.name}
-              >
-                {p.name}
-              </a>
+              />
             ))}
             {previews.length > 2 && (
               <Text type="secondary" style={{ fontSize: 11 }}>
