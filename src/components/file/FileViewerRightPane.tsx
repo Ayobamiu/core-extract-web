@@ -5,6 +5,7 @@ import { Typography } from "antd";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import {
   apiClient,
+  resultEnvelopeOf,
   type JobFile,
   type SectionVerification,
   type SectionVerificationStatus,
@@ -232,8 +233,8 @@ export default function FileViewerRightPane({
                 onAddComment={onAddComment}
                 fileId={file.id}
                 jobId={file.job_id}
-                resultEnvelope={file.extraction_metadata?.result_envelope}
-                sectionResults={file.extraction_metadata?.section_results}
+                resultEnvelope={resultEnvelopeOf(file)}
+                sectionResults={file.processing_metadata?.section_results}
                 detectedSections={file.detected_sections}
                 sectionVerifications={sectionVerifications}
                 onSectionVerify={handleSectionVerify}

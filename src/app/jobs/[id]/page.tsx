@@ -20,7 +20,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganization } from "@/contexts/OrganizationContext";
 import { canPerformAdminActions } from "@/utils/roleUtils";
-import { apiClient, JobDetails, JobFile, type ProcessingEvent } from "@/lib/api";
+import { apiClient, JobDetails, JobFile, resultEnvelopeOf, type ProcessingEvent } from "@/lib/api";
 import PreviewSelector from "@/components/preview/PreviewSelector";
 import PreviewDrawer from "@/components/preview/PreviewDrawer";
 import InlineSchemaEditor from "@/components/InlineSchemaEditor";
@@ -906,10 +906,10 @@ function JobDetailPage() {
                 filename={selectedFileForResultsEdit.filename}
                 initialResults={selectedFileForResultsEdit.result}
                 resultEnvelope={
-                  selectedFileForResultsEdit.extraction_metadata?.result_envelope
+                  resultEnvelopeOf(selectedFileForResultsEdit)
                 }
                 sectionResults={
-                  selectedFileForResultsEdit.extraction_metadata?.section_results
+                  selectedFileForResultsEdit.processing_metadata?.section_results
                 }
                 onSuccess={(updatedResults, flags) => {
                   // Apply flags patch immediately so constraints update
