@@ -49,6 +49,7 @@ import {
   formatMemberPages,
 } from "@/lib/routingEdits";
 import { recordIdentifier } from "@/lib/recordIdentifier";
+import { computeSreexRunProgress } from "@/lib/sreexRun";
 
 interface Props {
   fileId: string;
@@ -729,6 +730,18 @@ export default function DocumentRoutingPanel({
     return getSectionsNeedingExtraction(detectedSections);
   }, [detectedSections]);
 
+  // Whether a run is actually in flight comes from the persisted `sreex_run`
+  // marker, not from local state — same source the floating progress card
+  // reads, so the two surfaces always agree and both survive a reload. The
+  // local `reextractQueued` flag now only covers the moment between clicking
+  // and the first patch carrying the marker.
+  const sreexRun = useMemo(
+    () => computeSreexRunProgress(detectedSections),
+    [detectedSections],
+  );
+  const extractionInFlight =
+    (sreexRun !== null && !sreexRun.finished) || reextractQueued;
+
   // Every pending section resolved (results landed via socket patches) —
   // the queued run is done.
   useEffect(() => {
@@ -951,10 +964,10 @@ export default function DocumentRoutingPanel({
       {/* Server-side needs-extraction banner (for files that already have null IDs from prior edits) */}
       {!isDirty && needsExtractionIndices.length > 0 && sections.length > 0 && (
         <div className="mx-2 mb-2 p-2.5 rounded-md bg-amber-50 border border-amber-200 flex flex-col gap-2">
-          {reextractQueued ? (
+          {extractionInFlight ? (
             <span className="text-xs text-amber-800 flex items-center gap-1.5">
               <Loader className="w-3 h-3 animate-spin" />
-              Extracting {needsExtractionIndices.length} section
+              Extracting {sreexRun ? `${sreexRun.done}/${sreexRun.total}` : needsExtractionIndices.length} section
               {needsExtractionIndices.length === 1 ? "" : "s"}… results appear
               as they finish.
             </span>
@@ -990,7 +1003,7 @@ export default function DocumentRoutingPanel({
               }
             }}
           >
-            {reextractQueued ? "Re-queue" : `Re-extract (${needsExtractionIndices.length})`}
+            {extractionInFlight ? "Re-queue" : `Re-extract (${needsExtractionIndices.length})`}
           </Button>
         </div>
       )}

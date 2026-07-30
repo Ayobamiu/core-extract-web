@@ -8,7 +8,9 @@ import {
   ProcessingConfig,
   PostProcessingOverride,
   RunServiceResult,
+  PostProcessingRequest,
 } from "@/lib/api";
+import { useSocket } from "@/hooks/useSocket";
 import {
   PROCESSING_METHODS,
   getModelsForMethod,
@@ -115,6 +117,14 @@ export default function JobConfigEditor({
   const [runSlug, setRunSlug] = useState<string | undefined>();
   const [runBusy, setRunBusy] = useState(false);
   const [runResult, setRunResult] = useState<(RunServiceResult & { applied: boolean }) | null>(null);
+  // A backfill queued on the worker: { processed, total } until it finishes.
+  const [runProgress, setRunProgress] = useState<{
+    requestId: string;
+    processed: number;
+    total: number;
+    apply: boolean;
+    failed?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -154,6 +164,78 @@ export default function JobConfigEditor({
       .filter(([, v]) => v !== "default")
       .map(([name, v]) => ({ name, enabled: v === "on" }));
 
+  // Adopt a request row (from the 202, a reload, or a progress event) into the
+  // banner + result panes. A finished request goes straight to the summary.
+  const adoptRequest = (req: PostProcessingRequest) => {
+    if (req.status === "completed") {
+      setRunProgress(null);
+      if (req.summary && Object.keys(req.summary).length > 0) {
+        setRunResult({ ...(req.summary as RunServiceResult), applied: req.apply });
+      }
+      return;
+    }
+    if (req.status === "failed") {
+      setRunProgress({
+        requestId: req.id,
+        processed: req.processed_files,
+        total: req.total_files,
+        apply: req.apply,
+        failed: req.error || "Backfill failed",
+      });
+      return;
+    }
+    setRunProgress({
+      requestId: req.id,
+      processed: req.processed_files,
+      total: req.total_files,
+      apply: req.apply,
+    });
+  };
+
+  // A run queued before this drawer opened (or before a reload) is still going
+  // on the worker — pick it up so the operator isn't left staring at nothing.
+  useEffect(() => {
+    if (!open || !jobId) return;
+    apiClient
+      .getJobPostProcessingRequest(jobId)
+      .then((res) => {
+        if (res.success && res.data?.request) adoptRequest(res.data.request);
+      })
+      .catch(() => {});
+  }, [open, jobId]);
+
+  // Live backfill progress. The worker emits one event per file processed.
+  useSocket(jobId, {
+    onPostProcessProgressEvent: (evt) => {
+      if (evt.jobId !== jobId) return;
+      if (evt.phase === "failed") {
+        setRunProgress({
+          requestId: evt.requestId,
+          processed: evt.processed,
+          total: evt.total,
+          apply: evt.apply,
+          failed: evt.error || "Backfill failed",
+        });
+        message.error(evt.error || "Backfill failed.");
+        return;
+      }
+      if (evt.phase === "done") {
+        setRunProgress(null);
+        if (evt.summary) setRunResult({ ...evt.summary, applied: evt.apply });
+        message.success(evt.apply ? "Backfill applied." : "Dry-run complete.");
+        return;
+      }
+      setRunProgress({
+        requestId: evt.requestId,
+        processed: evt.processed,
+        total: evt.total,
+        apply: evt.apply,
+      });
+    },
+  });
+
+  // Queued on the worker: returns 202 immediately, then one progress event per
+  // file. A big job is thousands of files of geocoding — never hold the request.
   const handleRunService = async (apply: boolean) => {
     if (!runService || !runSlug) {
       message.warning("Pick a service and a document type first.");
@@ -161,15 +243,29 @@ export default function JobConfigEditor({
     }
     setRunBusy(true);
     setRunResult(null);
+    setRunProgress(null);
     try {
       const res = await apiClient.runJobService(jobId, {
         name: runService,
         slug: runSlug,
         apply,
+        async: true,
       });
-      if (res.success && res.data) {
-        setRunResult({ ...res.data, applied: apply });
-        message.success(apply ? "Backfill applied." : "Dry-run complete.");
+      const queued = res.data as { requestId?: string; totalFiles?: number } | undefined;
+      if (res.success && queued?.requestId) {
+        if (!queued.totalFiles) {
+          message.info("No completed files in this job to scan.");
+        } else {
+          setRunProgress({
+            requestId: queued.requestId,
+            processed: 0,
+            total: queued.totalFiles,
+            apply,
+          });
+          message.success(
+            `${apply ? "Backfill" : "Dry run"} queued over ${queued.totalFiles} file(s).`,
+          );
+        }
       } else {
         message.error(res.message || "Run failed.");
       }
@@ -661,6 +757,30 @@ export default function JobConfigEditor({
               Apply
             </Button>
           </div>
+
+          {runProgress && (
+            <div
+              className={`text-xs mt-3 p-2 rounded border ${
+                runProgress.failed
+                  ? "bg-red-50 border-red-200 text-red-700"
+                  : "bg-blue-50 border-blue-200 text-blue-700"
+              }`}
+            >
+              {runProgress.failed ? (
+                <span>
+                  {runProgress.apply ? "Backfill" : "Dry run"} failed after{" "}
+                  {runProgress.processed}/{runProgress.total} file(s):{" "}
+                  {runProgress.failed}
+                </span>
+              ) : (
+                <span>
+                  {runProgress.apply ? "Applying" : "Dry-running"} on the worker —{" "}
+                  {runProgress.processed}/{runProgress.total} file(s). You can close
+                  this drawer; it keeps running.
+                </span>
+              )}
+            </div>
+          )}
 
           {runResult && (
             <div className="text-xs text-gray-600 mt-3 p-2 rounded bg-gray-50 border border-gray-200">

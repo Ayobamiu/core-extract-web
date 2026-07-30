@@ -58,6 +58,7 @@ import {
 } from "@/lib/api";
 import type { ViewerResultTab } from "@/lib/jobViewUrlState";
 import { useSocket } from "@/hooks/useSocket";
+import { computeSreexRunProgress } from "@/lib/sreexRun";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -479,25 +480,32 @@ type BulkReviewState = {
  * bundle; antd has no drag primitive, its docs use react-draggable). Only
  * the header initiates a drag so the section list keeps scrolling normally.
  */
-function QAProgressFloat({
-  run,
-  labelById,
+/**
+ * The floating progress card shell — draggable, bottom-right, above antd's
+ * fullscreen Modal. Shared by QA and Save & Re-extract so the two can't
+ * drift apart; callers supply the title and the rows.
+ */
+function ProgressFloat({
+  title,
+  allTerminal,
+  failed = false,
+  pct,
   onDismiss,
+  dismissLabel,
+  offsetIndex = 0,
+  children,
 }: {
-  run: QARunState;
-  labelById: Map<string, string>;
+  title: string;
+  allTerminal: boolean;
+  failed?: boolean;
+  pct: number;
   onDismiss: () => void;
+  dismissLabel: string;
+  /** Stacks a second card clear of the first when both are visible. */
+  offsetIndex?: number;
+  children: React.ReactNode;
 }) {
   const dragControls = useDragControls();
-  const entries = Object.entries(run.sections);
-  if (entries.length === 0) return null;
-  const finished = entries.filter(
-    ([, s]) => s.status === "done" || s.status === "failed",
-  ).length;
-  const total = entries.length;
-  const allTerminal = finished === total;
-  const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
-
   return (
     // z-[1100]: must float above antd's fullscreen Modal (z-index 1000).
     <motion.div
@@ -506,7 +514,8 @@ function QAProgressFloat({
       dragControls={dragControls}
       dragMomentum={false}
       dragElastic={0}
-      className="fixed bottom-6 right-6 z-[1100] w-80 max-w-[calc(100vw-3rem)] bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
+      style={{ bottom: `${1.5 + offsetIndex * 1.25}rem`, right: `${1.5 + offsetIndex * 1.25}rem` }}
+      className="fixed z-[1100] w-80 max-w-[calc(100vw-3rem)] bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden"
     >
       <div
         onPointerDown={(e) => dragControls.start(e)}
@@ -517,29 +526,65 @@ function QAProgressFloat({
           {!allTerminal && (
             <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 flex-shrink-0" />
           )}
-          <span className="text-xs font-medium text-gray-700 truncate">
-            {allTerminal
-              ? "QA finished"
-              : `Running QA — ${finished}/${total} section${total === 1 ? "" : "s"}`}
-          </span>
+          <span className="text-xs font-medium text-gray-700 truncate">{title}</span>
         </div>
         <button
           type="button"
           onClick={onDismiss}
           onPointerDown={(e) => e.stopPropagation()}
           className="p-0.5 text-gray-400 hover:text-gray-700 rounded transition-colors flex-shrink-0 cursor-pointer"
-          aria-label="Dismiss QA progress"
+          aria-label={dismissLabel}
         >
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
       <div className="h-1 bg-gray-100">
         <div
-          className={`h-full transition-all duration-500 ${allTerminal ? "bg-green-500" : "bg-blue-500"}`}
+          className={`h-full transition-all duration-500 ${
+            failed ? "bg-red-500" : allTerminal ? "bg-green-500" : "bg-blue-500"
+          }`}
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
+      <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">{children}</div>
+    </motion.div>
+  );
+}
+
+function QAProgressFloat({
+  run,
+  labelById,
+  onDismiss,
+  offsetIndex = 0,
+}: {
+  run: QARunState;
+  labelById: Map<string, string>;
+  onDismiss: () => void;
+  offsetIndex?: number;
+}) {
+  const entries = Object.entries(run.sections);
+  if (entries.length === 0) return null;
+  const finished = entries.filter(
+    ([, s]) => s.status === "done" || s.status === "failed",
+  ).length;
+  const total = entries.length;
+  const allTerminal = finished === total;
+  const pct = total > 0 ? Math.round((finished / total) * 100) : 0;
+
+  return (
+    <ProgressFloat
+      title={
+        allTerminal
+          ? "QA finished"
+          : `Running QA — ${finished}/${total} section${total === 1 ? "" : "s"}`
+      }
+      allTerminal={allTerminal}
+      pct={pct}
+      onDismiss={onDismiss}
+      dismissLabel="Dismiss QA progress"
+      offsetIndex={offsetIndex}
+    >
+      <>
         {entries.map(([sid, s]) => (
           <div key={sid} className="flex items-center gap-2 px-3 py-1.5">
             <span className="flex-shrink-0">
@@ -573,8 +618,8 @@ function QAProgressFloat({
             </span>
           </div>
         ))}
-      </div>
-    </motion.div>
+      </>
+    </ProgressFloat>
   );
 }
 
@@ -1748,33 +1793,44 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     setActiveQaSnapshot(null);
   }, [activeQaSnapshot, allSectionIds]);
 
-  // Live Save & Re-extract progress ("Re-extracting sections… n/N"). The
-  // actual data lands via file patches; this only drives the banner.
-  const [sreexProgress, setSreexProgress] = useState<{
-    completed: number;
-    total: number;
-    failed?: boolean;
-  } | null>(null);
+  // Save & Re-extract / Reprocess progress is DERIVED from detected_sections
+  // (the `sreex_run` marker the backend stamps), never from socket events.
+  // Events are ephemeral: the old banner lived in this component's state, so
+  // switching pane tabs, toggling a pane, or reloading destroyed it with
+  // nothing to restore it from. Deriving from props means every remount —
+  // and a full reload — rebuilds the card correctly for free.
+  const sreexRun = useMemo(
+    () => computeSreexRunProgress(detectedSections),
+    [detectedSections],
+  );
 
+  // Dismissal is per-run and per-mount, matching QA: reload and a run that is
+  // still going comes back.
+  const [dismissedSreexRun, setDismissedSreexRun] = useState<string | null>(null);
   useEffect(() => {
-    // New file — any banner state belongs to the previous one.
-    setSreexProgress(null);
+    setDismissedSreexRun(null);
   }, [fileId]);
+
+  // Auto-clear a finished run after a beat, like QA does.
+  const [sreexSettled, setSreexSettled] = useState(false);
+  useEffect(() => {
+    if (!sreexRun || !sreexRun.finished || sreexRun.error) {
+      setSreexSettled(false);
+      return;
+    }
+    const t = setTimeout(() => setSreexSettled(true), 5000);
+    return () => clearTimeout(t);
+  }, [sreexRun]);
+
+  const showSreexFloat =
+    sreexRun !== null &&
+    sreexRun.rows.length > 0 &&
+    !sreexSettled &&
+    dismissedSreexRun !== sreexRun.startedAt;
 
   // Live QA progress. The socket room is per-job, so events for other files
   // in the same job arrive too — filter by fileId.
   useSocket(jobId, {
-    onSectionReextractProgressEvent: (evt) => {
-      if (!fileId || evt.fileId !== fileId) return;
-      if (evt.phase === "started" || evt.phase === "section") {
-        setSreexProgress({ completed: evt.completed, total: evt.total });
-      } else if (evt.phase === "done") {
-        setSreexProgress(null);
-      } else if (evt.phase === "failed") {
-        setSreexProgress({ completed: evt.completed, total: evt.total, failed: true });
-        setTimeout(() => setSreexProgress(null), 8000);
-      }
-    },
     onQAProgressEvent: (evt: QAProgressEvent) => {
       if (!fileId || evt.fileId !== fileId) return;
       switch (evt.status) {
@@ -2177,12 +2233,15 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     const sid = selectedSection.sectionResultId;
     setReprocessLoading(true);
     try {
-      const res = await apiClient.reprocessSection(fileId, sid, reprocessOpts);
-      if (res.status === "success") {
-        // Result/detected_sections update arrives via the socket file-patch the
-        // server emits (same path reextract-sections uses). Drop any cached
-        // section markdown so the Markdown tab refetches the new text, and
-        // refresh QA findings since the data changed.
+      // Queued on the worker: returns 202 immediately, the section shows as
+      // "extracting…" until its record lands over the file-patch channel.
+      const res = await apiClient.reprocessSection(fileId, sid, {
+        ...reprocessOpts,
+        async: true,
+      });
+      if (res.success) {
+        // Drop any cached section markdown so the Markdown tab refetches the
+        // new text, and refresh QA findings since the data is about to change.
         setSectionMarkdownCache((prev) => {
           const next = { ...prev };
           delete next[sid];
@@ -2194,7 +2253,14 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
             if (r.status === "success" && r.findings) setQaFindings(r.findings);
           })
           .catch(() => {});
-        message.success("Section reprocessed");
+        // The job extracts every pending section on the file, not only this
+        // one — say so instead of letting extra sections surprise the operator.
+        const alsoPending = (res.data?.pending_section_indices?.length ?? 1) - 1;
+        message.success(
+          alsoPending > 0
+            ? `Section queued for reprocessing (also re-extracting ${alsoPending} other pending section${alsoPending === 1 ? "" : "s"})`
+            : "Section queued for reprocessing",
+        );
         setReprocessOpen(false);
       } else {
         message.error(res.message || "Reprocess failed");
@@ -2990,23 +3056,6 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     <div
       className={`bg-white flex flex-col h-full overflow-hidden ${className}`}
     >
-      {/* Save & Re-extract progress — data lands live via socket patches;
-          this banner just shows the worker's progress. */}
-      {sreexProgress && (
-        <div
-          className={`flex items-center gap-2 px-3 py-1.5 border-b text-xs flex-shrink-0 ${
-            sreexProgress.failed
-              ? "bg-red-50 border-red-200 text-red-700"
-              : "bg-blue-50 border-blue-200 text-blue-700"
-          }`}
-        >
-          {!sreexProgress.failed && <Loader2 className="w-3 h-3 animate-spin" />}
-          {sreexProgress.failed
-            ? `Re-extraction failed after ${sreexProgress.completed}/${sreexProgress.total} sections — see the Routing tab to retry`
-            : `Re-extracting sections… ${sreexProgress.completed}/${sreexProgress.total} done. Results appear as they finish.`}
-        </div>
-      )}
-
       {/* Per-section picker (v2 envelope only) — sits ABOVE the tab strip
           and only swaps the data fed to data-shaped tabs. Markdown / Compare
           / Comments stay file-level. */}
@@ -3909,7 +3958,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               selectedSection?.slug ||
               "this section"}
           </span>
-          .
+          . It runs on the worker — you can keep reviewing while it does.
         </p>
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
           <Checkbox
@@ -4123,6 +4172,62 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           labelById={qaSectionLabelById}
           onDismiss={() => setQaRun(null)}
         />
+      )}
+
+      {/* Floating Save & Re-extract / Reprocess progress — same card as QA,
+          but every value is derived from detected_sections, so it survives
+          pane switches and full reloads instead of dying with component
+          state. Offset so it clears the QA card when both are up. */}
+      {showSreexFloat && sreexRun && (
+        <ProgressFloat
+          title={
+            sreexRun.error
+              ? `Re-extraction failed — ${sreexRun.done}/${sreexRun.total}`
+              : sreexRun.finished
+                ? `Re-extraction finished — ${sreexRun.total} section${sreexRun.total === 1 ? "" : "s"}`
+                : `${sreexRun.origin === "reprocess" ? "Reprocessing" : "Re-extracting"} — ${sreexRun.done}/${sreexRun.total} section${sreexRun.total === 1 ? "" : "s"}`
+          }
+          allTerminal={sreexRun.finished}
+          failed={Boolean(sreexRun.error)}
+          pct={sreexRun.total > 0 ? Math.round((sreexRun.done / sreexRun.total) * 100) : 0}
+          onDismiss={() => setDismissedSreexRun(sreexRun.startedAt)}
+          dismissLabel="Dismiss re-extraction progress"
+          offsetIndex={qaRun ? 1 : 0}
+        >
+          <>
+            {sreexRun.error && (
+              <div className="px-3 py-1.5 text-[11px] text-red-600 bg-red-50">
+                {sreexRun.error}
+              </div>
+            )}
+            {sreexRun.rows.map((row) => (
+              <div key={row.index} className="flex items-center gap-2 px-3 py-1.5">
+                <span className="flex-shrink-0">
+                  {row.status === "done" ? (
+                    <CheckCircle2 className="w-3 h-3 text-green-600" />
+                  ) : sreexRun.error ? (
+                    <XCircle className="w-3 h-3 text-red-500" />
+                  ) : (
+                    <Loader2 className="w-3 h-3 animate-spin text-blue-600" />
+                  )}
+                </span>
+                <span
+                  className="flex-1 min-w-0 truncate text-[11px] text-gray-600"
+                  title={row.label}
+                >
+                  {row.label}
+                </span>
+                <span className="flex-shrink-0 text-[10px] text-gray-400">
+                  {row.status === "done"
+                    ? "done"
+                    : sreexRun.error
+                      ? "not extracted"
+                      : "extracting"}
+                </span>
+              </div>
+            ))}
+          </>
+        </ProgressFloat>
       )}
 
       {/* Floating re-extraction progress — one row per (section, group),
