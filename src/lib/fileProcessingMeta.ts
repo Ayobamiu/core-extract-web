@@ -30,7 +30,7 @@ function aiMetaFromFile(file: JobFile): Record<string, unknown> | null {
   const top = file.processing_metadata as Record<string, unknown> | undefined;
   if (top?.model) return top;
 
-  const sections = file.extraction_metadata?.section_results;
+  const sections = file.processing_metadata?.section_results;
   if (!Array.isArray(sections)) return null;
   const first = sections.find(
     (s) => s?.status === "success" && s.ai_metadata,
@@ -77,7 +77,7 @@ export function buildFileProcessingSummary(
   ];
 
   const schemasUsed: FileProcessingSummary["schemasUsed"] = [];
-  const rawSchemas = file.extraction_metadata?.schemas_used;
+  const rawSchemas = file.processing_metadata?.schemas_used;
   if (rawSchemas && typeof rawSchemas === "object") {
     for (const [slug, info] of Object.entries(rawSchemas)) {
       if (info && typeof info === "object") {
@@ -90,7 +90,7 @@ export function buildFileProcessingSummary(
     }
   }
 
-  const ps = file.extraction_metadata?.per_section_extraction;
+  const ps = file.processing_metadata?.per_section_extraction;
 
   return {
     extractionMethod:
@@ -100,9 +100,9 @@ export function buildFileProcessingSummary(
     processingMethod: (procMeta?.processing_method as string) ?? null,
     model: (procMeta?.model as string) ?? null,
     resultEnvelope:
-      file.extraction_metadata?.result_envelope === "v2"
+      file.processing_metadata?.result_envelope === "v2"
         ? "v2"
-        : file.extraction_metadata?.result_envelope === "v1"
+        : file.processing_metadata?.result_envelope === "v1"
           ? "v1"
           : null,
     documentTypeSlugs: slugs,

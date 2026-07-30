@@ -145,21 +145,23 @@ export interface JobFile {
     processed_at?: string;
     extraction_time_seconds?: number;
     ai_processing_time_seconds?: number;
+    // Written by updateFileProcessingStatus — this is where the AI/extraction
+    // RESULT provenance lives, including the v2 envelope fields. They were
+    // declared on extraction_metadata until 2026-07-30 and every read used the
+    // wrong column, so `result_envelope` was silently always undefined and v2
+    // detection fell through to isV2ResultEnvelope's shape heuristic.
     processing_metadata?: {
         processing_time?: string;
         text_length?: number;
         processing_method?: string;
         model?: string;
-        [key: string]: any;
-    };
-    extraction_metadata?: {
-        extraction_method?: string;
-        extraction_time_seconds?: number;
         // Per-section extraction (v2 envelope) provenance. Populated when
         // the visual classifier ran and produced ≥1 section with extractable
         // pages. When this is present and result_envelope === 'v2',
         // file.result is shaped as V2ResultEnvelope (per-slug arrays).
-        result_envelope?: 'v1' | 'v2';
+        // 'v1_fallback' means per-section was requested but degraded — the
+        // result is a single flat record, not an envelope.
+        result_envelope?: 'v1' | 'v2' | 'v1_fallback';
         section_results?: SectionResult[];
         schemas_used?: Record<string, { version: number; schemaId: string }>;
         per_section_extraction?: {
@@ -169,6 +171,12 @@ export interface JobFile {
             skipped_count: number;
             total_ai_time_seconds?: number;
         };
+        [key: string]: any;
+    };
+    // Written by updateFileExtractionStatus — the text-extraction (parser) blob.
+    extraction_metadata?: {
+        extraction_method?: string;
+        extraction_time_seconds?: number;
         [key: string]: any;
     };
     // Phase 1: skinny list fields (replace heavy columns in list view)
@@ -579,8 +587,8 @@ export interface ProcessingEvent {
 // type slugs, values are ALWAYS arrays (even with a single section per slug)
 // so downstream consumers don't have to type-check.
 //
-// Detection: `extraction_metadata.result_envelope === 'v2'` (preferred) OR
-// shape inspection (top-level keys match `extraction_metadata.section_results[*].slug`).
+// Detection: `processing_metadata.result_envelope === 'v2'` (preferred) OR
+// shape inspection (top-level keys match `processing_metadata.section_results[*].slug`).
 export type V2ResultEnvelope = Record<string, Array<Record<string, unknown>>>;
 
 export type SectionResultStatus =
@@ -624,6 +632,20 @@ export interface SectionVerification {
  * first (preferred), falls back to a shape-based heuristic when callers
  * don't have the metadata available (e.g., realtime websocket events).
  */
+/**
+ * The envelope shape a file's `result` actually has, for consumers that only
+ * care about v1-vs-v2. 'v1_fallback' (per-section was requested but degraded
+ * to a single flat record) is a v1-shaped result, so it maps to 'v1' — the
+ * distinction matters for diagnosing a bad run, not for rendering it.
+ */
+export function resultEnvelopeOf(
+    file: { processing_metadata?: { result_envelope?: 'v1' | 'v2' | 'v1_fallback' } } | null | undefined,
+): 'v1' | 'v2' | undefined {
+    const envelope = file?.processing_metadata?.result_envelope;
+    if (!envelope) return undefined;
+    return envelope === 'v2' ? 'v2' : 'v1';
+}
+
 export function isV2ResultEnvelope(
     result: unknown,
     metadata?: { result_envelope?: 'v1' | 'v2'; section_results?: SectionResult[] }
