@@ -276,7 +276,15 @@ export default function PdfViewer({
     setZoom((z) => clamp(+(z + delta).toFixed(2), MIN_ZOOM, MAX_ZOOM));
   }, []);
 
-  const docOptions = useMemo(() => ({}), []); // stable — react-pdf refetches if identity changes
+  // pdf.js v5 renders JPEG 2000 (JPX) images via a wasm decoder that it no
+  // longer bundles/loads automatically — without wasmUrl, pages whose only
+  // content is a JPX scan render as a blank page with just the text layer.
+  // The wasm files are copied from pdfjs-dist/wasm into /public (same pattern
+  // as the worker) so they're served at a stable URL. Keep in sync on upgrade.
+  const docOptions = useMemo(
+    () => ({ wasmUrl: "/wasm/" }),
+    [], // stable — react-pdf refetches if identity changes
+  );
 
   const renderPage = (p: number, mount: boolean) => (
     <div
