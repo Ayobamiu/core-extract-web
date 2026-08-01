@@ -1397,9 +1397,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     }
   }, [canScrollToSection, onNavigateToPdfPage, selectedSectionPage]);
 
-  // ⌘L / Ctrl+L — scroll the PDF to the selected section's page. Guarded by
-  // shift/alt so we don't steal browser chords; this viewer has no location
-  // bar, so plain ⌘L is safe to repurpose while the modal is open.
+  // ⌘G / Ctrl+G — scroll the PDF to the selected section's page. ⌘L is taken
+  // by browsers (focus address bar) and can't be intercepted, so we use ⌘G
+  // (find-again), which is harmless in this viewer. Guarded by shift/alt so we
+  // don't steal related chords while typing.
   useEffect(() => {
     if (!canScrollToSection) return;
 
@@ -1416,7 +1417,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.shiftKey || e.altKey) return;
-      if (e.key.toLowerCase() !== "l") return;
+      if (e.key.toLowerCase() !== "g") return;
       if (isTypingTarget(e.target)) return;
 
       e.preventDefault();
@@ -3191,7 +3192,7 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title={
               canScrollToSection
-                ? `Scroll PDF to page ${selectedSectionPage} (⌘L)`
+                ? `Scroll PDF to page ${selectedSectionPage} (⌘G)`
                 : "No page for this section"
             }
           >
