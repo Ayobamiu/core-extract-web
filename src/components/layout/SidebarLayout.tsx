@@ -24,9 +24,13 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Layers,
+  Keyboard,
 } from "lucide-react";
 import OrganizationSelector from "@/components/organization/OrganizationSelector";
 import CreateOrganizationModal from "@/components/organization/CreateOrganizationModal";
+import KeyboardShortcutsHelp, {
+  useKeyboardShortcutsHelp,
+} from "@/components/layout/KeyboardShortcutsHelp";
 
 interface SidebarLayoutProps {
   children: React.ReactNode;
@@ -103,6 +107,8 @@ export default function SidebarLayout({
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(true);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const { open: shortcutsOpen, setOpen: setShortcutsOpen } =
+    useKeyboardShortcutsHelp();
 
   const resolvedPageTitle =
     pageTitle ||
@@ -601,6 +607,15 @@ export default function SidebarLayout({
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setShortcutsOpen(true)}
+              className="p-1.5 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
+              title="Keyboard shortcuts (⌘/)"
+              aria-label="Keyboard shortcuts"
+            >
+              <Keyboard className="h-4 w-4" aria-hidden />
+            </button>
             {headerActions ||
               (currentOrganization && (
                 <div
@@ -625,6 +640,10 @@ export default function SidebarLayout({
       <CreateOrganizationModal
         isOpen={isCreateOrgModalOpen}
         onClose={() => setIsCreateOrgModalOpen(false)}
+      />
+      <KeyboardShortcutsHelp
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
       />
     </div>
   );
