@@ -1323,21 +1323,29 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       if (isTypingTarget(e.target)) return;
 
-      if (e.key === "ArrowLeft" && selectedSectionIdx > 0) {
-        e.preventDefault();
-        selectSectionIdx(selectedSectionIdx - 1);
-      } else if (
-        e.key === "ArrowRight" &&
-        selectedSectionIdx < sectionEntries.length - 1
-      ) {
-        e.preventDefault();
-        selectSectionIdx(selectedSectionIdx + 1);
+      // Always preventDefault for our chord so the browser never takes it
+      // (⌘⇧→ / ⌘⇧← switch browser tabs when we're at the first/last section).
+      // At an edge, show a hint instead of moving.
+      e.preventDefault();
+
+      if (e.key === "ArrowLeft") {
+        if (selectedSectionIdx > 0) {
+          selectSectionIdx(selectedSectionIdx - 1);
+        } else {
+          message.info("Already at the first section");
+        }
+      } else if (e.key === "ArrowRight") {
+        if (selectedSectionIdx < sectionEntries.length - 1) {
+          selectSectionIdx(selectedSectionIdx + 1);
+        } else {
+          message.info("Already at the last section");
+        }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [sectionEntries.length, selectedSectionIdx, selectSectionIdx]);
+  }, [sectionEntries.length, selectedSectionIdx, selectSectionIdx, message]);
 
   const setResultTab = useCallback(
     (tab: TabType) => {
@@ -1377,6 +1385,47 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     (typeof selectedSection?.pageRange?.[0] === "number"
       ? selectedSection.pageRange[0]
       : null);
+
+  const canScrollToSection =
+    !!onNavigateToPdfPage &&
+    typeof selectedSectionPage === "number" &&
+    selectedSectionPage >= 1;
+
+  const scrollToSectionPage = useCallback(() => {
+    if (canScrollToSection && onNavigateToPdfPage) {
+      onNavigateToPdfPage(selectedSectionPage as number);
+    }
+  }, [canScrollToSection, onNavigateToPdfPage, selectedSectionPage]);
+
+  // ⌘L / Ctrl+L — scroll the PDF to the selected section's page. Guarded by
+  // shift/alt so we don't steal browser chords; this viewer has no location
+  // bar, so plain ⌘L is safe to repurpose while the modal is open.
+  useEffect(() => {
+    if (!canScrollToSection) return;
+
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (target.isContentEditable) return true;
+      if (target.closest(".cm-editor")) return true;
+      if (target.closest(".ant-select-dropdown")) return true;
+      return false;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.shiftKey || e.altKey) return;
+      if (e.key.toLowerCase() !== "l") return;
+      if (isTypingTarget(e.target)) return;
+
+      e.preventDefault();
+      scrollToSectionPage();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canScrollToSection, scrollToSectionPage]);
 
   // Build a lookup map: section_result_id → verification row
   const verificationMap = useMemo(() => {
@@ -3137,24 +3186,12 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
           </span>
           <button
             type="button"
-            disabled={
-              !onNavigateToPdfPage ||
-              typeof selectedSectionPage !== "number" ||
-              selectedSectionPage < 1
-            }
-            onClick={() => {
-              if (
-                onNavigateToPdfPage &&
-                typeof selectedSectionPage === "number" &&
-                selectedSectionPage >= 1
-              ) {
-                onNavigateToPdfPage(selectedSectionPage);
-              }
-            }}
+            disabled={!canScrollToSection}
+            onClick={scrollToSectionPage}
             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title={
-              typeof selectedSectionPage === "number" && selectedSectionPage >= 1
-                ? `Scroll PDF to page ${selectedSectionPage}`
+              canScrollToSection
+                ? `Scroll PDF to page ${selectedSectionPage} (⌘L)`
                 : "No page for this section"
             }
           >
