@@ -428,6 +428,53 @@ export default function DocumentRoutingPanel({
     return map;
   }, [sections, sectionIdentifiers]);
 
+  // Distinct duplicate GROUPS (not per-section matches), so the summary can
+  // list each well once. Keyed by the lowest section index in the group,
+  // which is also the one merges anchor on — the original log usually comes
+  // before its appendix copy.
+  const duplicateGroups = useMemo(() => {
+    const seen = new Set<number>();
+    const groups: { anchor: number; members: number[]; identifier: string }[] = [];
+    for (const [i, matches] of duplicateCandidates) {
+      if (seen.has(i)) continue;
+      const members = [i, ...matches].sort((a, b) => a - b);
+      members.forEach((m) => seen.add(m));
+      groups.push({
+        anchor: members[0],
+        members,
+        identifier: sectionIdentifiers[members[0]] ?? "?",
+      });
+    }
+    return groups.sort((a, b) => a.anchor - b.anchor);
+  }, [duplicateCandidates, sectionIdentifiers]);
+
+  const scrollToSection = useCallback((index: number) => {
+    document
+      .getElementById(`routing-section-${index}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
+  // Merge a flagged duplicate straight into its counterpart. Same operation
+  // as the "Merge into…" modal, but the target is already known — the hint
+  // says which section it matches, so making you re-pick it from a list was
+  // just extra clicks. Anchors on the earlier section (the original log) and
+  // folds the later one (the appendix copy) into it. Draft-only, like every
+  // other routing edit: nothing is extracted until Save & Re-extract.
+  const handleMergeDuplicate = useCallback(
+    (sourceIndex: number, targetIndex: number) => {
+      if (!activeSections) return;
+      const anchor = Math.min(sourceIndex, targetIndex);
+      const folded = Math.max(sourceIndex, targetIndex);
+      try {
+        setDraft(mergeSections(activeSections, anchor, folded));
+        message.success("Sections merged (unsaved) — Save & Re-extract to apply");
+      } catch (err: unknown) {
+        message.error(err instanceof Error ? err.message : "Merge failed");
+      }
+    },
+    [activeSections, message],
+  );
+
   // index → sections that could serve as its canonical in "mark duplicate"
   // (same slug, live, with an extraction record to point at).
   const canonicalTargets = useCallback(
@@ -1009,6 +1056,34 @@ export default function DocumentRoutingPanel({
       )}
 
       {/* Sections */}
+      {/* Possible duplicates, collected at the top. The per-section tag has
+          always been there, but on a 60-section file you had to scroll to
+          find them — which is where the time actually went. */}
+      {duplicateGroups.length > 0 && (
+        <div className="mx-2 mb-2 p-2.5 rounded-md bg-amber-50 border border-amber-200">
+          <div className="text-xs text-amber-800 mb-1.5">
+            {duplicateGroups.length} possible duplicate
+            {duplicateGroups.length === 1 ? "" : "s"} — same identifier on
+            sections that were extracted separately.
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {duplicateGroups.map((g) => (
+              <Tag
+                key={`dupgroup-${g.anchor}`}
+                color="warning"
+                className="cursor-pointer"
+                onClick={() => scrollToSection(g.anchor)}
+                title={`Jump to ${g.identifier} (${g.members
+                  .map((m) => `pages ${formatMemberPages(sections[m])}`)
+                  .join(" · ")})`}
+              >
+                {g.identifier}
+              </Tag>
+            ))}
+          </div>
+        </div>
+      )}
+
       {sections.length === 0 ? (
         <div className="text-sm text-gray-500 italic px-2">
           No sections detected. Every page was classified as &quot;none&quot;
@@ -1036,13 +1111,21 @@ export default function DocumentRoutingPanel({
             return {
               key: `s${i}`,
               label: (
-                <SectionHeader
-                  section={section}
-                  identifier={sectionIdentifiers[i]}
-                  duplicateHint={duplicateHint}
-                  canonical={canonical}
-                  extracting={reextractQueued}
-                />
+                <span id={`routing-section-${i}`}>
+                  <SectionHeader
+                    section={section}
+                    identifier={sectionIdentifiers[i]}
+                    duplicateHint={duplicateHint}
+                    duplicateOf={dupOf.length === 1 ? dupOf[0] : null}
+                    onMergeDuplicate={
+                      dupOf.length === 1
+                        ? () => handleMergeDuplicate(i, dupOf[0])
+                        : undefined
+                    }
+                    canonical={canonical}
+                    extracting={reextractQueued}
+                  />
+                </span>
               ),
               extra: (
                 <SectionActions
@@ -1889,6 +1972,8 @@ function SectionHeader({
   section,
   identifier,
   duplicateHint,
+  duplicateOf,
+  onMergeDuplicate,
   canonical,
   extracting = false,
 }: {
@@ -1897,6 +1982,10 @@ function SectionHeader({
   identifier?: string | null;
   /** Set when another live section shares this one's slug + identifier. */
   duplicateHint?: string | null;
+  /** Index of the single section this one duplicates, when unambiguous. */
+  duplicateOf?: number | null;
+  /** Merge straight into that section — only offered when there's exactly one. */
+  onMergeDuplicate?: () => void;
   /** The canonical section this one is superseded by, when marked. */
   canonical?: DetectedSection | null;
   /** A queued worker re-extract is running — pending sections are actively
@@ -1934,11 +2023,26 @@ function SectionHeader({
         </Tooltip>
       )}
       {!isSuperseded && duplicateHint && (
-        <Tooltip title={`${duplicateHint}. If one is an outdated version, use "Duplicate of…" to resolve.`}>
-          <Tag color="warning" style={{ marginInlineEnd: 0 }}>
-            possible duplicate
-          </Tag>
-        </Tooltip>
+        <>
+          <Tooltip title={`${duplicateHint}. Merge if they're two halves of one log; use "Duplicate of…" if one is an outdated copy.`}>
+            <Tag color="warning" style={{ marginInlineEnd: 0 }}>
+              possible duplicate
+            </Tag>
+          </Tooltip>
+          {onMergeDuplicate && duplicateOf != null && (
+            <a
+              className="text-xs"
+              onClick={(e) => {
+                // The row header toggles the collapse panel — don't let the
+                // merge click do that too.
+                e.stopPropagation();
+                onMergeDuplicate();
+              }}
+            >
+              Merge
+            </a>
+          )}
+        </>
       )}
       {needsExtraction && (
         <Tag
