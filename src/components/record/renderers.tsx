@@ -19,6 +19,8 @@ import {
 
 export interface RenderCtx {
   descMap: Record<string, string>;
+  /** Override the empty-field label (demo uses "—"). */
+  emptyLabel?: string;
 }
 
 const childSchema = (
@@ -177,7 +179,11 @@ export function AttributeCard({
                   ctx={ctx}
                 />
                 <dd className="m-0 break-words">
-                  <ScalarValue fieldKey={k} value={data[k]} />
+                  <ScalarValue
+                    fieldKey={k}
+                    value={data[k]}
+                    muted={ctx.emptyLabel ?? "Not recorded"}
+                  />
                 </dd>
               </div>
             ))}
@@ -247,7 +253,11 @@ function NestedObject({
             {classifyValue(data[k]) === "scalarArray" ? (
               <ChipList values={data[k] as unknown[]} />
             ) : (
-              <ScalarValue fieldKey={k} value={data[k]} />
+              <ScalarValue
+                fieldKey={k}
+                value={data[k]}
+                muted={ctx.emptyLabel ?? "Not recorded"}
+              />
             )}
           </dd>
         </div>
@@ -323,7 +333,7 @@ export function RecordTable({
                       <ScalarValue
                         fieldKey={k}
                         value={r?.[k]}
-                        muted="—"
+                        muted={ctx.emptyLabel ?? "—"}
                       />
                     )}
                   </td>
@@ -387,7 +397,7 @@ export function FieldBlock({
   return (
     <Card title={label}>
       <span className="text-gray-300 italic text-[13.5px]">
-        {humanizeKey(fieldKey)} — Not recorded
+        {ctx.emptyLabel ?? "Not recorded"}
       </span>
     </Card>
   );

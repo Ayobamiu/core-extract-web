@@ -131,12 +131,14 @@ export function RecordTrustHeader({
   slug,
   trust,
   identifierFields,
+  compact = false,
 }: {
   data: Record<string, unknown>;
   slug?: string;
   trust?: RecordTrust;
   /** Per-type identifier dot-paths (kept in sync with the preview ID column). */
   identifierFields?: string[] | null;
+  compact?: boolean;
 }) {
   const docName = slug ? SLUG_NAMES[slug] ?? humanizeKey(slug) : "Record";
   const title = recordTitle(data, identifierFields);
@@ -169,26 +171,37 @@ export function RecordTrustHeader({
   const handwritten = meta.handwritten === true;
 
   return (
-    <header className="flex flex-col gap-3 pb-4 mb-4 border-b border-gray-200">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+    <header
+      className={`flex flex-col border-b border-gray-200 ${
+        compact ? "mb-2 gap-1 pb-2" : "mb-4 gap-3 pb-4"
+      }`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
             {docName}
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 truncate">
+          <h2
+            className={`font-semibold text-gray-900 truncate ${
+              compact ? "text-base" : "text-xl"
+            }`}
+          >
             {title ?? docName}
           </h2>
-          {(sourceFile || pageLabel) && (
-            <div className="text-[12.5px] text-gray-400 mt-0.5 truncate">
+          {(sourceFile || pageLabel) && !compact && (
+            <div className="mt-0.5 truncate text-[12.5px] text-gray-400">
               {[sourceFile, pageLabel].filter(Boolean).join(" · ")}
             </div>
+          )}
+          {compact && pageLabel && (
+            <div className="truncate text-[12px] text-gray-400">{pageLabel}</div>
           )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           {confidenceChip(meta.extraction_confidence)}
-          {qaChip(trust?.qa)}
-          {verificationChip(trust?.verification)}
+          {trust ? qaChip(trust.qa) : null}
+          {trust ? verificationChip(trust.verification) : null}
         </div>
       </div>
 

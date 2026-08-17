@@ -48,7 +48,7 @@ export function RecordBody({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {looseScalars.length > 0 && (
-        <DetailsCard data={data} schema={schema} keys={looseScalars} />
+        <DetailsCard data={data} schema={schema} keys={looseScalars} ctx={ctx} />
       )}
 
       {rest.map((k) => {
@@ -75,10 +75,12 @@ function DetailsCard({
   data,
   schema,
   keys,
+  ctx,
 }: {
   data: Record<string, unknown>;
   schema?: JsonSchemaNode;
   keys: string[];
+  ctx: RenderCtx;
 }) {
   return (
     <section className="rounded-xl border border-gray-200 bg-white">
@@ -98,7 +100,11 @@ function DetailsCard({
                 {classifyValue(data[k]) === "scalarArray" ? (
                   <ChipList values={data[k] as unknown[]} />
                 ) : (
-                  <ScalarValue fieldKey={k} value={data[k]} />
+                  <ScalarValue
+                    fieldKey={k}
+                    value={data[k]}
+                    muted={ctx.emptyLabel ?? "Not recorded"}
+                  />
                 )}
               </dd>
             </div>

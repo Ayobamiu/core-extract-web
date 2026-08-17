@@ -21,6 +21,8 @@ export function RecordView({
   trust,
   hero,
   identifierFields,
+  emptyLabel,
+  compact = false,
 }: {
   data: Record<string, unknown>;
   schema?: JsonSchemaNode;
@@ -31,12 +33,15 @@ export function RecordView({
   hero?: HeroComponent | null;
   /** Per-type identifier dot-paths for the header title (preview ID config). */
   identifierFields?: string[] | null;
+  /** Empty-field label. Demo uses "—"; product default is "Not recorded". */
+  emptyLabel?: string;
+  compact?: boolean;
 }) {
   const descMap = useMemo<Record<string, string>>(
     () => fieldDescriptions ?? (schema ? buildFieldDescriptionMap(schema) : {}),
     [fieldDescriptions, schema],
   );
-  const ctx: RenderCtx = { descMap };
+  const ctx: RenderCtx = { descMap, emptyLabel };
 
   const Hero = hero !== undefined ? hero : heroForSlug(slug);
 
@@ -49,15 +54,16 @@ export function RecordView({
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-1 py-2">
+    <div className={compact ? "" : "mx-auto max-w-5xl px-1 py-2"}>
       <RecordTrustHeader
         data={data}
         slug={slug}
         trust={trust}
         identifierFields={identifierFields}
+        compact={compact}
       />
       {Hero && (
-        <div className="mb-5">
+        <div className={compact ? "mb-3" : "mb-5"}>
           <Hero data={data} />
         </div>
       )}
