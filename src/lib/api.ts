@@ -611,6 +611,78 @@ export interface SectionResult {
     ai_metadata?: Record<string, unknown>;
 }
 
+// ── Gold-set review ──
+
+/**
+ * The reviewer's vocabulary. It has to match the scorer's exactly — a verdict
+ * `goldSetScore.mjs` doesn't recognise falls silently into "unscored" and the
+ * row drops out of the denominator.
+ *
+ *   correct     matches the document — INCLUDING a correctly-empty field
+ *   wrong       a value is present and does not match
+ *   missing     the document has a value, the model left it blank
+ *   unreadable  the scan is illegible: excluded from the denominator, because
+ *               scoring it either way blames the pipeline for a scan defect
+ */
+export type GoldVerdict = 'correct' | 'wrong' | 'missing' | 'unreadable';
+
+export interface GoldLabel {
+    id: string;
+    batch: string;
+    file_id: string;
+    job_id: string | null;
+    section_result_id: string;
+    slug: string;
+    field_path: string;
+    /** Frozen when the batch was seeded — the value actually being judged. */
+    extracted_value: string | null;
+    qa_ran: boolean;
+    verdict: GoldVerdict | null;
+    true_value: string | null;
+    notes: string | null;
+    reviewed_by: string | null;
+    reviewed_by_email?: string | null;
+    reviewed_at: string | null;
+    /** The value now. Differs from extracted_value once the record changes. */
+    current_value?: string | null;
+    /** Re-extracted or QA-applied since seeding — judge with care. */
+    drifted?: boolean;
+}
+
+export interface GoldBatch {
+    batch: string;
+    slug: string;
+    n_sections: number;
+    per_file: number;
+    seed: number;
+    field_mode: string;
+    include_qad: boolean;
+    notes: string | null;
+    created_at: string;
+    fields_total: string | number;
+    fields_done: string | number;
+}
+
+export interface GoldBatchProgress {
+    batch: string;
+    slug: string;
+    fields_total: number;
+    fields_done: number;
+    sections_total: number;
+    sections_done: number;
+    files_total: number;
+    unreadable: number;
+}
+
+export interface GoldQueueEntry {
+    job_id: string | null;
+    file_id: string;
+    filename: string | null;
+    section_result_id: string;
+    pending: number;
+    total: number;
+}
+
 // ── Section-level verification ──
 export type SectionVerificationStatus = 'pending' | 'approved' | 'rejected' | 'in_review';
 
@@ -2165,6 +2237,77 @@ class ApiClient {
             method: 'PUT',
             body: JSON.stringify({ adminVerified, customerVerified }),
         });
+    }
+
+    // ── Gold-set review ──
+    //
+    // request() SPREADS the server's JSON body into the returned object, so
+    // callers read `res.batches` / `res.labels`, NOT `res.data.*` — same as
+    // the QA endpoints above. The generic below names the payload for
+    // readers; it does not nest it. (ApiResponse carries an `any` index
+    // signature, so `res.data?.batches` compiles happily and is always
+    // undefined at runtime — that mistake cost an afternoon.)
+    //
+    // Human verdicts on every field in a stratified sample, the correct ones
+    // included. Those negatives are what per-field accuracy needs and what
+    // production data can never supply: section_qa_findings only ever records
+    // errors somebody caught, so it has no denominator.
+
+    /** Gold rows for one file in a batch, each with the live value for drift. */
+    async getGoldLabels(
+        fileId: string,
+        batch: string,
+    ): Promise<ApiResponse<{ labels: GoldLabel[] }>> {
+        return this.request(
+            `/files/${encodeURIComponent(fileId)}/gold-labels?batch=${encodeURIComponent(batch)}`,
+        );
+    }
+
+    /**
+     * Record a verdict on one or more rows — or pass `null` to send them back
+     * to pending. Judging a whole object or array sends every seeded leaf
+     * beneath it, so the row count is identical to judging them one by one.
+     */
+    async setGoldVerdicts(
+        fileId: string,
+        ids: string[],
+        verdict: GoldVerdict | null,
+        opts: { trueValue?: string | null; notes?: string | null } = {},
+    ): Promise<ApiResponse<{ labels?: GoldLabel[]; cleared?: number }>> {
+        return this.request(`/files/${encodeURIComponent(fileId)}/gold-labels`, {
+            method: 'PATCH',
+            body: JSON.stringify({ ids, verdict, ...opts }),
+        });
+    }
+
+    /** Label a field the sample never drew; lands in the unscored `adhoc` batch. */
+    async createAdhocGoldLabel(
+        fileId: string,
+        payload: {
+            jobId?: string | null;
+            sectionResultId: string;
+            slug: string;
+            fieldPath: string;
+            verdict: GoldVerdict;
+            trueValue?: string | null;
+            notes?: string | null;
+        },
+    ): Promise<ApiResponse<{ label: GoldLabel }>> {
+        return this.request(`/files/${encodeURIComponent(fileId)}/gold-labels`, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+    }
+
+    async listGoldBatches(): Promise<ApiResponse<{ batches: GoldBatch[] }>> {
+        return this.request('/gold-batches');
+    }
+
+    /** The review queue (ordered by file, so the PDF loads once) plus progress. */
+    async getGoldBatchQueue(
+        batch: string,
+    ): Promise<ApiResponse<{ queue: GoldQueueEntry[]; progress: GoldBatchProgress }>> {
+        return this.request(`/gold-batches/${encodeURIComponent(batch)}/queue`);
     }
 
     // ── Section-level verification ──

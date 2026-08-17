@@ -5,7 +5,7 @@ import { App as AntdApp, ConfigProvider, theme as antdTheme } from "antd";
 import { openSearchPanel } from "@codemirror/search";
 import type { ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import JsonCodeEditor from "./core/JsonCodeEditor";
-import JsonTreeView from "./core/JsonTreeView";
+import JsonTreeView, { type JsonTreeReview } from "./core/JsonTreeView";
 import JsonDiffView from "./core/JsonDiffView";
 import Toolbar from "./core/Toolbar";
 import StatusBar from "./core/StatusBar";
@@ -35,6 +35,11 @@ export interface JsonViewerProps extends JsonViewerCommonProps {
   withSaveCancel?: boolean;
   /** dot.path -> field description; shows a hover tooltip on keys (tree mode). */
   descriptions?: Record<string, string>;
+  /**
+   * Gold-set review controls on tree nodes. Tree mode only — code mode is a
+   * text editor, and there is no node to hang a verdict on.
+   */
+  review?: JsonTreeReview;
 }
 
 function deriveMode(opts: {
@@ -97,6 +102,7 @@ const JsonViewer: React.FC<JsonViewerProps> = (props) => {
     bodyClassName,
     withSaveCancel,
     descriptions,
+    review,
   } = props;
 
   const editor = useJsonEditor({
@@ -343,6 +349,7 @@ const JsonViewer: React.FC<JsonViewerProps> = (props) => {
                     theme={themeMode}
                     emptyText={emptyText}
                     descriptions={descriptions}
+                    review={review}
                   />
                 )}
               </>

@@ -140,3 +140,26 @@
   height: 28px;
   line-height: 26px;
 }
+
+/* ── Gold-set review ──
+   A file that contributed sections to the active gold batch. The tint is
+   deliberately faint: it marks membership in a sample, it is not a status
+   anyone needs to act on, and 42 loud rows would drown the processing
+   states this table exists to show. Done files fade further, so what is
+   left to review stands out on its own. */
+.goldRow > td {
+  background-color: #fffbeb !important;
+}
+
+.goldRow:hover > td {
+  background-color: #fef3c7 !important;
+}
+
+.goldRowDone > td {
+  background-color: #fefce8 !important;
+  opacity: 0.72;
+}
+
+.goldRowDone:hover > td {
+  background-color: #fef9c3 !important;
+}

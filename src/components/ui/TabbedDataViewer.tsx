@@ -25,6 +25,7 @@ import {
   ChevronRight,
   Clock,
   GripVertical,
+  ClipboardCheck,
   Loader2,
   LocateFixed,
   MessageSquare,
@@ -46,6 +47,14 @@ import {
 } from "antd";
 import type { MenuProps } from "antd";
 import { JsonViewer } from "@/components/json";
+import type { JsonTreeReview } from "@/components/json/core/JsonTreeView";
+import GoldReviewBar from "@/components/gold/GoldReviewBar";
+import { useAuth } from "@/contexts/AuthContext";
+import { canPerformAdminActions } from "@/utils/roleUtils";
+import GoldReviewSummary from "@/components/gold/GoldReviewSummary";
+import { useGoldReview, goldKey } from "@/hooks/useGoldReview";
+import { useGoldMode } from "@/hooks/useGoldMode";
+import { seededLeavesUnder } from "@/lib/goldSetPaths";
 import {
   apiClient,
   isV2ResultEnvelope,
@@ -1203,7 +1212,7 @@ function SectionVerifyControls({
   );
 }
 
-type TabType = "results" | "markdown" | "compare" | "comments";
+type TabType = "results" | "markdown" | "compare" | "comments" | "gold";
 type MarkdownViewType = "full" | "pages" | "chunks";
 
 const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
@@ -1243,6 +1252,19 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
   const [newComment, setNewComment] = useState("");
   const [addingComment, setAddingComment] = useState(false);
   const [fallbackSectionIdx, setFallbackSectionIdx] = useState<number>(0);
+
+  // ── Gold-set review ──
+  // Shared with the file table so one toggle drives both: the table tints the
+  // sampled files, this tints the sampled sections and hangs verdict controls
+  // on the tree. Off (batch === null) unless a batch is picked.
+  const { batch: goldBatch, setBatch: setGoldBatch, enabled: goldMode } =
+    useGoldMode();
+  // Gold review is internal accuracy measurement, not a customer feature —
+  // the same admin gate the file table's controls use. Without it every
+  // client would see a "grade our extraction" toggle on their own documents.
+  const { user: goldUser } = useAuth();
+  const isGoldReviewer = canPerformAdminActions(goldUser);
+  const [goldOpenPath, setGoldOpenPath] = useState<string | null>(null);
 
   // Per-section (v2 envelope) detection. The picker only renders when both
   // (a) the data shape matches and (b) there's at least one section to pick.
@@ -1378,6 +1400,67 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
 
   const selectedSection =
     sectionEntries[selectedSectionIdx] ?? sectionEntries[0];
+
+  // ── Gold-set review ──
+  //
+  // Judging happens on the tree nodes themselves, but SCOPE comes from the
+  // seeded batch, never from what the reviewer happens to hover. That split is
+  // the whole point: a denominator made of "whatever somebody remembered to
+  // check" is the same missing-denominator problem that makes production data
+  // useless for accuracy in the first place.
+  const gold = useGoldReview({
+    fileId,
+    batch: goldBatch,
+    enabled: goldMode,
+  });
+
+  const goldSectionId = selectedSection?.sectionResultId ?? null;
+  const goldSeededPaths = useMemo(
+    () => gold.seededPathsFor(goldSectionId),
+    [gold, goldSectionId],
+  );
+  const goldSectionProgress = useMemo(
+    () => gold.progressFor(goldSectionId),
+    [gold, goldSectionId],
+  );
+
+  /**
+   * Which of THIS file's sections the batch drew, and whether each is finished.
+   * The picker colours from this, so a reviewer opening a file can see at a
+   * glance which sections are theirs to judge — a file usually contributes one
+   * or two of its sections, never all of them.
+   */
+  const goldSectionState = useMemo(() => {
+    const map = new Map<string, { pending: number; total: number }>();
+    if (!goldMode) return map;
+    for (const label of gold.labels) {
+      const prev = map.get(label.section_result_id) ?? { pending: 0, total: 0 };
+      map.set(label.section_result_id, {
+        pending: prev.pending + (label.verdict ? 0 : 1),
+        total: prev.total + 1,
+      });
+    }
+    return map;
+  }, [gold.labels, goldMode]);
+
+  const goldReview = useMemo<JsonTreeReview | undefined>(() => {
+    if (!goldMode || !goldSectionId || goldSeededPaths.size === 0) return undefined;
+    return {
+      labelFor: (path) => gold.byKey.get(goldKey(goldSectionId, path)),
+      targetCountFor: (path) => seededLeavesUnder(path, goldSeededPaths).length,
+      savingIds: gold.saving,
+      onReview: (path, verdict, opts) => {
+        void gold.review(goldSectionId, path, verdict, opts ?? {});
+      },
+      openPath: goldOpenPath,
+      onOpenPathChange: setGoldOpenPath,
+    };
+  }, [gold, goldMode, goldOpenPath, goldSectionId, goldSeededPaths]);
+
+  // Judging a section shouldn't leave a popover hanging over the next one.
+  useEffect(() => {
+    setGoldOpenPath(null);
+  }, [goldSectionId]);
 
   // First page of the selected section — used by the "scroll PDF" control.
   const selectedSectionPage =
@@ -3053,10 +3136,11 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
     />
   );
 
-  const jsonViewerEl = (
+  const jsonViewerCore = (
     <JsonViewer
       text={editableJson}
       descriptions={fieldDescriptions}
+      review={goldReview}
       onChange={({ text, isValid, error }) => {
         setEditableJson(text);
         setJsonError(isValid ? null : (error ?? "Invalid JSON"));
@@ -3100,6 +3184,29 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
       saveLabel={saveLabel}
       saving={isSaving}
     />
+  );
+
+  // The review switch rides directly above the tree in both of the JSON
+  // viewer's homes (host side-column layout and the stacked fallback), so it
+  // is wrapped in here rather than added at each call site.
+  const jsonViewerEl = (
+    <>
+      {isV2 && isGoldReviewer && (
+        <GoldReviewBar
+          enabled={goldMode}
+          onEnabledChange={(on) => {
+            if (!on) setGoldBatch(null);
+          }}
+          batch={goldBatch}
+          onBatchChange={setGoldBatch}
+          section={goldSectionProgress}
+          currentSectionId={goldSectionId}
+          loading={gold.loading}
+          error={gold.error}
+        />
+      )}
+      <div className="flex-1 min-h-0 flex flex-col">{jsonViewerCore}</div>
+    </>
   );
 
   return (
@@ -3162,7 +3269,31 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                         value={entry.globalIndex}
                         label={`${entry.recordId ?? ""} ${formatSectionOptionLabel(entry, verificationMap)}`}
                       >
-                        {formatSectionOptionLabel(entry, verificationMap)}
+                        {(() => {
+                          const g = entry.sectionResultId
+                            ? goldSectionState.get(entry.sectionResultId)
+                            : undefined;
+                          const text = formatSectionOptionLabel(
+                            entry,
+                            verificationMap,
+                          );
+                          if (!g) return text;
+                          return (
+                            <span className="flex items-center gap-1.5">
+                              <span
+                                className={
+                                  g.pending === 0
+                                    ? "w-1.5 h-1.5 rounded-full bg-amber-300 shrink-0"
+                                    : "w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"
+                                }
+                              />
+                              <span className="text-amber-900">{text}</span>
+                              <span className="text-[10px] text-amber-600 tabular-nums">
+                                {g.total - g.pending}/{g.total}
+                              </span>
+                            </span>
+                          );
+                        })()}
                       </Select.Option>
                     ))}
                 </Select.OptGroup>
@@ -3325,6 +3456,24 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               }`}
             >
               Compare
+            </button>
+          )}
+          {/* Only once review mode is on and this file actually carries gold
+              rows — an empty tab on every file would be noise. */}
+          {goldMode && gold.labels.length > 0 && (
+            <button
+              onClick={() => setResultTab("gold")}
+              className={`px-4 py-2 text-sm font-medium transition-colors duration-200 flex items-center space-x-1 ${
+                activeTab === "gold"
+                  ? "text-blue-600 border-b-2 border-blue-600 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <ClipboardCheck className="w-3 h-3" />
+              <span>
+                Review (
+                {gold.labels.filter((l) => !!l.verdict).length}/{gold.labels.length})
+              </span>
             </button>
           )}
           {(comments.length > 0 || onAddComment) && (
@@ -3914,6 +4063,22 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
                 height="100%"
               />
             </div>
+          )}
+
+          {activeTab === "gold" && (
+            <GoldReviewSummary
+              labels={gold.labels}
+              currentSectionId={selectedSection?.sectionResultId ?? null}
+              onJumpToSection={(sectionResultId) => {
+                const idx = sectionEntries.findIndex(
+                  (entry) => entry.sectionResultId === sectionResultId,
+                );
+                if (idx >= 0) {
+                  selectSectionIdx(idx);
+                  setResultTab("results");
+                }
+              }}
+            />
           )}
 
           {activeTab === "comments" && (

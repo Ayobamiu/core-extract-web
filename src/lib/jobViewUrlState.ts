@@ -1,6 +1,12 @@
 export type ViewerPane = "results" | "routing" | "processing";
 
-export type ViewerResultTab = "results" | "markdown" | "compare" | "comments";
+export type ViewerResultTab =
+  | "results"
+  | "markdown"
+  | "compare"
+  | "comments"
+  /** Gold-set review: every verdict recorded for this file. */
+  | "gold";
 
 export const DEFAULT_PAGE = 1;
 export const DEFAULT_PAGE_SIZE = 20;
@@ -22,6 +28,7 @@ const VALID_VIEWS = new Set<ViewerResultTab>([
   "markdown",
   "compare",
   "comments",
+  "gold",
 ]);
 
 function parsePositiveInt(raw: string | null, fallback: number): number {

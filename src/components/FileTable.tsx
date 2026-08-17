@@ -38,7 +38,7 @@ import {
   FileTextOutlined,
   EllipsisOutlined,
 } from "@ant-design/icons";
-import { JobFile, ProcessingConfig, type ProcessingEvent } from "@/lib/api";
+import { JobFile, ProcessingConfig, type ProcessingEvent, type GoldQueueEntry } from "@/lib/api";
 import TabbedDataViewer from "@/components/ui/TabbedDataViewer";
 import ProcessingStatusChip from "@/components/file/ProcessingStatusChip";
 import { apiClient } from "@/lib/api";
@@ -58,6 +58,9 @@ import { Loader, MessageSquare, SearchIcon } from "lucide-react";
 import { SignalIcon } from "@heroicons/react/24/outline";
 import StatusIndicator from "@/components/ui/StatusIndicator";
 import type { ViewerPane, ViewerResultTab } from "@/lib/jobViewUrlState";
+
+import GoldFileStrip, { GoldReviewToggle } from "@/components/gold/GoldFileStrip";
+import { useGoldMode } from "@/hooks/useGoldMode";
 
 const { TextArea } = Input;
 
@@ -280,6 +283,9 @@ const FileTable: React.FC<FileTableProps> = ({
   const [loading, setLoading] = useState(false);
   // Phase 6: search text state (debounced before sending to server)
   const [searchText, setSearchText] = useState("");
+  // Gold-set review: `batch` non-null tints this job's sampled files.
+  const gold = useGoldMode();
+  const [goldQueue, setGoldQueue] = useState<GoldQueueEntry[]>([]);
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -321,6 +327,42 @@ const FileTable: React.FC<FileTableProps> = ({
   }, [urlPage, urlPageSize]);
 
   // AJAX fetch function — Phase 6: passes search, filter & sort to server
+  // The sampled files for the active batch, so rows can be tinted in place.
+  // Server-side pagination means the 42 sampled files are scattered over ~10
+  // pages of 181 — the tint says "this one is in the sample", and the strip
+  // above the table is what actually moves you to the next unjudged section.
+  useEffect(() => {
+    if (!gold.batch) {
+      setGoldQueue([]);
+      return;
+    }
+    let cancelled = false;
+    apiClient
+      .getGoldBatchQueue(gold.batch)
+      .then((res) => {
+        if (!cancelled) setGoldQueue(res.queue ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setGoldQueue([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gold.batch, activeFileId]);
+
+  const goldByFile = useMemo(() => {
+    const map = new Map<string, { pending: number; total: number; sections: number }>();
+    for (const entry of goldQueue) {
+      const prev = map.get(entry.file_id) ?? { pending: 0, total: 0, sections: 0 };
+      map.set(entry.file_id, {
+        pending: prev.pending + entry.pending,
+        total: prev.total + entry.total,
+        sections: prev.sections + 1,
+      });
+    }
+    return map;
+  }, [goldQueue]);
+
   const fetchData = async () => {
     if (fetchAbortRef.current) {
       fetchAbortRef.current.abort();
@@ -2234,6 +2276,12 @@ const FileTable: React.FC<FileTableProps> = ({
               {isGoingLive ? "Going Live..." : "Go Live"}
             </Button>
           )}
+          {isAdmin && (
+            <GoldReviewToggle
+              batch={gold.batch}
+              onBatchChange={gold.setBatch}
+            />
+          )}
           {onRefresh && (
             <Button
               size="small"
@@ -2295,30 +2343,45 @@ const FileTable: React.FC<FileTableProps> = ({
   };
 
   const createTableComponent = () => (
-    <Table<JobFile>
-      title={renderTableHeader}
-      columns={columns}
-      dataSource={data}
-      rowKey="id"
-      rowSelection={rowSelection}
-      pagination={{
-        ...tableParams.pagination,
-        showSizeChanger: true,
-        pageSizeOptions: ["10", "20", "50", "100"],
-        showQuickJumper: true,
-        showTotal: (total, range) =>
-          `${range[0]}-${range[1]} of ${total} items`,
-      }}
-      loading={loading}
-      onChange={handleTableChange}
-      size="small"
-      scroll={{
-        x: "max-content",
-        // Calculate scroll height: 100vh - (top bar 64px + table title header 40px + pagination 40px)
-        y: "calc(100vh - 64px - 40px - 110px)",
-      }}
-      className={styles.fileTable}
-    />
+    <>
+      {isAdmin && gold.batch && (
+        <GoldFileStrip
+          batch={gold.batch}
+          queue={goldQueue}
+          jobId={jobId}
+          activeSectionId={viewerSectionId}
+        />
+      )}
+      <Table<JobFile>
+        title={renderTableHeader}
+        columns={columns}
+        dataSource={data}
+        rowKey="id"
+        rowSelection={rowSelection}
+        rowClassName={(record) => {
+          const g = goldByFile.get(record.id);
+          if (!g) return "";
+          return g.pending === 0 ? styles.goldRowDone : styles.goldRow;
+        }}
+        pagination={{
+          ...tableParams.pagination,
+          showSizeChanger: true,
+          pageSizeOptions: ["10", "20", "50", "100"],
+          showQuickJumper: true,
+          showTotal: (total, range) =>
+            `${range[0]}-${range[1]} of ${total} items`,
+        }}
+        loading={loading}
+        onChange={handleTableChange}
+        size="small"
+        scroll={{
+          x: "max-content",
+          // Calculate scroll height: 100vh - (top bar 64px + table title header 40px + pagination 40px)
+          y: "calc(100vh - 64px - 40px - 110px)",
+        }}
+        className={styles.fileTable}
+      />
+    </>
   );
 
   // Calculate file stats from summary

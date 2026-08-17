@@ -5,6 +5,34 @@ import JsonView from "@uiw/react-json-view";
 import { Tooltip } from "antd";
 import type { JsonValue } from "../types";
 import { descriptionForPath } from "@/lib/schemaDescriptions";
+import { joinFieldPath } from "@/lib/goldSetPaths";
+import type { GoldLabel, GoldVerdict } from "@/lib/api";
+import GoldVerdictControl from "@/components/gold/GoldVerdictControl";
+
+/**
+ * Gold-set review, hung off the tree.
+ *
+ * Reviewing in the tree rather than in a separate checklist means a field is
+ * judged where it actually lives — at any depth, inside arrays, next to its
+ * siblings. What the tree must NOT become is the thing that decides scope: the
+ * seeded batch decides that, and `labelFor` is how a node learns it was
+ * sampled. A field nobody sampled simply gets no control.
+ */
+export interface JsonTreeReview {
+  /** The seeded label for a path, if the sample drew it. */
+  labelFor: (fieldPath: string) => GoldLabel | undefined;
+  /** Seeded leaves a verdict on this path would write (0 = nothing to judge). */
+  targetCountFor: (fieldPath: string) => number;
+  savingIds: Set<string>;
+  onReview: (
+    fieldPath: string,
+    verdict: GoldVerdict | null,
+    opts?: { trueValue?: string | null; notes?: string | null },
+  ) => void;
+  /** Path whose popover is open — lets the keyboard fast path drive the tree. */
+  openPath?: string | null;
+  onOpenPathChange?: (path: string | null) => void;
+}
 
 export interface JsonTreeViewProps {
   value: JsonValue;
@@ -13,6 +41,8 @@ export interface JsonTreeViewProps {
   emptyText?: React.ReactNode;
   /** dot.path -> field description; renders a hover tooltip on matching keys. */
   descriptions?: Record<string, string>;
+  /** Present only in gold-set review mode. */
+  review?: JsonTreeReview;
 }
 
 const JsonTreeView: React.FC<JsonTreeViewProps> = ({
@@ -21,6 +51,7 @@ const JsonTreeView: React.FC<JsonTreeViewProps> = ({
   collapsed = 2,
   emptyText,
   descriptions,
+  review,
 }) => {
   const hasDescriptions = !!descriptions && Object.keys(descriptions).length > 0;
   const isObjectLike = useMemo(() => {
@@ -67,7 +98,7 @@ const JsonTreeView: React.FC<JsonTreeViewProps> = ({
             : {}),
         }}
       >
-        {hasDescriptions && (
+        {(hasDescriptions || !!review) && (
           <JsonView.KeyName
             render={(props, { keyName, keys }) => {
               const { children, ...rest } = props as React.HTMLAttributes<HTMLSpanElement> & {
@@ -79,9 +110,12 @@ const JsonTreeView: React.FC<JsonTreeViewProps> = ({
               const isIndex = typeof keyName === "number";
               const fullPath = ((keys as Array<string | number>) ??
                 (keyName != null ? [keyName as string | number] : [])) as Array<string | number>;
-              const desc = isIndex ? undefined : descriptionForPath(fullPath, descriptions!);
-              if (!desc) return <span {...rest}>{children}</span>;
-              return (
+              const desc =
+                isIndex || !hasDescriptions
+                  ? undefined
+                  : descriptionForPath(fullPath, descriptions!);
+
+              const keyEl = desc ? (
                 <Tooltip title={desc} mouseEnterDelay={0.3} placement="top">
                   <span
                     {...rest}
@@ -94,6 +128,35 @@ const JsonTreeView: React.FC<JsonTreeViewProps> = ({
                     {children}
                   </span>
                 </Tooltip>
+              ) : (
+                <span {...rest}>{children}</span>
+              );
+
+              if (!review) return keyEl;
+
+              // A path the sample never drew gets no control at all — that is
+              // what keeps the reviewer's attention on the drawn sample rather
+              // than on whatever happens to look interesting.
+              const path = joinFieldPath(fullPath);
+              const label = review.labelFor(path);
+              const targetCount = label ? 1 : review.targetCountFor(path);
+              if (targetCount === 0) return keyEl;
+
+              return (
+                <span className="inline-flex items-center">
+                  {keyEl}
+                  <GoldVerdictControl
+                    label={label}
+                    fieldPath={path}
+                    targetCount={targetCount}
+                    saving={!!label && review.savingIds.has(label.id)}
+                    onReview={review.onReview}
+                    open={review.openPath === path}
+                    onOpenChange={(next) =>
+                      review.onOpenPathChange?.(next ? path : null)
+                    }
+                  />
+                </span>
               );
             }}
           />
