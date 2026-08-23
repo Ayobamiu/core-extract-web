@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+// Marketing homepage is Vite on Vercel. That host reverse-proxies /try* here.
+// Allow /try and Next assets through; other paths still rewrite to /try in case
+// this app is ever pointed at coreextract.app without the Vercel proxy.
+
 function isMarketingHost(host: string) {
   const h = host.split(":")[0].toLowerCase();
   return h === "coreextract.app" || h === "www.coreextract.app";
