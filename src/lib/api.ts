@@ -762,6 +762,12 @@ export interface PreviewDataTable {
     schema: any;
     logo?: string;
     items_ids: string[];
+    /** Public link stops working at/after this time (null = no expiry). */
+    expires_at?: string | null;
+    /** 'active' | 'disabled' — disabled blocks access immediately. */
+    status?: string;
+    /** Optional message shown to visitors on the "access ended" page. */
+    access_note?: string | null;
     created_at: string;
     updated_at: string;
     item_count?: number;
@@ -802,7 +808,13 @@ export interface PreviewJobFile {
 }
 
 export interface PreviewAnalyticsReport {
-    preview: { id: string; name: string };
+    preview: {
+        id: string;
+        name: string;
+        status?: string;
+        expires_at?: string | null;
+        access_note?: string | null;
+    };
     periodDays: number;
     since: string;
     summary: {
@@ -949,12 +961,17 @@ class ApiClient {
                     }
                 }
 
-                // Return the error response instead of throwing
+                // Return the error response instead of throwing.
+                // Spread the parsed body so machine-readable fields (e.g.
+                // code: 'PREVIEW_EXPIRED', expiresAt, accessNote) survive.
                 return {
+                    ...data,
                     status: 'error',
                     success: false,
                     message: data.message || data.error || `HTTP error! status: ${response.status}`,
-                    error: data.error || data.message
+                    error: data.error || data.message,
+                    code: data.code,
+                    statusCode: response.status
                 };
             }
 

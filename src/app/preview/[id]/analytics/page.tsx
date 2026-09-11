@@ -1,18 +1,23 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   Button,
   Card,
+  DatePicker,
   Empty,
+  Input,
+  Popconfirm,
   Select,
+  Space,
   Spin,
   Statistic,
   Table,
   Tag,
   Typography,
+  notification,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
@@ -22,6 +27,7 @@ import SidebarLayout from "@/components/layout/SidebarLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { canPerformAdminActions } from "@/utils/roleUtils";
 import moment from "moment";
+import dayjs, { Dayjs } from "dayjs";
 
 const { Text, Title } = Typography;
 
@@ -46,6 +52,57 @@ export default function PreviewAnalyticsPage() {
   const [report, setReport] = useState<PreviewAnalyticsReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Link access-control state (edited against report.preview)
+  const [expiresAt, setExpiresAt] = useState<Dayjs | null>(null);
+  const [accessNote, setAccessNote] = useState("");
+  const [savingAccess, setSavingAccess] = useState(false);
+
+  // Derived access status for the badge
+  const accessStatus = useMemo(() => {
+    const p = report?.preview;
+    if (!p) return null;
+    if (p.status && p.status !== "active")
+      return { color: "red", label: "Disabled" };
+    if (p.expires_at && new Date(p.expires_at).getTime() <= Date.now())
+      return { color: "orange", label: "Expired" };
+    return { color: "green", label: "Active" };
+  }, [report]);
+
+  // Sync editors whenever the report (re)loads
+  useEffect(() => {
+    const p = report?.preview;
+    if (!p) return;
+    setExpiresAt(p.expires_at ? dayjs(p.expires_at) : null);
+    setAccessNote(p.access_note || "");
+  }, [report]);
+
+  const saveAccess = async (updates: {
+    expires_at?: string | null;
+    status?: string;
+    access_note?: string | null;
+  }) => {
+    try {
+      setSavingAccess(true);
+      const res = await apiClient.updatePreview(previewId, updates);
+      if (res.success) {
+        notification.success({ message: "Preview access updated" });
+        await load();
+      } else {
+        notification.error({
+          message: "Failed to update access",
+          description: res.message,
+        });
+      }
+    } catch (e: unknown) {
+      notification.error({
+        message: "Failed to update access",
+        description: e instanceof Error ? e.message : undefined,
+      });
+    } finally {
+      setSavingAccess(false);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!previewId) return;
@@ -259,6 +316,93 @@ export default function PreviewAnalyticsPage() {
             <Empty description={error} />
           ) : report ? (
             <>
+              <Card size="small" title="Link access">
+                <div className="flex flex-wrap items-center gap-3">
+                  {accessStatus && (
+                    <Tag color={accessStatus.color}>{accessStatus.label}</Tag>
+                  )}
+                  <Text type="secondary" className="text-sm">
+                    {report.preview.expires_at
+                      ? `Access ends ${moment(report.preview.expires_at).format("MMM D, YYYY [at] h:mm A")}`
+                      : "No expiry set — link works indefinitely"}
+                  </Text>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <DatePicker
+                    showTime
+                    size="small"
+                    value={expiresAt}
+                    onChange={(v) => setExpiresAt(v)}
+                    placeholder="Set access end date"
+                    style={{ width: 220 }}
+                  />
+                  <Button
+                    size="small"
+                    type="primary"
+                    loading={savingAccess}
+                    onClick={() =>
+                      saveAccess({
+                        expires_at: expiresAt
+                          ? expiresAt.toDate().toISOString()
+                          : null,
+                      })
+                    }
+                  >
+                    Save expiry
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={!report.preview.expires_at || savingAccess}
+                    onClick={() => saveAccess({ expires_at: null })}
+                  >
+                    Clear expiry
+                  </Button>
+                  {report.preview.status === "active" ? (
+                    <Popconfirm
+                      title="Disable this preview link?"
+                      description="Visitors immediately lose access. You can re-enable it anytime."
+                      okText="Disable"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => saveAccess({ status: "disabled" })}
+                    >
+                      <Button size="small" danger loading={savingAccess}>
+                        Disable link now
+                      </Button>
+                    </Popconfirm>
+                  ) : (
+                    <Button
+                      size="small"
+                      loading={savingAccess}
+                      onClick={() => saveAccess({ status: "active" })}
+                    >
+                      Re-enable link
+                    </Button>
+                  )}
+                </div>
+                <div className="mt-3">
+                  <Text type="secondary" className="text-xs block mb-1">
+                    Message shown to visitors when access ends (optional)
+                  </Text>
+                  <Space.Compact className="w-full max-w-xl">
+                    <Input
+                      size="small"
+                      value={accessNote}
+                      onChange={(e) => setAccessNote(e.target.value)}
+                      placeholder='e.g. "Your trial has ended — email us to extend access."'
+                    />
+                    <Button
+                      size="small"
+                      loading={savingAccess}
+                      onClick={() =>
+                        saveAccess({ access_note: accessNote || null })
+                      }
+                    >
+                      Save
+                    </Button>
+                  </Space.Compact>
+                </div>
+              </Card>
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <Card size="small">
                   <Statistic
