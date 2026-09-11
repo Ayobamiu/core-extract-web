@@ -394,6 +394,15 @@ const PreviewPage: React.FC = () => {
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Access-control state: set when the API blocks the link (410 expired /
+  // disabled). Distinct from `error` so we render a proper "access ended"
+  // page instead of a generic failure.
+  const [accessBlock, setAccessBlock] = useState<{
+    code: string;
+    message: string;
+    expiresAt?: string | null;
+    accessNote?: string | null;
+  } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(initialUrl.page);
   const [pageSize, setPageSize] = useState(initialUrl.pageSize);
@@ -769,6 +778,34 @@ const PreviewPage: React.FC = () => {
     [],
   );
 
+  // Returns true when an API response is an access-control block (410):
+  // clears this preview's cached pages (so stale data can't keep rendering)
+  // and records the block for the "access ended" page state.
+  const handleAccessBlock = useCallback(
+    (resp: {
+      code?: string;
+      message?: string;
+      expiresAt?: string | null;
+      accessNote?: string | null;
+    }): boolean => {
+      if (
+        resp?.code === "PREVIEW_EXPIRED" ||
+        resp?.code === "PREVIEW_DISABLED"
+      ) {
+        clearPreviewCache(previewId);
+        setAccessBlock({
+          code: resp.code,
+          message: resp.message || "This preview is no longer available.",
+          expiresAt: resp.expiresAt,
+          accessNote: resp.accessNote,
+        });
+        return true;
+      }
+      return false;
+    },
+    [previewId],
+  );
+
   // Fetch preview data with pagination and caching
   const fetchPreviewData = useCallback(
     async (forceRefresh = false) => {
@@ -796,7 +833,7 @@ const PreviewPage: React.FC = () => {
             setFilesTotal(resp.data.pagination.total);
             setTotalItems(resp.data.pagination.total);
             setTotalPages(resp.data.pagination.totalPages);
-          } else {
+          } else if (!handleAccessBlock(resp)) {
             setError("Failed to load files");
           }
           setLoading(false);
@@ -858,7 +895,7 @@ const PreviewPage: React.FC = () => {
               searchTerm || undefined,
             );
           }
-        } else {
+        } else if (!handleAccessBlock(response)) {
           setError("Failed to load preview data");
         }
       } catch (err) {
@@ -868,7 +905,7 @@ const PreviewPage: React.FC = () => {
         setLoading(false);
       }
     },
-    [previewId, currentPage, pageSize, searchTerm, view],
+    [previewId, currentPage, pageSize, searchTerm, view, handleAccessBlock],
   );
 
   // Reset to the first page whenever the rail view changes (but not on the
@@ -1135,6 +1172,40 @@ const PreviewPage: React.FC = () => {
     }
   };
 
+  // Access ended (expired or disabled link) — clean full-page state.
+  // No data is rendered, and the local cache was already cleared.
+  if (accessBlock) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-center min-h-screen px-6">
+          <div className="text-center max-w-md">
+            <ClockCircleOutlined className="text-4xl text-gray-300 mb-6" />
+            <h1 className="text-xl font-semibold text-gray-900 mb-3">
+              {accessBlock.code === "PREVIEW_EXPIRED"
+                ? "Access to this preview has ended"
+                : "This preview is no longer available"}
+            </h1>
+            {accessBlock.code === "PREVIEW_EXPIRED" &&
+              accessBlock.expiresAt && (
+                <p className="text-sm text-gray-500 mb-3">
+                  Access ended on{" "}
+                  {new Date(accessBlock.expiresAt).toLocaleDateString(
+                    undefined,
+                    { year: "numeric", month: "long", day: "numeric" },
+                  )}
+                  .
+                </p>
+              )}
+            <p className="text-gray-600">
+              {accessBlock.accessNote ||
+                "If you need continued access, please contact the team that shared this link with you."}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Only show error if we're not loading and there's actually an error
   if (error && !loading && !previewData) {
     return (
@@ -1231,6 +1302,28 @@ const PreviewPage: React.FC = () => {
                 </p>
               )}
             </div>
+
+            {/* Access-expiry notice (public links with an end date) */}
+            {previewData.preview.expires_at && (
+              <>
+                <div className="h-6 w-px bg-gray-300"></div>
+                <Tooltip title="This link stops working after this date">
+                  <span className="flex items-center space-x-1.5 text-xs text-gray-500">
+                    <ClockCircleOutlined />
+                    <span>
+                      Available until{" "}
+                      {new Date(
+                        previewData.preview.expires_at,
+                      ).toLocaleDateString(undefined, {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })}
+                    </span>
+                  </span>
+                </Tooltip>
+              </>
+            )}
 
             {/* QA Summary Badge */}
             {!statsLoading && qaStats.total > 0 && (
