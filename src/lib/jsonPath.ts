@@ -227,7 +227,7 @@ export interface BulkOutcome {
   after?: unknown;
 }
 
-const parseRowValue = (rv: unknown): unknown => {
+export const parseRowValue = (rv: unknown): unknown => {
   if (rv == null) return null;
   if (typeof rv !== "string") return rv; // jsonb already gives an object
   try {
@@ -236,6 +236,33 @@ const parseRowValue = (rv: unknown): unknown => {
     return rv;
   }
 };
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * Merge an `update_row` patch onto the row it targets.
+ *
+ * QA is instructed to "omit fields you cannot read rather than guessing"
+ * (ai/src/config/openaiPrompts.ts), so `row_value` carries only the fields QA
+ * actually verified against the page — it is a PATCH, not a whole row. Writing
+ * it in place of the row therefore deleted every field QA stayed silent about.
+ * On 2026-09-11 that emptied 47 `core_samples` rows (26 keys down to 5) in a
+ * live client preview, discarding porosity, saturation and permeability the
+ * extractor had read correctly.
+ *
+ * Shallow merge is the right semantic here: rows in these schemas are flat, a
+ * key present in the patch wins (including an explicit `null`, which is how QA
+ * clears a field), and a key the patch omits is left untouched. A deep merge
+ * would be surprising for array-valued fields such as `flags`, where a patch
+ * means to replace the array wholesale.
+ *
+ * Falls back to plain replacement when either side is not a plain object.
+ */
+export function mergeRowValue(before: unknown, patch: unknown): unknown {
+  if (!isPlainObject(before) || !isPlainObject(patch)) return patch;
+  return { ...before, ...patch };
+}
 
 /**
  * Apply a set of open findings to `doc` in one pass, in an order that keeps
@@ -323,13 +350,15 @@ export function computeBulkApply(
           push({ label: `${f.field_path}[${idx}]`, status: "skipped", note: "no row_value" });
           continue;
         }
-        cur = setByPath(cur, `${f.field_path}[${idx}]`, row);
+        // row_value is a patch, not a whole row — see mergeRowValue.
+        const merged = mergeRowValue(before, row);
+        cur = setByPath(cur, `${f.field_path}[${idx}]`, merged);
         push({
           label: `${f.field_path}[${idx}]`,
           status: relocated ? "relocated" : "applied",
           note: relocated ? `row moved from ${f.row_index} to ${idx}` : undefined,
           before,
-          after: row,
+          after: merged,
         });
       }
       continue;

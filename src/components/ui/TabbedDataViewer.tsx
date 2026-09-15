@@ -15,6 +15,8 @@ import {
   insertAtPath,
   removeAtPath,
   resolveRowAnchor,
+  parseRowValue,
+  mergeRowValue,
   APPLYABLE_ISSUE_TYPES,
   computeBulkApply,
   type BulkOutcome,
@@ -2619,7 +2621,13 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
               : setByPath(
                   parsed,
                   `${finding.field_path}[${idx}]`,
-                  finding.row_value,
+                  // row_value is a patch of the fields QA could verify, not a
+                  // whole row — merge it onto the existing row so untouched
+                  // fields survive. See mergeRowValue in @/lib/jsonPath.
+                  mergeRowValue(
+                    getByPath(parsed, `${finding.field_path}[${idx}]`),
+                    parseRowValue(finding.row_value),
+                  ),
                 );
           setEditableJson(JSON.stringify(updated, null, 2));
           setJsonError(null);
@@ -2654,7 +2662,10 @@ const TabbedDataViewer: React.FC<TabbedDataViewerProps> = ({
             parsed,
             finding.field_path,
             finding.row_index,
-            finding.row_value,
+            // Parse defensively: row_value arrives as jsonb (an object) or, on
+            // some paths, still JSON-encoded. computeBulkApply already does
+            // this; without it a string row lands in the array verbatim.
+            parseRowValue(finding.row_value),
           );
           setEditableJson(JSON.stringify(updated, null, 2));
           setJsonError(null);
