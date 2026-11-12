@@ -10,12 +10,15 @@ import type { JsonSchemaNode } from "@/components/record/recordSchema";
 import {
   getDemoPdfUrl,
   getDemoSession,
+  loadDemoEmail,
   loadDemoToken,
   submitDemoLead,
+  trackDemoEvent,
   type DemoSession,
 } from "@/lib/demoApi";
 import DemoThumbnails from "@/components/demo/DemoThumbnails";
-import { COMPANY_EMAIL_ERROR, isCompanyEmail } from "@/lib/companyEmail";
+import DemoReviewOffer from "@/components/demo/DemoReviewOffer";
+import { INVALID_EMAIL_ERROR, isValidEmail } from "@/lib/companyEmail";
 
 const PdfViewer = dynamic(() => import("@/components/file/PdfViewer"), {
   ssr: false,
@@ -156,7 +159,20 @@ export default function DemoSessionPage() {
     setEmailError(message || null);
     setEmailSentTo(null);
     setDevDownloadUrl(null);
+    if (!email) setEmail(session?.leadEmail || loadDemoEmail() || "");
     setEmailOpen(true);
+    trackDemoEvent("download_modal_opened", { sessionId, token });
+  }
+
+  function closeEmailGate() {
+    if (!emailSentTo) {
+      trackDemoEvent("download_modal_closed", {
+        sessionId,
+        token,
+        detail: { typed: email.trim().length > 0 },
+      });
+    }
+    setEmailOpen(false);
   }
 
   function handleDownload() {
@@ -167,8 +183,8 @@ export default function DemoSessionPage() {
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!sessionId || !token) return;
-    if (!isCompanyEmail(email)) {
-      setEmailError(COMPANY_EMAIL_ERROR);
+    if (!isValidEmail(email)) {
+      setEmailError(INVALID_EMAIL_ERROR);
       return;
     }
     setEmailError(null);
@@ -285,21 +301,17 @@ export default function DemoSessionPage() {
         </section>
       )}
 
-      {failed && (
-        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800">
-          {session.error ||
-            "We couldn’t find a boring log or well record in this file. Email hello@coreextract.app and we’ll take a look."}
-        </p>
-      )}
-
-      {done && session.records.length === 0 && (
-        <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          We couldn’t find a boring log or well record in this file. Email{" "}
-          <a className="underline" href="mailto:hello@coreextract.app">
-            hello@coreextract.app
-          </a>{" "}
-          and we’ll take a look.
-        </p>
+      {token && (failed || (done && session.records.length === 0)) && (
+        <div className="mx-auto w-full max-w-xl">
+          <DemoReviewOffer
+            sessionId={sessionId}
+            token={token}
+            reason={failed ? "failed" : "empty"}
+            defaultEmail={session.leadEmail || loadDemoEmail()}
+            requestedEmail={session.reviewRequested ? session.leadEmail : null}
+            onRequested={() => void refresh()}
+          />
+        </div>
       )}
 
       {done && session.records.length > 0 && (
@@ -350,6 +362,20 @@ export default function DemoSessionPage() {
               </div>
             )}
           </div>
+
+          {token && session.quality !== "ok" && session.quality !== null && (
+            <div className="shrink-0 border-b border-neutral-200 px-3 py-2 sm:px-4">
+              <DemoReviewOffer
+                sessionId={sessionId}
+                token={token}
+                reason="thin"
+                compact
+                defaultEmail={session.leadEmail || loadDemoEmail()}
+                requestedEmail={session.reviewRequested ? session.leadEmail : null}
+                onRequested={() => void refresh()}
+              />
+            </div>
+          )}
 
           <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
             <div
@@ -413,7 +439,7 @@ export default function DemoSessionPage() {
               <div className="mt-4 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setEmailOpen(false)}
+                  onClick={closeEmailGate}
                   className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
                 >
                   Done
@@ -425,9 +451,9 @@ export default function DemoSessionPage() {
             onSubmit={(e) => void handleEmailSubmit(e)}
             className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl"
           >
-            <h2 className="text-lg font-semibold">Work email for the spreadsheet</h2>
+            <h2 className="text-lg font-semibold">Where should we send the spreadsheet?</h2>
             <p className="mt-1 text-sm text-neutral-500">
-              We’ll email a download link to confirm the address. Company email only — not Gmail, Yahoo, or Outlook.
+              We’ll email you a download link. No account, no newsletter.
             </p>
             <input
               type="email"
@@ -455,7 +481,7 @@ export default function DemoSessionPage() {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setEmailOpen(false)}
+                onClick={closeEmailGate}
                 className="px-3 py-2 text-sm text-neutral-500"
               >
                 Cancel

@@ -1,6 +1,24 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
 const TOKEN_KEY = (id: string) => `coreextract-demo:${id}`;
+const EMAIL_KEY = "coreextract-demo:email";
+
+/** Remembered so a returning visitor is never asked twice. */
+export function saveDemoEmail(email: string) {
+  try {
+    localStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
+  } catch {
+    /* private mode */
+  }
+}
+
+export function loadDemoEmail(): string | null {
+  try {
+    return localStorage.getItem(EMAIL_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export function demoApiBase() {
   return API_BASE.replace(/\/$/, "");
@@ -70,8 +88,58 @@ export type DemoSession = {
   records: DemoRecord[];
   error: string | null;
   hasLeadEmail: boolean;
+  leadEmail: string | null;
+  reviewRequested: boolean;
+  /** How much was extracted: drives the "we'll run it by hand" offer. */
+  quality: "empty" | "thin" | "ok" | null;
+  filledFields: number;
   downloaded: boolean;
 };
+
+export class DemoApiError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+export type DemoClientEvent =
+  | "email_gate_shown"
+  | "download_modal_opened"
+  | "download_modal_closed"
+  | "review_offer_shown";
+
+/** Funnel logging. Never throws, never blocks the UI. */
+export function trackDemoEvent(
+  event: DemoClientEvent,
+  opts: { sessionId?: string; token?: string | null; detail?: Record<string, unknown> } = {},
+) {
+  try {
+    void fetch(`${demoApiBase()}/demo/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
+      },
+      body: JSON.stringify({ event, sessionId: opts.sessionId, detail: opts.detail }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function getDemoEligibility(): Promise<{ emailRequired: boolean; hasEmail: boolean }> {
+  try {
+    const res = await fetch(`${demoApiBase()}/demo/eligibility`);
+    const data = await parseJson(res);
+    return { emailRequired: Boolean(data.emailRequired), hasEmail: Boolean(data.hasEmail) };
+  } catch {
+    // The upload itself enforces the gate; fail open here.
+    return { emailRequired: false, hasEmail: false };
+  }
+}
 
 async function parseJson(res: Response) {
   const text = await res.text();
@@ -82,13 +150,14 @@ async function parseJson(res: Response) {
   }
 }
 
-export async function createDemoSession(file: File): Promise<{
+export async function createDemoSession(file: File, email?: string | null): Promise<{
   sessionId: string;
   token: string;
   filename: string;
   pageCount: number;
 }> {
   const body = new FormData();
+  if (email) body.append("email", email);
   body.append("file", file);
   const res = await fetch(`${demoApiBase()}/demo/sessions`, {
     method: "POST",
@@ -96,9 +165,10 @@ export async function createDemoSession(file: File): Promise<{
   });
   const data = await parseJson(res);
   if (!res.ok || !data.success) {
-    throw new Error(data.error || "Could not start the demo");
+    throw new DemoApiError(data.error || "Could not start the demo", data.code);
   }
   saveDemoToken(data.sessionId, data.token);
+  if (email) saveDemoEmail(email);
   return data;
 }
 
@@ -164,7 +234,8 @@ export async function submitDemoLead(
   sessionId: string,
   token: string,
   email: string,
-  intent: "download" | "quote" = "download",
+  intent: "download" | "quote" | "review" = "download",
+  reason?: string,
 ) {
   const res = await fetch(`${demoApiBase()}/demo/sessions/${sessionId}/lead`, {
     method: "POST",
@@ -172,7 +243,7 @@ export async function submitDemoLead(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ email, intent }),
+    body: JSON.stringify({ email, intent, reason }),
   });
   const data = await parseJson(res);
   if (!res.ok || !data.success) {
@@ -182,10 +253,12 @@ export async function submitDemoLead(
     if (typeof data.devDownloadUrl === "string") err.devDownloadUrl = data.devDownloadUrl;
     throw err;
   }
+  saveDemoEmail(data.email);
   return data as {
     success: true;
     email: string;
     emailed: boolean;
+    review?: boolean;
     devDownloadUrl?: string;
   };
 }
