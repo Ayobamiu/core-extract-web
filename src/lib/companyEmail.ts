@@ -1,5 +1,6 @@
 /**
- * Work-email gate for the public demo download.
+ * Email helpers for the public demo. Any valid address is accepted;
+ * company vs personal is only a tag for the operator.
  * Keep in sync with ai/src/utils/companyEmail.js
  */
 
@@ -35,6 +36,13 @@ const PERSONAL_DOMAINS = new Set([
   "mailinator.com",
   "guerrillamail.com",
 ]);
+
+export function isValidEmail(email: string): boolean {
+  const value = String(email || "").trim().toLowerCase();
+  return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+export const INVALID_EMAIL_ERROR = "Enter a valid email address.";
 
 export function isCompanyEmail(email: string): boolean {
   const value = String(email || "").trim().toLowerCase();
